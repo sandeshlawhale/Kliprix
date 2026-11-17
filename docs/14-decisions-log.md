@@ -44,7 +44,24 @@ If another doc disagrees with this file, this file wins. New decisions are appen
 | A-007 | Caption visual details (colors, sizes) in `05` are starting values to tune in M6 |
 
 ## Agent assumptions (agents append here)
-_(empty)_
+| ID | Assumption | Reason |
+|---|---|---|
+| AA-001 | The knowledge base was committed under `kb/`; moved `kb/AGENTS.md`, `kb/CLAUDE.md`, `kb/docs/` to the repo root (M0) | `06-architecture.md` puts `docs/`, `frontend/`, `backend/` side by side at the root |
+| AA-002 | Backend venv uses Python 3.12 (`py -3.12`), even when a newer default Python is installed | Spec says 3.11+; later deps (faster-whisper/ctranslate2, MediaPipe) ship wheels for 3.12 first |
+| AA-003 | Backend dependencies split into `requirements.txt` (runtime) and `requirements-dev.txt` (ruff, mypy, pytest, httpx2), both fully pinned incl. transitive deps | Spec asks for pinned deps and lint/type/test tooling; dev tools are not needed at runtime |
+| AA-004 | Tests use `httpx2` instead of `httpx` | Installed Starlette (1.10) deprecates `httpx` for its TestClient and asks for `httpx2` |
+| AA-005 | FastAPI's native OpenTelemetry hooks are switched off in `create_app`; Next.js telemetry is disabled in the frontend scripts | Hard rule 3 / `11-constraints.md`: no telemetry |
+| AA-006 | `doctor.py` warns (not fails) below 5 GB free disk or below 4 GB total RAM; it fails on missing Python 3.11+, Node 20+, ffmpeg, ffprobe, or libass | Spec lists the checks but no disk threshold; low RAM must still be allowed to run (4 GB tier) |
+| AA-007 | Start backend with `uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000` from `backend/` | App factory per `06-architecture.md`; start scripts arrive in M10 |
+
+### Dependencies added
+| Milestone | Package | Why |
+|---|---|---|
+| M0 | fastapi, uvicorn[standard] (+ pinned transitive deps) | Backend API (09-tech-stack) |
+| M0 | ruff, mypy, pytest, httpx2 (dev) | Lint/type/test tooling (09, 12) |
+| M0 | next, react, react-dom, tailwindcss, @tailwindcss/turbopack, typescript, eslint, eslint-config-next, @types/* (from `create-next-app`) | Frontend shell (09-tech-stack) |
+| M0 | prettier, eslint-config-prettier (dev) | Formatting (09-tech-stack) |
+| M0 | openapi-typescript (dev) | Generates `src/lib/api-types.ts` from backend OpenAPI (06, 09) |
 
 ## Agent proposals (not approved, do not implement)
 _(empty)_
