@@ -1,0 +1,21 @@
+# Runtime data (see docs/08-data-models.md)
+data/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Local env (no secrets are ever stored, but env files stay local)
+.env
+.env.local
