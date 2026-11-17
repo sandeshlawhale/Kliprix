@@ -51,9 +51,10 @@ If another doc disagrees with this file, this file wins. New decisions are appen
 | AA-003 | Backend dependencies split into `requirements.txt` (runtime) and `requirements-dev.txt` (ruff, mypy, pytest, httpx2), both fully pinned incl. transitive deps | Spec asks for pinned deps and lint/type/test tooling; dev tools are not needed at runtime |
 | AA-004 | Tests use `httpx2` instead of `httpx` | Installed Starlette (1.10) deprecates `httpx` for its TestClient and asks for `httpx2` |
 | AA-005 | FastAPI's native OpenTelemetry hooks are switched off in `create_app`; Next.js telemetry is disabled in the frontend scripts | Hard rule 3 / `11-constraints.md`: no telemetry |
-| AA-006 | `doctor.py` warns (not fails) below 5 GB free disk or below 4 GB total RAM; it fails on missing Python 3.11+, Node 20+, ffmpeg, ffprobe, or libass | Spec lists the checks but no disk threshold; low RAM must still be allowed to run (4 GB tier) |
+| AA-006 | `doctor.py` warns (not fails) below 5 GB free disk or below 4 GB total RAM; it fails on missing Python 3.11–3.12, Node 20+, ffmpeg, ffprobe, or libass | Spec lists the checks but no disk threshold; low RAM must still be allowed to run (4 GB tier) |
 | AA-007 | Start backend with `uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000` from `backend/` | App factory per `06-architecture.md`; start scripts arrive in M10 |
 | AA-008 | Keep `frontend/AGENTS.md` (Next.js agent rules block) | `next dev` re-creates it; it points agents to the installed Next.js docs, matching hard rule 6 |
+| AA-009 | Backend Python is limited to 3.11–3.12 (`requires-python = ">=3.11,<3.13"`). `doctor.py` picks the interpreter: the backend venv if its version is supported (a venv on another version is a FAIL with a recreate hint), else `py -3.12`/`py -3.11`, `python3.12`/`python3.11`, then `python3`/`python`. `doctor.py --print-python` prints only that path (exit 1 + reason on stderr otherwise) for the M10 start scripts to call | Spec says 3.11+; 3.13+/3.14 lack wheels for later deps (AA-002). No start scripts exist before M10, so the selection logic lives in doctor.py, which is stdlib-only and runs on any Python 3 |
 
 ### Dependencies added
 | Milestone | Package | Why |

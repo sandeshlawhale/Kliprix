@@ -4,10 +4,18 @@ Checks that this machine can run Kliprix and prints a fix hint for every problem
 Uses only the Python standard library, because it runs before the backend venv exists.
 
 Exit code: 0 when every required check passes (warnings allowed), 1 otherwise.
+
+`python scripts/doctor.py --print-python` prints only the path of the Python that the
+backend must use (a supported version, preferring the existing backend venv) and exits 0,
+or prints the reason to stderr and exits 1. Start scripts use this to pick the interpreter.
+
+This file must stay runnable on any Python 3 (it may be started by an unsupported one),
+so it avoids syntax newer than 3.7.
 """
 
 from __future__ import annotations
 
+import argparse
 import ctypes
 import os
 import platform
@@ -18,7 +26,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-MIN_PYTHON = (3, 11)
+# Backend Python range (inclusive). The upper bound exists because later dependencies
+# (faster-whisper/ctranslate2, MediaPipe) ship wheels for these versions first (AA-002, AA-009).
+SUPPORTED_PYTHON = ((3, 11), (3, 12))
 MIN_NODE_MAJOR = 20
 MIN_RAM_GB = 4.0
 LOW_FREE_RAM_GB = 1.5
@@ -27,6 +37,8 @@ SUBPROCESS_TIMEOUT_S = 15
 BYTES_PER_GB = 1024**3
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+BACKEND_VENV = REPO_ROOT / "backend" / ".venv"
+_VERSION_PROBE = "import sys; v = sys.version_info; print(v[0], v[1], v[2]); print(sys.executable)"
 
 OK, WARN, FAIL = "OK", "WARN", "FAIL"
 
@@ -42,7 +54,8 @@ class Check:
 def _run(args: list[str]) -> str | None:
     """Run a command and return its stdout, or None if it cannot run."""
     try:
-        result = subprocess.run(
+        # Arg list, no shell; commands come from PATH lookups and fixed names only.
+        result = subprocess.run(  # noqa: S603
             args,
             capture_output=True,
             text=True,
@@ -65,16 +78,148 @@ def _ffmpeg_install_hint() -> str:
     return "Install FFmpeg with your package manager, e.g. `sudo apt install ffmpeg`."
 
 
+def _supported_text() -> str:
+    low, high = SUPPORTED_PYTHON
+    return f"{low[0]}.{low[1]} to {high[0]}.{high[1]}"
+
+
+def _newest_supported() -> str:
+    major, minor = SUPPORTED_PYTHON[1]
+    return f"{major}.{minor}"
+
+
+def _is_supported(version: tuple[int, int]) -> bool:
+    return SUPPORTED_PYTHON[0] <= version <= SUPPORTED_PYTHON[1]
+
+
+@dataclass
+class Interpreter:
+    path: str
+    version: tuple[int, int, int]
+
+    @property
+    def label(self) -> str:
+        major, minor, micro = self.version
+        return f"{major}.{minor}.{micro} ({self.path})"
+
+
+def _probe(command: list[str]) -> Interpreter | None:
+    """Ask a Python command for its version and real executable path."""
+    output = _run([*command, "-c", _VERSION_PROBE])
+    if output is None:
+        return None
+    lines = output.strip().splitlines()
+    if len(lines) != 2:
+        return None
+    try:
+        major, minor, micro = (int(part) for part in lines[0].split())
+    except ValueError:
+        return None
+    return Interpreter(lines[1].strip(), (major, minor, micro))
+
+
+def _venv_python() -> Path:
+    if platform.system() == "Windows":
+        return BACKEND_VENV / "Scripts" / "python.exe"
+    return BACKEND_VENV / "bin" / "python"
+
+
+def _candidate_commands() -> list[list[str]]:
+    """Python commands to try, newest supported version first."""
+    (low_major, low_minor), (high_major, high_minor) = SUPPORTED_PYTHON
+    assert low_major == high_major == 3  # noqa: S101 - the range never spans majors
+    high_to_low = [(3, minor) for minor in range(high_minor, low_minor - 1, -1)]
+    commands: list[list[str]] = []
+    launcher = shutil.which("py")
+    if launcher is not None:
+        commands += [[launcher, f"-{major}.{minor}"] for major, minor in high_to_low]
+    for major, minor in high_to_low:
+        found = shutil.which(f"python{major}.{minor}")
+        if found is not None:
+            commands.append([found])
+    commands.append([sys.executable])
+    for name in ("python3", "python"):
+        found = shutil.which(name)
+        if found is not None:
+            commands.append([found])
+    return commands
+
+
+def find_system_python() -> tuple[Interpreter | None, list[Interpreter]]:
+    """Return (first supported interpreter, every interpreter seen) outside the venv."""
+    seen: list[Interpreter] = []
+    for command in _candidate_commands():
+        interpreter = _probe(command)
+        if interpreter is None:
+            continue
+        if all(os.path.normcase(o.path) != os.path.normcase(interpreter.path) for o in seen):
+            seen.append(interpreter)
+        if _is_supported(interpreter.version[:2]):
+            return interpreter, seen
+    return None, seen
+
+
+def find_venv_python() -> Interpreter | None:
+    """Return the backend venv's interpreter if the venv exists and runs."""
+    path = _venv_python()
+    if not path.is_file():
+        return None
+    return _probe([str(path)])
+
+
+def _no_python_hint(seen: list[Interpreter]) -> str:
+    found = ", ".join(i.label for i in seen) if seen else "none"
+    return (
+        f"Kliprix needs Python {_supported_text()} (found: {found}). "
+        f"Install Python {_newest_supported()} from https://www.python.org/downloads/ "
+        "(newer versions are not supported yet); it can live next to your current Python."
+    )
+
+
+def pick_backend_python() -> tuple[Interpreter | None, str]:
+    """Choose the interpreter the backend must use.
+
+    Returns (interpreter, "") on success, or (None, reason) when no usable one exists.
+    The backend venv wins when its version is supported; a venv with an unsupported
+    version is an error, because silently using another Python would hide it.
+    """
+    venv = find_venv_python()
+    if venv is not None:
+        if _is_supported(venv.version[:2]):
+            return venv, ""
+        system, _ = find_system_python()
+        create = (
+            f'"{system.path}" -m venv'
+            if system is not None
+            else f"Python {_newest_supported()} -m venv"
+        )
+        return None, (
+            f"The backend venv uses Python {venv.label}, which is not supported "
+            f"(needs {_supported_text()}). Delete backend/.venv and recreate it with "
+            f"{create} backend/.venv"
+        )
+    system, seen = find_system_python()
+    if system is None:
+        return None, _no_python_hint(seen)
+    return system, ""
+
+
 def check_python() -> Check:
-    version = sys.version_info
-    text = f"{version.major}.{version.minor}.{version.micro} ({sys.executable})"
-    if (version.major, version.minor) >= MIN_PYTHON:
-        return Check("Python", OK, text)
+    venv = find_venv_python()
+    if venv is not None:
+        chosen, reason = pick_backend_python()
+        if chosen is None:
+            return Check("Python", FAIL, f"backend venv: {venv.label}", reason)
+        return Check("Python", OK, f"backend venv: {chosen.label}")
+    system, seen = find_system_python()
+    if system is None:
+        found = ", ".join(i.label for i in seen) if seen else "no Python found"
+        return Check("Python", FAIL, f"no supported Python ({found})", _no_python_hint(seen))
     return Check(
         "Python",
-        FAIL,
-        text,
-        f"Install Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]} or newer from https://www.python.org/downloads/",
+        OK,
+        f"{system.label}; backend venv not created yet",
+        f'Create it: "{system.path}" -m venv backend/.venv',
     )
 
 
@@ -187,7 +332,7 @@ def _memory_bytes() -> tuple[int, int] | None:
     if system == "Windows":
         status = _MemoryStatusEx()
         status.dwLength = ctypes.sizeof(_MemoryStatusEx)
-        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):  # type: ignore[attr-defined]
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):  # type: ignore[attr-defined,unused-ignore]
             return status.ullTotalPhys, status.ullAvailPhys
         return None
     if system == "Linux":
@@ -254,10 +399,29 @@ def run_checks() -> list[Check]:
     ]
 
 
+def print_python() -> int:
+    """Print the backend interpreter path for start scripts; reason on stderr if none."""
+    chosen, reason = pick_backend_python()
+    if chosen is None:
+        print(reason, file=sys.stderr)
+        return 1
+    print(chosen.path)
+    return 0
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Check that this machine can run Kliprix.")
+    parser.add_argument(
+        "--print-python",
+        action="store_true",
+        help="print only the Python the backend must use, then exit",
+    )
+    if parser.parse_args().print_python:
+        return print_python()
     checks = run_checks()
     print("Kliprix doctor")
     print(f"System: {platform.system()} {platform.release()} ({platform.machine()})")
+    print(f"Doctor runs on: Python {platform.python_version()} ({sys.executable})")
     print()
     for check in checks:
         print(f"[{check.status:<4}] {check.name:<11} {check.detail}")

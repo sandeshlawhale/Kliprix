@@ -2,7 +2,7 @@
 name = "kliprix-backend"
 version = "0.1.0"
 description = "Kliprix local backend (FastAPI)"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 license = "MIT"
 
 [tool.ruff]
