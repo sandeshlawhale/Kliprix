@@ -24,10 +24,138 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get System
+         * @description ffmpeg/libass status, Python, RAM, GPU, Whisper Auto model, disk, yt-dlp version.
+         */
+        get: operations["get_system_api_system_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Settings
+         * @description Current settings (stored values over defaults).
+         */
+        get: operations["get_settings_api_settings_get"];
+        /**
+         * Put Settings
+         * @description Merge a partial update into the stored settings and return the result.
+         *
+         *     Errors: VALIDATION_ERROR if a value is out of range or explicitly null.
+         */
+        put: operations["put_settings_api_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Providers
+         * @description The providers the user can pick.
+         */
+        get: operations["list_providers_api_llm_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session
+         * @description The active provider and model, if any.
+         */
+        get: operations["get_session_api_llm_session_get"];
+        /**
+         * Put Session
+         * @description Keep provider, model, and key in memory for this backend process.
+         *
+         *     Errors: VALIDATION_ERROR if the key or model is blank, or base_url is missing for
+         *     `openai_compatible` / given for a provider that does not use it.
+         */
+        put: operations["put_session_api_llm_session_put"];
+        post?: never;
+        /**
+         * Delete Session
+         * @description Forget the session (and its key).
+         */
+        delete: operations["delete_session_api_llm_session_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ErrorBody */
+        ErrorBody: {
+            code: components["schemas"]["ErrorCode"];
+            /** Message */
+            message: string;
+            /** Details */
+            details?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * ErrorCode
+         * @enum {string}
+         */
+        ErrorCode: "INVALID_URL" | "UNSUPPORTED_HOST" | "TOO_MANY_VIDEOS" | "VIDEO_PRIVATE" | "VIDEO_AGE_RESTRICTED" | "VIDEO_UNAVAILABLE" | "GEO_BLOCKED" | "DOWNLOAD_FAILED" | "DOWNLOADER_OUTDATED" | "FFMPEG_MISSING" | "LLM_NOT_CONFIGURED" | "LLM_AUTH_FAILED" | "LLM_RATE_LIMITED" | "LLM_BAD_RESPONSE" | "TRANSCRIBE_FAILED" | "RENDER_FAILED" | "DISK_FULL" | "NOT_FOUND" | "VALIDATION_ERROR" | "CONFLICT" | "INTERNAL";
+        /**
+         * ErrorResponse
+         * @description The body of every non-2xx response.
+         */
+        ErrorResponse: {
+            error: components["schemas"]["ErrorBody"];
+        };
+        /** FfmpegStatus */
+        FfmpegStatus: {
+            /** Found */
+            found: boolean;
+            /** Version */
+            version: string | null;
+            /** Libass */
+            libass: boolean;
+        };
         /**
          * HealthResponse
          * @description Liveness answer: the process is up and serving requests.
@@ -40,6 +168,169 @@ export interface components {
             status: "ok";
             /** Version */
             version: string;
+        };
+        /** ProviderInfo */
+        ProviderInfo: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "gemini" | "anthropic" | "openai" | "openrouter" | "openai_compatible";
+            /** Label */
+            label: string;
+            /** Needs Base Url */
+            needs_base_url: boolean;
+        };
+        /** SessionConfigured */
+        SessionConfigured: {
+            /** Configured */
+            configured: boolean;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "gemini" | "anthropic" | "openai" | "openrouter" | "openai_compatible";
+            /** Model */
+            model: string;
+        };
+        /** SessionRequest */
+        SessionRequest: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "gemini" | "anthropic" | "openai" | "openrouter" | "openai_compatible";
+            /** Model */
+            model: string;
+            /**
+             * Api Key
+             * Format: password
+             */
+            api_key: string;
+            /** Base Url */
+            base_url?: string | null;
+        };
+        /**
+         * SessionStatus
+         * @description Whether a session is active. Never includes the key.
+         */
+        SessionStatus: {
+            /** Configured */
+            configured: boolean;
+            /** Provider */
+            provider?: ("gemini" | "anthropic" | "openai" | "openrouter" | "openai_compatible") | null;
+            /** Model */
+            model?: string | null;
+        };
+        /** Settings */
+        Settings: {
+            /**
+             * Theme
+             * @enum {string}
+             */
+            theme: "light" | "dark" | "system";
+            style_defaults: components["schemas"]["StyleOverrides"];
+            /**
+             * Whisper Model
+             * @enum {string}
+             */
+            whisper_model: "auto" | "tiny" | "base" | "small" | "medium";
+            /**
+             * Source Policy
+             * @enum {string}
+             */
+            source_policy: "ask" | "delete" | "keep";
+            /** Storage Warn Gb */
+            storage_warn_gb: number;
+            /** Thorough Mode */
+            thorough_mode: boolean;
+        };
+        /**
+         * SettingsUpdate
+         * @description Any subset of Settings; `style_defaults` may itself be partial.
+         */
+        SettingsUpdate: {
+            /** Theme */
+            theme?: ("light" | "dark" | "system") | null;
+            style_defaults?: components["schemas"]["StyleOverridesUpdate"] | null;
+            /** Whisper Model */
+            whisper_model?: ("auto" | "tiny" | "base" | "small" | "medium") | null;
+            /** Source Policy */
+            source_policy?: ("ask" | "delete" | "keep") | null;
+            /** Storage Warn Gb */
+            storage_warn_gb?: number | null;
+            /** Thorough Mode */
+            thorough_mode?: boolean | null;
+        };
+        /** StyleOverrides */
+        StyleOverrides: {
+            /**
+             * Caption Style
+             * @enum {string}
+             */
+            caption_style: "pop" | "karaoke" | "boxed";
+            /**
+             * Caption Language
+             * @enum {string}
+             */
+            caption_language: "en" | "hinglish";
+            /**
+             * Clip Length Mode
+             * @enum {string}
+             */
+            clip_length_mode: "standard" | "extended";
+            /** Clips Per Video */
+            clips_per_video: number;
+            /** Blur */
+            blur: number;
+            /**
+             * Crop Mode
+             * @enum {string}
+             */
+            crop_mode: "auto" | "face" | "full";
+            /** Show Title */
+            show_title: boolean;
+        };
+        /** StyleOverridesUpdate */
+        StyleOverridesUpdate: {
+            /** Caption Style */
+            caption_style?: ("pop" | "karaoke" | "boxed") | null;
+            /** Caption Language */
+            caption_language?: ("en" | "hinglish") | null;
+            /** Clip Length Mode */
+            clip_length_mode?: ("standard" | "extended") | null;
+            /** Clips Per Video */
+            clips_per_video?: number | null;
+            /** Blur */
+            blur?: number | null;
+            /** Crop Mode */
+            crop_mode?: ("auto" | "face" | "full") | null;
+            /** Show Title */
+            show_title?: boolean | null;
+        };
+        /**
+         * SystemInfo
+         * @description Real facts about this machine, measured on every request.
+         */
+        SystemInfo: {
+            ffmpeg: components["schemas"]["FfmpegStatus"];
+            /** Python */
+            python: string;
+            /** Ram Gb */
+            ram_gb: number;
+            /** Gpu */
+            gpu: boolean;
+            /**
+             * Whisper Auto Model
+             * @enum {string}
+             */
+            whisper_auto_model: "tiny" | "base" | "small" | "medium" | "large-v3";
+            /** Supported Hosts */
+            supported_hosts: string[];
+            /** Disk Free Gb */
+            disk_free_gb: number;
+            /** Ytdlp Version */
+            ytdlp_version: string | null;
         };
     };
     responses: never;
@@ -66,6 +357,224 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_system_api_system_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_settings_api_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    put_settings_api_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settings"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_providers_api_llm_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderInfo"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_session_api_llm_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionStatus"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    put_session_api_llm_session_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionConfigured"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_session_api_llm_session_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

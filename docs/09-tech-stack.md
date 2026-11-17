@@ -20,7 +20,7 @@
 ## Backend
 | Need | Choice | Notes |
 |---|---|---|
-| Language | Python 3.11+ | |
+| Language | Python 3.11–3.12 | 3.13+ not yet supported by later deps (AA-009) |
 | API | FastAPI + Uvicorn | SSE via `StreamingResponse` / `sse-starlette` |
 | Validation | Pydantic v2 | |
 | Database | SQLite + SQLAlchemy 2.0 + Alembic | |

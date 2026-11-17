@@ -290,8 +290,12 @@ def check_libass() -> Check:
 
 
 def _data_dir() -> Path:
+    # Same rule as the backend (AA-010): relative paths are relative to the repo root.
     configured = os.environ.get("DATA_DIR", "").strip()
-    return Path(configured).resolve() if configured else REPO_ROOT / "data"
+    if not configured:
+        return REPO_ROOT / "data"
+    path = Path(configured).expanduser()
+    return path if path.is_absolute() else (REPO_ROOT / path).resolve()
 
 
 def check_disk() -> Check:
