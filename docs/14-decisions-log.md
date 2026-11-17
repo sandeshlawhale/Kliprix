@@ -64,6 +64,8 @@ If another doc disagrees with this file, this file wins. New decisions are appen
 | M0 | next, react, react-dom, tailwindcss, @tailwindcss/turbopack, typescript, eslint, eslint-config-next, @types/* (from `create-next-app`) | Frontend shell (09-tech-stack) |
 | M0 | prettier, eslint-config-prettier (dev) | Formatting (09-tech-stack) |
 | M0 | openapi-typescript (dev) | Generates `src/lib/api-types.ts` from backend OpenAPI (06, 09) |
+| M1 | SQLAlchemy 2.1.9, alembic (+ Mako, MarkupSafe) | SQLite access and migrations (08, 09). 2.1 is the current stable 2.x line; the docs say "2.0" meaning the 2.x API |
+| M1 | psutil (+ types-psutil, dev) | RAM detection for `/api/system` and Whisper Auto (09, 11) |
 
 ## Agent proposals (not approved, do not implement)
 _(empty)_

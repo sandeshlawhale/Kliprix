@@ -15,6 +15,8 @@ from app.api import system
 from app.config import APP_NAME, APP_VERSION, AppConfig, ensure_data_dirs, load_config
 from app.core.errors import install_error_handlers
 from app.core.logging import setup_logging
+from app.db.engine import make_engine, make_session_factory
+from app.db.migrate import upgrade_to_head
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +35,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     active = config if config is not None else load_config()
     ensure_data_dirs(active)
     setup_logging(active, secrets=lambda: ())
+    # Migrations run on every start (no-op when current) so a fresh DATA_DIR just works.
+    upgrade_to_head(active.db_url)
     app = FastAPI(title=APP_NAME, version=APP_VERSION, telemetry=_TELEMETRY_OFF)
     app.state.config = active
+    app.state.session_factory = make_session_factory(make_engine(active.db_url))
     install_error_handlers(app)
     # The browser normally reaches us through the Next.js proxy (same origin);
     # CORS only admits the configured frontend origin for direct calls.
