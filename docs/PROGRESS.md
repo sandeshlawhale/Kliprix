@@ -37,10 +37,13 @@ Start M2: read docs 04 and 07. Add yt-dlp (pinned, logged under "Dependencies ad
 - Doctor: `python scripts/doctor.py` (from repo root; exit 0 = ready; any Python 3 can run it)
 - Backend interpreter for scripts: `python scripts/doctor.py --print-python` (prints a path, exit 0; or reason on stderr, exit 1)
 - Create backend venv: `cd backend && py -3.12 -m venv .venv && .venv/Scripts/python.exe -m pip install -r requirements-dev.txt`
-- Start backend: `cd backend && .venv/Scripts/python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000` (creates `DATA_DIR` folders and applies migrations on start)
+- Start backend (the module has no `app` object, only the `create_app` factory, so `uvicorn app.main:app` fails with "Attribute app not found"; `--factory` is required). Tested 2026-11-17, `GET /api/health` → 200 `{"status":"ok","version":"0.1.0"}`:
+  - PowerShell: `cd backend; .\.venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000`
+  - Git Bash / macOS / Linux: `cd backend && .venv/Scripts/python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000` (on macOS/Linux the venv path is `.venv/bin/python`)
+  - Creates `DATA_DIR` folders and applies migrations on start.
 - Migrations by hand: `cd backend && .venv/Scripts/alembic.exe upgrade head` (uses `DATA_DIR`); drift check: `.venv/Scripts/alembic.exe check`
 - New migration: `cd backend && DATA_DIR=<temp dir> .venv/Scripts/alembic.exe revision --autogenerate -m "..."`, then replace `app.db.models.UtcDateTime()` with `sa.DateTime()` in the generated file
-- Start frontend: `cd frontend && npm install && npm run dev` (http://127.0.0.1:3000, proxies `/api/*` to `BACKEND_URL`)
+- Start frontend (second terminal, backend running): `cd frontend; npm install; npm run dev` → http://127.0.0.1:3000, proxies `/api/*` to `BACKEND_URL` (default http://127.0.0.1:8000). Tested 2026-11-17: `GET http://127.0.0.1:3000/api/health` → `{"status":"ok","version":"0.1.0"}`, `/` → 200.
 - Run backend tests/checks: `cd backend && .venv/Scripts/ruff.exe check . && .venv/Scripts/ruff.exe format --check . && .venv/Scripts/mypy.exe && .venv/Scripts/python.exe -m pytest`
 - Run frontend checks: `cd frontend && npm run lint && npm run format:check && npm run typecheck`
 - Regenerate API types (backend running): `cd frontend && npm run gen:api`
