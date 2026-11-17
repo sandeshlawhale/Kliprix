@@ -1,0 +1,1 @@
+"""Kliprix backend application package."""

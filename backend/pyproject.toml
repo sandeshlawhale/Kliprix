@@ -1,0 +1,25 @@
+[project]
+name = "kliprix-backend"
+version = "0.1.0"
+description = "Kliprix local backend (FastAPI)"
+requires-python = ">=3.11"
+license = "MIT"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "S", "BLE", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["app", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
