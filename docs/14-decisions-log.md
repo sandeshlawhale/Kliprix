@@ -53,6 +53,7 @@ If another doc disagrees with this file, this file wins. New decisions are appen
 | AA-005 | FastAPI's native OpenTelemetry hooks are switched off in `create_app`; Next.js telemetry is disabled in the frontend scripts | Hard rule 3 / `11-constraints.md`: no telemetry |
 | AA-006 | `doctor.py` warns (not fails) below 5 GB free disk or below 4 GB total RAM; it fails on missing Python 3.11+, Node 20+, ffmpeg, ffprobe, or libass | Spec lists the checks but no disk threshold; low RAM must still be allowed to run (4 GB tier) |
 | AA-007 | Start backend with `uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000` from `backend/` | App factory per `06-architecture.md`; start scripts arrive in M10 |
+| AA-008 | Keep `frontend/AGENTS.md` (Next.js agent rules block) | `next dev` re-creates it; it points agents to the installed Next.js docs, matching hard rule 6 |
 
 ### Dependencies added
 | Milestone | Package | Why |
