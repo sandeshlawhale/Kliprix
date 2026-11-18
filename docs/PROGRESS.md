@@ -3,8 +3,8 @@
 Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must update it before stopping, even if it is out of tokens soon. Keep it short and factual. Never claim something is done unless you ran its check.
 
 ## Current state
-- **Current milestone:** M2 (code done, "Done when" check pending: needs the owner's 3 test links)
-- **Status:** M1 done and verified (tag `m1`); M0 tag `m0`; M2 not tagged yet
+- **Current milestone:** M2 (code done; "Done when" partly passed, 2 checks open, NOT tagged)
+- **Status:** M1 done and verified (tag `m1`); M0 tag `m0`; `m2` not tagged until the open checks pass
 - **Last session:** 2026-11-18, Claude Code (Claude Opus 5.5)
 - **Last commit:** see `git log -1`
 
@@ -22,18 +22,20 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 - [ ] M10 Storage, README, scripts, Docker, tests
 
 ## In progress (exact next step)
-M2 "Done when": run the CLI on the owner's three links (public video, past live stream with chat replay, private/deleted video) and paste the real output below; then decide on the `chat-downloader` fallback (AA-024), tag `m2`, and stop before M3.
-`cd backend; .\.venv\Scripts\python.exe -m app.cli.fetch_source <url>` (add `--inspect-only` to skip the download). Also `POST /api/videos/inspect` with all three links through the running backend.
-Built in M2: `app/sources/` (allowlist `urls.py`, interface `base.py`, `registry.py`, `youtube.py` on the yt-dlp Python API, `ytdlp_errors.py`, `youtube_chat.py`), `app/pipeline/download.py` + `chat.py`, `app/cli/fetch_source.py`, `POST /api/videos/inspect`, `POST /api/system/update-downloader`. Assumptions AA-017…AA-024.
+Finish the M2 "Done when", then tag `m2` and stop before M3. Two checks are open:
+1. **Chat fetched for a stream with replay.** The owner's link 2 has no replay on YouTube's side (see AA-024), so this path is untested on real data. Needs a past stream whose page shows "Show chat replay". Run `cd backend; .\.venv\Scripts\python.exe -m app.cli.fetch_source <url> --out <temp dir>` and check the `chat: N messages` line and `chat.json`; if it fails, revisit the chat-downloader decision (AA-024).
+2. **Owner's private/deleted link (link 3).** It was empty in the owner's message. A stand-in nonexistent id already maps to `VIDEO_UNAVAILABLE`; a private link should give `VIDEO_PRIVATE`.
+Built in M2: `app/sources/` (allowlist `urls.py`, interface `base.py`, `registry.py`, `youtube.py` on the yt-dlp Python API, `ytdlp_errors.py`, `youtube_chat.py`), `app/pipeline/download.py` + `chat.py`, `app/cli/fetch_source.py`, `POST /api/videos/inspect`, `POST /api/system/update-downloader`. Assumptions AA-017…AA-024, decision D-025 (Node 22+).
 
 ## Done but unverified
-- M2 real-link checks (Done when) not run yet. Verified so far on one short public video (19 s): canonical URL, inspect metadata, download to `source.mp4` with progress to 100%, chat absent → None.
-- Chat replay parsing is tested on hand-written lines in yt-dlp's format, not yet on a real stream's file.
+- Chat replay fetch + parsing on a real stream with a replay (parser is tested on hand-written lines in yt-dlp's format only).
+- `POST /api/system/update-downloader` was only tested with pip mocked (a real run would change the installed yt-dlp version).
 - `scripts/doctor.py` was only tested on Windows (no macOS/Linux machine available).
 
 ## Known problems / blockers
 - None.
-- YouTube downloads need Node 22+ (yt-dlp JS runtime, AA-017); doctor warns on Node 20–21.
+- Node 22+ is required (D-025); doctor FAILs below 22.
+- No README yet (M10). Its requirements section must say Node 22+ (D-025) and "restart after Update downloader" (AA-021).
 - Notes: backend Python is limited to 3.11–3.12 (AA-009); this machine's default is 3.14, and the backend venv uses 3.12. Endpoints not built yet on purpose: `/api/llm/models` and `/api/llm/test` (M5), `/api/system/open-folder` (optional, AA-014).
 - Start scripts (`start.bat`/`start.sh`) don't exist yet (M10). They should get the interpreter from `python scripts/doctor.py --print-python`.
 
@@ -61,9 +63,18 @@ Built in M2: `app/sources/` (allowlist `urls.py`, interface `base.py`, `registry
 - OpenAPI: `npm run gen:api` wrote `src/lib/api-types.ts` with `/api/health, /api/system, /api/settings, /api/llm/providers, /api/llm/session`; frontend typecheck, lint, and format checks pass.
 - Smoke test: an API key PUT to `/api/llm/session` was found 0 times in the DATA_DIR files (db, logs); `PUT /api/settings` with blur 99 returned `422 VALIDATION_ERROR`.
 
+## M2 "Done when" output (2026-11-18, real runs)
+- **Link 1, public video** `https://youtu.be/zsCGS-Yzjnw?si=…`, CLI exit 0: `url: https://www.youtube.com/watch?v=zsCGS-Yzjnw`; inspect `{"platform":"youtube","source_id":"zsCGS-Yzjnw","title":"UI Libraries for Claude Code (Ban the AI Look)","channel":"Griffin Wooldridge","duration_s":267.0,…,"has_chat":false,"is_live":false}`; progress 1% → 10% … 97% → 100%; `source.mp4 (41684638 bytes, 1920x1080, 266.8 s)`; ffprobe: vp9 1920x1080 + opus, 266.754 s; chat: "no chat replay for this video (has_chat=false); nothing written". A second run logs `download cached`.
+- **Link 2, past stream** `https://www.youtube.com/live/o0UeucVxYCA?si=…`, CLI exit 0: inspect `{"source_id":"o0UeucVxYCA","title":"I JUST MET WITH PRESIDENT OBAMA","channel":"IShowSpeed","duration_s":10300.0,"has_chat":false,"is_live":false}`; progress 0% → … → 100%; `source.mp4 (2992228637 bytes, 1920x1080, 10300.3 s)`; ffprobe vp9 + opus, 10300.299 s; chat cleanly absent. yt-dlp: `live_status=was_live`, `subtitles: []`; YouTube's watch page says "Live chat replay is not available for this video." So **chat replay was not tested** (open check 1).
+- **Link 3**: not provided. Stand-in (not the owner's link) `https://www.youtube.com/watch?v=zzzzzzzzzz0`: CLI `ERROR VIDEO_UNAVAILABLE: This video is unavailable (removed, deleted, or blocked).` exit 1. CLI `https://vimeo.com/123` → `ERROR UNSUPPORTED_HOST`, `https://www.youtube.com/@somechannel` → `ERROR INVALID_URL`.
+- **API** `POST /api/videos/inspect` (running backend) with links 1, 2 and the stand-in: HTTP 200, results `ok: true` (zsCGS-Yzjnw), `ok: true` (o0UeucVxYCA, `has_chat:false`), `ok:false` with code `VIDEO_UNAVAILABLE` after the fix (it was `DOWNLOAD_FAILED` before, see below). 4 links → HTTP 400 `TOO_MANY_VIDEOS`. `/api/system` `ytdlp_version: "2026.10.26"`.
+- Bugs found by the real runs and fixed: progress jumped (first event 50%, then went backwards) because HLS `total_bytes_estimate` swings 712 B → 72 MB, now uses fragment counts and never goes down (0c42d9c); "This video is unavailable" mapped to `DOWNLOAD_FAILED`, now `VIDEO_UNAVAILABLE` (ca6dc88). Both have regression tests.
+- Checks: pytest 114 passed; ruff/format/mypy strict clean. Doctor with a fake Node 20 → `[FAIL] Node.js v20.11.0`, exit 1; real Node 24 → OK, exit 0.
+
 ## Session log (newest first)
 | Date | Tool / model | What was done | Result |
 |---|---|---|---|
+| 2026-11-18 | Claude Code / Claude Opus 5.5 | M2 Done-when on owner links 1–2 + stand-in for 3; fixed progress jitter and "This video is unavailable" mapping; Node 22+ required (D-025); chat-downloader not added (AA-024) | Links 1–2 pass; chat replay untested (link 2 has none); link 3 missing; `m2` not tagged |
 | 2026-11-18 | Claude Code / Claude Opus 5.5 | Fixed and tested start commands (backend needs `--factory`). M2 code: URL allowlist, source adapter interface, YouTube adapter (yt-dlp 2026.10.26 + yt-dlp-ejs 0.8.0, Node runtime), error-code mapping, download/chat stages with caching and ffprobe check, fetch_source CLI, `/api/videos/inspect`, `/api/system/update-downloader`; doctor warns below Node 22; API types regenerated. Re-verified M0 claims (httpx2, FastAPI telemetry) in installed source | pytest 112 passed; ruff/format/mypy strict clean; frontend typecheck/format clean. Done-when pending real links |
 | 2026-11-17 | Claude Code / Claude Opus 5.5 | Python handling: doctor accepts 3.11–3.12, picks the backend interpreter (venv first, then py launcher/python3.x), fails clearly on a wrong-version venv or no supported Python, `--print-python` for start scripts. M1: config (DATA_DIR/LOG_LEVEL/FFMPEG_PATH), AppError + error shape, redacting rotating logs, subprocess helper, SQLite + Alembic (initial schema), settings repo + GET/PUT `/api/settings`, `/api/system`, LLM providers + in-memory session endpoints, regenerated API types | M1 Done-when passed (output above); assumptions AA-009…AA-016 |
 | 2026-11-17 | Claude Code / Claude Opus 5.5 | M0: moved KB to root; .gitignore, LICENSE, .env.example; `scripts/doctor.py`; FastAPI app factory + `/api/health` + tests (ruff, mypy strict, pytest); Next.js 16 shell with `/api` rewrite, `lib/api.ts`, generated `api-types.ts`, telemetry disabled | Done-when passed: doctor exit 0 with all OK; backend health 200 `{"status":"ok","version":"0.1.0"}`; same via :3000 proxy; page shows "Backend: ok (version 0.1.0)"; backend-down path shows an error message |
