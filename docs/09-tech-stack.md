@@ -15,7 +15,7 @@
 | Icons | lucide-react | |
 | Lint/format | ESLint + Prettier | |
 | Tests | Vitest for utils, Playwright smoke test (optional in M10) | |
-| Node | 20 LTS or newer | |
+| Node | 22 LTS or newer | Also yt-dlp's JavaScript runtime for YouTube downloads (D-025) |
 
 ## Backend
 | Need | Choice | Notes |

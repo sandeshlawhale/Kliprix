@@ -60,5 +60,5 @@ Kliprix/
 `docker-compose.yml` with two services (`backend`, `frontend`). Backend image installs ffmpeg. Volume `./data:/app/data`. Ports published as `127.0.0.1:8000:8000` and `127.0.0.1:3000:3000` (never `0.0.0.0` on the host). Docker is the *optional* path; `scripts/start.bat|sh` is the main path because Docker Desktop costs RAM on low-spec machines. Whisper/MediaPipe models are cached in `data/models` so they download once.
 
 ## Scripts
-- `scripts/doctor.py`: checks Python 3.11–3.12 and picks the backend interpreter (`--print-python`), Node ≥ 20, ffmpeg and ffprobe on PATH (and libass support), free disk space, RAM; prints fix hints.
+- `scripts/doctor.py`: checks Python 3.11–3.12 and picks the backend interpreter (`--print-python`), Node ≥ 22 (D-025), ffmpeg and ffprobe on PATH (and libass support), free disk space, RAM; prints fix hints.
 - `start.bat` / `start.sh`: run doctor, create the Python venv if missing, install backend and frontend deps if missing or lockfile changed, run DB migrations, start backend and frontend, open the browser, stop both on Ctrl+C.
