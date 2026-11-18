@@ -65,6 +65,7 @@ _TEXT_RULES: tuple[tuple[tuple[str, ...], ErrorCode, str], ...] = (
     (
         (
             "video unavailable",
+            "video is unavailable",
             "has been removed",
             "no longer available",
             "is not available",

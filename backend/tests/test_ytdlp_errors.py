@@ -38,6 +38,8 @@ def _wrapped(cause: Exception) -> DownloadError:
             ErrorCode.VIDEO_AGE_RESTRICTED,
         ),
         ("[youtube] abc: Video unavailable", ErrorCode.VIDEO_UNAVAILABLE),
+        # Exact text seen for a nonexistent id in the M2 run (2026-11-18).
+        ("[youtube] abc: This video is unavailable", ErrorCode.VIDEO_UNAVAILABLE),
         (
             "[youtube] abc: Video unavailable. This video has been removed by the uploader",
             ErrorCode.VIDEO_UNAVAILABLE,
