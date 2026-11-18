@@ -1,0 +1,24 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Title,Anton,88,&H00FFFFFF,&H000AD6FF,&H00000000,&H66000000,0,0,0,0,100,100,0,0,1,6,3,5,0,0,0,1
+Style: Caption,Montserrat ExtraBold,72,&H00FFFFFF,&H000AD6FF,&H00000000,&H66000000,0,0,0,0,100,100,0,0,1,5,0,5,0,0,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 2,0:00:00.00,0:00:04.00,Title,,0,0,0,,{\an5\pos(540,150)\fs88\fad(250,0)}HE ACTUALLY HIT THAT SHOT
+Dialogue: 1,0:00:00.00,0:00:00.30,Caption,,0,0,0,,{\an5\pos(540,1700)}{\c&HFFFFFF&\3c&HEB6325&\bord14}No{\3c&H000000&\bord5} {\c&HFFFFFF&}way,
+Dialogue: 1,0:00:00.30,0:00:00.65,Caption,,0,0,0,,{\an5\pos(540,1700)}{\c&HFFFFFF&}No {\c&HFFFFFF&\3c&HEB6325&\bord14}way,{\3c&H000000&\bord5}
+Dialogue: 1,0:00:00.65,0:00:00.80,Caption,,0,0,0,,{\an5\pos(540,1700)}{\c&HFFFFFF&\3c&HEB6325&\bord14}he{\3c&H000000&\bord5} {\c&HFFFFFF&}actually {\c&HFFFFFF&}hit\N{\c&HFFFFFF&}that
+Dialogue: 1,0:00:00.80,0:00:01.20,Caption,,0,0,0,,{\an5\pos(540,1700)}{\c&HFFFFFF&}he {\c&HFFFFFF&\3c&HEB6325&\bord14}actually{\3c&H000000&\bord5} {\c&HFFFFFF&}hit\N{\c&HFFFFFF&}that
+Dialogue: 1,0:00:01.20,0:00:01.40,Caption,,0,0,0,,{\an5\pos(540,1700)}{\c&HFFFFFF&}he {\c&HFFFFFF&}actually {\c&HFFFFFF&\3c&HEB6325&\bord14}hit{\3c&H000000&\bord5}\N{\c&HFFFFFF&}that
+Dialogue: 1,0:00:01.40,0:00:02.00,Caption,,0,0,0,,{\an5\pos(540,1700)}{\c&HFFFFFF&}he {\c&HFFFFFF&}actually {\c&HFFFFFF&}hit\N{\c&HFFFFFF&\3c&HEB6325&\bord14}that{\3c&H000000&\bord5}
+Dialogue: 1,0:00:02.50,0:00:03.00,Caption,,0,0,0,,{\an5\pos(540,1700)}{\c&HFFFFFF&\3c&HEB6325&\bord14}shot!{\3c&H000000&\bord5}
+Dialogue: 1,0:00:03.00,0:00:03.70,Caption,,0,0,0,,{\an5\pos(540,1700)}{\c&HFFFFFF&\3c&HEB6325&\bord14}{\fnNoto Sans Devanagari}क्या{\fnMontserrat ExtraBold}{\3c&H000000&\bord5}

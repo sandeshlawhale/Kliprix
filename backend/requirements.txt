@@ -1,5 +1,6 @@
 # Runtime dependencies, fully pinned (direct + transitive). Python 3.12.
-# Direct: fastapi, uvicorn[standard], sqlalchemy, alembic, psutil, yt-dlp, yt-dlp-ejs, librosa, faster-whisper, litellm
+# Direct: fastapi, uvicorn[standard], sqlalchemy, alembic, psutil, yt-dlp, yt-dlp-ejs, librosa, faster-whisper, litellm, mediapipe, opencv-contrib-python, fonttools
+absl-py==2.5.1
 aiohappyeyeballs==2.7.1
 aiohttp==3.14.5
 aiosignal==1.4.0
@@ -17,13 +18,16 @@ charset-normalizer==3.5.2
 click==8.5.1
 cloudpickle==3.1.3
 colorama==0.4.6 ; sys_platform == "win32"
+contourpy==1.4.0
 ctranslate2==4.9.0
+cycler==0.12.1
 decorator==5.3.1
 fastapi==0.163.1
 faster-whisper==1.2.1
 fastuuid==0.14.0
 filelock==4.2.12
 flatbuffers==25.12.19
+fonttools==4.68.0
 frozenlist==1.8.0
 fsspec==2026.9.0
 h11==0.16.0
@@ -43,12 +47,15 @@ jmespath==1.1.0
 joblib==1.6.0
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
+kiwisolver==1.5.1
 lazy-loader==0.6
 librosa==1.0.1
 litellm==1.110.0
 llvmlite==0.50.0
 Mako==1.4.3
 MarkupSafe==3.0.4
+matplotlib==3.11.2
+mediapipe==1.2.3
 msgpack==1.2.4
 multidict==7.2.1
 narwhals==2.29.0
@@ -56,8 +63,10 @@ numba==0.68.1
 numpy==2.5.5
 onnxruntime==1.32.0
 openai==3.55.0
+opencv-contrib-python==5.1.0.95
 opentelemetry-api==1.45.2
 packaging==26.3
+pillow==13.0.0
 platformdirs==4.14.7
 pooch==1.9.0
 propcache==0.5.4
@@ -67,6 +76,7 @@ pycparser==3.12
 pydantic==2.14.3
 pydantic_core==2.50.4
 pydantic-settings==2.16.3
+pyparsing==3.3.3
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.4
 PyYAML==6.0.3
@@ -79,6 +89,7 @@ scikit-learn==1.9.1
 scipy==1.18.1
 six==1.17.0
 sniffio==1.3.1
+sounddevice==0.5.6
 soundfile==0.14.0
 soxr==1.1.0
 SQLAlchemy==2.1.9

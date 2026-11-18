@@ -192,3 +192,9 @@ CLIP_EXTENDED_MAX_S = 90.0
 CLIP_MIN_GAP_S = 30.0
 # Clip times must stay within the candidate region widened by this much.
 CLIP_REGION_MARGIN_S = 30.0
+
+# Rendering (docs/05, 11): ffmpeg timeout = base + this many seconds per second of clip;
+# minimum free disk space before a render starts.
+RENDER_TIMEOUT_BASE_S = 300.0
+RENDER_TIMEOUT_PER_CLIP_S = 30.0
+RENDER_MIN_FREE_GB = 1.0

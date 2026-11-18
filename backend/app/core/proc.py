@@ -13,6 +13,7 @@ import threading
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ def run_command(
     args: Sequence[str],
     timeout_s: float,
     cancel: threading.Event | None = None,
+    cwd: Path | None = None,
 ) -> CommandResult:
     """Run `args` to completion and return its exit code and decoded output.
 
@@ -64,6 +66,7 @@ def run_command(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL,
+            cwd=cwd,
             text=True,
             encoding="utf-8",
             errors="replace",
