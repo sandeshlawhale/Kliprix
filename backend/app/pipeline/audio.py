@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import threading
 import wave
+from collections.abc import Callable
 from pathlib import Path
 
 import librosa
@@ -153,13 +154,18 @@ def chunk_features(samples: npt.NDArray[np.float32]) -> tuple[list[float], list[
 
 
 def audio_series(
-    wav: Path, duration_s: float, cancel: threading.Event | None = None
+    wav: Path,
+    duration_s: float,
+    cancel: threading.Event | None = None,
+    on_progress: Callable[[float], None] | None = None,
 ) -> list[float]:
-    """The per-second audio signal for `wav`, read chunk by chunk."""
+    """The per-second audio signal for `wav`, read chunk by chunk; `on_progress` gets the
+    fraction of the file analysed so far."""
     rms_all: list[float] = []
     flux_all: list[float] = []
     chunk_frames = AUDIO_CHUNK_S * AUDIO_SAMPLE_RATE
     with wave.open(str(wav), "rb") as reader:
+        total_frames = max(1, reader.getnframes())
         while True:
             if cancel is not None and cancel.is_set():
                 raise CommandCancelledError("audio analysis was cancelled")
@@ -174,6 +180,8 @@ def audio_series(
             rms, flux = chunk_features(samples)
             rms_all.extend(rms)
             flux_all.extend(flux)
+            if on_progress is not None:
+                on_progress(min(1.0, reader.tell() / total_frames))
     length = grid_length(duration_s)
     rms_arr = fit_length(np.asarray(rms_all), length)
     flux_arr = fit_length(np.asarray(flux_all), length)
@@ -188,6 +196,7 @@ def run_audio(
     ffmpeg_path: str | None,
     memory: MemoryInfo,
     cancel: threading.Event | None = None,
+    on_progress: Callable[[float], None] | None = None,
 ) -> SignalFile:
     """Write `audio.wav` and `signals/audio.json` (each skipped when a valid copy exists)."""
     wav = ensure_audio_wav(
@@ -196,4 +205,4 @@ def run_audio(
     cached = load_signal(video_dir, "audio", duration_s)
     if cached is not None:
         return cached
-    return save_signal(video_dir, "audio", audio_series(wav, duration_s, cancel))
+    return save_signal(video_dir, "audio", audio_series(wav, duration_s, cancel, on_progress))

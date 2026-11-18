@@ -4,6 +4,7 @@ grayscale frames sampled at 1 fps and 160 px wide, streamed from ffmpeg (docs/04
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -36,8 +37,10 @@ def motion_series(
     ffmpeg_path: str | None,
     memory: MemoryInfo,
     cancel: threading.Event | None = None,
+    on_progress: Callable[[float], None] | None = None,
 ) -> list[float]:
     """Per-second motion values; only two frames are held in memory at a time.
+    `on_progress` gets the fraction of the expected frames read so far.
 
     Raises:
         AppError: FFMPEG_MISSING.
@@ -55,6 +58,7 @@ def motion_series(
     ]  # fmt: skip
     timeout = SIGNAL_TIMEOUT_BASE_S + duration_s * SIGNAL_TIMEOUT_PER_VIDEO_S
     values: list[float] = []
+    expected = grid_length(duration_s)
     previous: npt.NDArray[np.int16] | None = None
     with StreamingCommand(args, timeout, cancel) as command:
         while True:
@@ -64,6 +68,8 @@ def motion_series(
             frame = np.frombuffer(raw, dtype=np.uint8).astype(np.int16)
             values.append(0.0 if previous is None else float(np.mean(np.abs(frame - previous))))
             previous = frame
+            if on_progress is not None:
+                on_progress(min(1.0, len(values) / expected))
     return [float(v) for v in fit_length(np.asarray(values), grid_length(duration_s))]
 
 
@@ -76,6 +82,7 @@ def run_motion(
     ffmpeg_path: str | None,
     memory: MemoryInfo,
     cancel: threading.Event | None = None,
+    on_progress: Callable[[float], None] | None = None,
 ) -> SignalFile:
     """Write `signals/motion.json` (skipped when a valid copy exists)."""
     cached = load_signal(video_dir, "motion", duration_s)
@@ -83,6 +90,6 @@ def run_motion(
         return cached
     values = motion_series(
         video_dir, duration_s, width, height,
-        ffmpeg_path=ffmpeg_path, memory=memory, cancel=cancel,
+        ffmpeg_path=ffmpeg_path, memory=memory, cancel=cancel, on_progress=on_progress,
     )  # fmt: skip
     return save_signal(video_dir, "motion", values)

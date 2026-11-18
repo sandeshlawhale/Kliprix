@@ -123,3 +123,18 @@ def test_streaming_command_stdin_pipe() -> None:
 def test_streaming_command_missing_program(tmp_path: Path) -> None:
     with pytest.raises(CommandNotFoundError):
         StreamingCommand([str(tmp_path / "nope.exe")], 5)
+
+
+@needs_ffmpeg
+def test_motion_and_audio_report_progress(video_dir: Path, tmp_path: Path) -> None:
+    from app.pipeline.audio import audio_series
+    from app.pipeline.motion import motion_series
+
+    seen: list[float] = []
+    motion_series(video_dir, DURATION, 320, 180, ffmpeg_path=None, memory=MEMORY,
+                  on_progress=seen.append)  # fmt: skip
+    assert seen == sorted(seen)
+    assert seen[-1] == 1.0
+    audio_seen: list[float] = []
+    audio_series(video_dir / AUDIO_FILE_NAME, DURATION, on_progress=audio_seen.append)
+    assert audio_seen[-1] == 1.0

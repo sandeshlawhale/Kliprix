@@ -48,6 +48,8 @@ PROGRESS_AT = {
     "clips": 1.0,
 }
 _STAGES = list(PROGRESS_AT)
+# Smallest change of the video's progress (0-1) worth saving and sending to the UI.
+PROGRESS_STEP = 0.005
 
 
 class VideoPipeline:
@@ -55,6 +57,7 @@ class VideoPipeline:
         self.ctx = ctx
         self.video_id = video_id
         self.cancel = cancel
+        self._last_progress = -1.0
 
     # ----- state updates (each in its own short transaction) -----
 
@@ -80,8 +83,12 @@ class VideoPipeline:
     def _fraction(self, stage: str, fraction: float) -> None:
         index = _STAGES.index(stage)
         start = PROGRESS_AT[_STAGES[index - 1]] if index > 0 else 0.0
-        value = start + (PROGRESS_AT[stage] - start) * max(0.0, min(1.0, fraction))
-        self._update(progress=round(value, 4))
+        value = round(start + (PROGRESS_AT[stage] - start) * max(0.0, min(1.0, fraction)), 4)
+        # Frame-level callbacks are frequent; write (and publish) only visible changes.
+        if abs(value - self._last_progress) < PROGRESS_STEP and fraction < 1.0:
+            return
+        self._last_progress = value
+        self._update(progress=value)
 
     # ----- the job -----
 
@@ -127,13 +134,15 @@ class VideoPipeline:
         self._stage("audio")
         with stage_timer("audio", video=self.video_id):
             signals["audio"] = run_audio(
-                video_dir, duration, ffmpeg_path=ffmpeg, memory=memory, cancel=self.cancel
-            )
+                video_dir, duration, ffmpeg_path=ffmpeg, memory=memory, cancel=self.cancel,
+                on_progress=lambda f: self._fraction("audio", f),
+            )  # fmt: skip
         self._stage("motion")
         with stage_timer("motion", video=self.video_id):
             signals["motion"] = run_motion(
                 video_dir, duration, info.width, info.height,
                 ffmpeg_path=ffmpeg, memory=memory, cancel=self.cancel,
+                on_progress=lambda f: self._fraction("motion", f),
             )  # fmt: skip
         if chat is not None:
             signals["chat"] = run_chat_signal(video_dir, chat.items, duration)

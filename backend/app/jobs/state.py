@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.db.models import ClipRow, VideoRow
+from app.jobs.video_pipeline import PROGRESS_AT
 from app.pipeline.candidates import CANDIDATES_FILE_NAME
 from app.pipeline.chat import CHAT_FILE_NAME
 from app.pipeline.download import INFO_FILE_NAME
@@ -39,6 +40,13 @@ STAGE_TO_CHECKPOINT = {
     "clips": "select",
 }
 _ORDER = [key for key, _ in CHECKPOINTS]
+# The part of the video's progress bar (see video_pipeline.PROGRESS_AT) each measured step
+# covers: download = inspect + download, signals = audio + motion, transcribe.
+MEASURED_STEPS: dict[str, tuple[float, float]] = {
+    "download": (0.0, PROGRESS_AT["download"]),
+    "signals": (PROGRESS_AT["chat"], PROGRESS_AT["motion"]),
+    "transcribe": (PROGRESS_AT["candidates"], PROGRESS_AT["transcribe"]),
+}
 
 
 @dataclass(frozen=True)
@@ -107,12 +115,24 @@ def checkpoints(
         elif video.status == "failed" and current == key:
             result.append(CheckpointState(key, label, "failed", video.error_message))
         elif video.status == "running" and current == key:
-            result.append(CheckpointState(key, label, "running"))
+            result.append(CheckpointState(key, label, "running", _step_percent(key, video)))
         elif passed:
             result.append(CheckpointState(key, label, "done"))
         else:
             result.append(CheckpointState(key, label, "pending"))
     return result
+
+
+def _step_percent(key: str, video: VideoRow) -> str | None:
+    """How far the running step is, e.g. "42%", from the video's measured progress. Only
+    for steps whose work is measured (download bytes, audio/motion frames, transcribed
+    seconds); the others report no number rather than a made-up one."""
+    span = MEASURED_STEPS.get(key)
+    if span is None:
+        return None
+    low, high = span
+    fraction = (video.progress - low) / (high - low)
+    return f"{round(max(0.0, min(1.0, fraction)) * 100)}%"
 
 
 def _edit_checkpoint(video: VideoRow, clips: Sequence[ClipRow]) -> CheckpointState:

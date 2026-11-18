@@ -3,6 +3,9 @@ import { Check, Circle, Loader2, Minus, X } from "lucide-react";
 import type { Checkpoint } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+// Transcription is the longest step on most PCs (several minutes for a 15-minute video).
+const SLOW_STEP_NOTE = "slowest step, please wait patiently";
+
 /** The muted 7-step list under each video (docs/03, D-024). States come from the backend;
  * nothing ticks on a timer. */
 export function CheckpointList({ checkpoints }: { checkpoints: Checkpoint[] }) {
@@ -22,6 +25,13 @@ export function CheckpointList({ checkpoints }: { checkpoints: Checkpoint[] }) {
               {step.label}
               {step.key === "edit" && step.detail ? ` ${step.detail}` : ""}
             </span>
+            {step.state === "running" && step.key !== "edit" && step.detail && (
+              <span className="font-mono text-xs tabular-nums">{step.detail}</span>
+            )}
+            {step.key === "transcribe" &&
+              (step.state === "pending" || step.state === "running") && (
+                <span className="text-xs">({SLOW_STEP_NOTE})</span>
+              )}
             {step.state === "skipped" && step.detail && (
               <span className="text-xs">({step.detail})</span>
             )}
