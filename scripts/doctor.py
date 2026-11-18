@@ -30,6 +30,8 @@ from pathlib import Path
 # (faster-whisper/ctranslate2, MediaPipe) ship wheels for these versions first (AA-002, AA-009).
 SUPPORTED_PYTHON = ((3, 11), (3, 12))
 MIN_NODE_MAJOR = 20
+# yt-dlp solves YouTube's player challenges with Node only from this major version (AA-017).
+YTDLP_MIN_NODE_MAJOR = 22
 MIN_RAM_GB = 4.0
 LOW_FREE_RAM_GB = 1.5
 MIN_FREE_DISK_GB = 5.0
@@ -238,8 +240,16 @@ def check_node() -> Check:
         return Check("Node.js", FAIL, f"could not read version from {node}", "Reinstall Node.js.")
     major = int(match.group(1))
     detail = f"{(output or '').strip()} ({node})"
-    if major >= MIN_NODE_MAJOR:
+    if major >= YTDLP_MIN_NODE_MAJOR:
         return Check("Node.js", OK, detail)
+    if major >= MIN_NODE_MAJOR:
+        return Check(
+            "Node.js",
+            WARN,
+            detail,
+            f"YouTube downloads need Node.js {YTDLP_MIN_NODE_MAJOR} or newer (yt-dlp); "
+            "upgrade from https://nodejs.org/",
+        )
     return Check(
         "Node.js",
         FAIL,
