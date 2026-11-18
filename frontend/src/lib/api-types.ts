@@ -44,6 +44,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system/update-downloader": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Update Downloader
+         * @description Upgrade yt-dlp and its YouTube scripts with pip in the backend's own environment.
+         *
+         *     The running backend keeps using the already imported yt-dlp until it restarts (AA-021).
+         *
+         *     Errors: DOWNLOAD_FAILED when pip fails or times out.
+         */
+        post: operations["update_downloader_api_system_update_downloader_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings": {
         parameters: {
             query?: never;
@@ -121,10 +145,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/videos/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inspect Videos
+         * @description Metadata for 1-3 links without downloading. Each link succeeds or fails on its own.
+         *
+         *     Errors: TOO_MANY_VIDEOS for more than 3 links. Per link: INVALID_URL,
+         *     UNSUPPORTED_HOST, VIDEO_*, GEO_BLOCKED, DOWNLOAD_FAILED, DOWNLOADER_OUTDATED.
+         */
+        post: operations["inspect_videos_api_videos_inspect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * DownloaderUpdate
+         * @description Installed yt-dlp version before and after the upgrade.
+         */
+        DownloaderUpdate: {
+            /** Before */
+            before: string | null;
+            /** After */
+            after: string | null;
+        };
         /** ErrorBody */
         ErrorBody: {
             code: components["schemas"]["ErrorCode"];
@@ -168,6 +225,28 @@ export interface components {
             status: "ok";
             /** Version */
             version: string;
+        };
+        /** InspectRequest */
+        InspectRequest: {
+            /** Urls */
+            urls: string[];
+        };
+        /** InspectResponse */
+        InspectResponse: {
+            /** Results */
+            results: components["schemas"]["InspectResult"][];
+        };
+        /**
+         * InspectResult
+         * @description One link: `video` when `ok`, else `error` with a documented code.
+         */
+        InspectResult: {
+            /** Url */
+            url: string;
+            /** Ok */
+            ok: boolean;
+            video?: components["schemas"]["VideoMeta"] | null;
+            error?: components["schemas"]["ErrorBody"] | null;
         };
         /** ProviderInfo */
         ProviderInfo: {
@@ -332,6 +411,28 @@ export interface components {
             /** Ytdlp Version */
             ytdlp_version: string | null;
         };
+        /**
+         * VideoMeta
+         * @description What `inspect` learns about a video without downloading it (docs/07 `video`).
+         */
+        VideoMeta: {
+            /** Platform */
+            platform: string;
+            /** Source Id */
+            source_id: string;
+            /** Title */
+            title: string;
+            /** Channel */
+            channel: string | null;
+            /** Duration S */
+            duration_s: number;
+            /** Thumbnail Url */
+            thumbnail_url: string | null;
+            /** Has Chat */
+            has_chat: boolean;
+            /** Is Live */
+            is_live: boolean;
+        };
     };
     responses: never;
     parameters: never;
@@ -386,6 +487,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_downloader_api_system_update_downloader_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloaderUpdate"];
                 };
             };
             /** @description Error */
@@ -567,6 +697,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    inspect_videos_api_videos_inspect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InspectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InspectResponse"];
+                };
             };
             /** @description Error */
             default: {
