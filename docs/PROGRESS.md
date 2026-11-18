@@ -3,15 +3,15 @@
 Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must update it before stopping, even if it is out of tokens soon. Keep it short and factual. Never claim something is done unless you ran its check.
 
 ## Current state
-- **Current milestone:** M2 (code done; "Done when" partly passed, 2 checks open, NOT tagged)
-- **Status:** M1 done and verified (tag `m1`); M0 tag `m0`; `m2` not tagged until the open checks pass
+- **Current milestone:** M3 (not started; wait for the owner's go-ahead)
+- **Status:** M2 done and verified (tag `m2`); M1 tag `m1`; M0 tag `m0`
 - **Last session:** 2026-11-18, Claude Code (Claude Opus 5.5)
 - **Last commit:** see `git log -1`
 
 ## Milestone checklist
 - [x] M0 Repo scaffold
 - [x] M1 Backend foundation
-- [ ] M2 Sources (inspect, download, chat)
+- [x] M2 Sources (inspect, download, chat)
 - [ ] M3 Signals and candidates
 - [ ] M4 Transcription and Hinglish
 - [ ] M5 LLM layer and selection
@@ -22,19 +22,19 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 - [ ] M10 Storage, README, scripts, Docker, tests
 
 ## In progress (exact next step)
-Finish the M2 "Done when", then tag `m2` and stop before M3. Two checks are open:
-1. **Chat fetched for a stream with replay.** The owner's link 2 has no replay on YouTube's side (see AA-024), so this path is untested on real data. Needs a past stream whose page shows "Show chat replay". Run `cd backend; .\.venv\Scripts\python.exe -m app.cli.fetch_source <url> --out <temp dir>` and check the `chat: N messages` line and `chat.json`; if it fails, revisit the chat-downloader decision (AA-024).
-2. **Owner's private/deleted link (link 3).** It was empty in the owner's message. A stand-in nonexistent id already maps to `VIDEO_UNAVAILABLE`; a private link should give `VIDEO_PRIVATE`.
-Built in M2: `app/sources/` (allowlist `urls.py`, interface `base.py`, `registry.py`, `youtube.py` on the yt-dlp Python API, `ytdlp_errors.py`, `youtube_chat.py`), `app/pipeline/download.py` + `chat.py`, `app/cli/fetch_source.py`, `POST /api/videos/inspect`, `POST /api/system/update-downloader`. Assumptions AA-017…AA-024, decision D-025 (Node 22+).
+Nothing in progress. **Do not start M3 until the owner says so.** When they do: read docs 04 and 08, then build M3 (signals and candidates) as a CLI script that runs on a downloaded file; a real 1 h 41 min stream with chat is already in `data/work/cli-VnQ4VcAqauk/` (`source.mp4`, `chat.json`, 178 messages) and can be used for the M3 check if it still exists.
+M2 built: `app/sources/` (allowlist `urls.py`, interface `base.py`, `registry.py`, `youtube.py` on the yt-dlp Python API, `ytdlp_errors.py`, `youtube_chat.py`), `app/pipeline/download.py` + `chat.py`, `app/cli/fetch_source.py`, `POST /api/videos/inspect`, `POST /api/system/update-downloader`. Assumptions AA-017…AA-024, decisions D-025 (Node 22+) and D-026 (prefer H.264).
 
 ## Done but unverified
-- Chat replay fetch + parsing on a real stream with a replay (parser is tested on hand-written lines in yt-dlp's format only).
+- `VIDEO_PRIVATE` on a real private video: the owner's "private" link (`aaaaaaaaaaa`) is answered by YouTube with "This video is unavailable", so it maps to `VIDEO_UNAVAILABLE`. The private mapping is covered by a unit test with YouTube's "Private video" reason only.
+- Leftover part cleanup (`remove_leftover_parts`) is unit-tested; a real run where yt-dlp leaves a part behind has not happened again since the fix.
 - `POST /api/system/update-downloader` was only tested with pip mocked (a real run would change the installed yt-dlp version).
 - `scripts/doctor.py` was only tested on Windows (no macOS/Linux machine available).
 
 ## Known problems / blockers
 - None.
 - Node 22+ is required (D-025); doctor FAILs below 22.
+- `DATA_DIR` inside a OneDrive folder: OneDrive/antivirus can briefly lock big files (seen once: yt-dlp could not delete a 2.9 GB part file). The download now retries the cleanup; the M10 README should advise a `DATA_DIR` outside synced folders.
 - No README yet (M10). Its requirements section must say Node 22+ (D-025) and "restart after Update downloader" (AA-021).
 - Notes: backend Python is limited to 3.11–3.12 (AA-009); this machine's default is 3.14, and the backend venv uses 3.12. Endpoints not built yet on purpose: `/api/llm/models` and `/api/llm/test` (M5), `/api/system/open-folder` (optional, AA-014).
 - Start scripts (`start.bat`/`start.sh`) don't exist yet (M10). They should get the interpreter from `python scripts/doctor.py --print-python`.
@@ -63,7 +63,14 @@ Built in M2: `app/sources/` (allowlist `urls.py`, interface `base.py`, `registry
 - OpenAPI: `npm run gen:api` wrote `src/lib/api-types.ts` with `/api/health, /api/system, /api/settings, /api/llm/providers, /api/llm/session`; frontend typecheck, lint, and format checks pass.
 - Smoke test: an API key PUT to `/api/llm/session` was found 0 times in the DATA_DIR files (db, logs); `PUT /api/settings` with blur 99 returned `422 VALIDATION_ERROR`.
 
-## M2 "Done when" output (2026-11-18, real runs)
+## M2 "Done when" output (2026-11-18, real runs), PASSED
+- **Stream with chat replay** `https://www.youtube.com/live/VnQ4VcAqauk?si=…`, CLI exit 0: inspect `{"source_id":"VnQ4VcAqauk","title":"Team Elektros vs P7 Esports & Assasin Crew vs Repotted Gaming","channel":"CarbonFin Gaming","duration_s":6076.0,"has_chat":true,"is_live":false}`; progress 0% → 10% … 90% → 100%; `source.mp4 (2948619678 bytes, 1920x1080, 6076.1 s)`; ffprobe: h264 1920x1080 60 fps + opus, 6076.054 s (H.264 thanks to D-026; it was AV1 before). `chat: 178 messages`; first `t=30.4 s`, last `t=6069.8 s` (video 6076.1 s); all sorted and inside the video; per 1000 s: 30, 21, 18, 49, 30, 27, 3. Samples: `:face-blue-wide-eyes::hand-pink-waving:`, `rpg first or later?`, `Bro u look like u slept for 30 mins`, `hello brother 👋👋👋`, `hi carbon its 4am here in the philippines hehe still watchin`.
+- **Owner's "private" link** `https://www.youtube.com/watch?v=aaaaaaaaaaa`: CLI `ERROR VIDEO_UNAVAILABLE: This video is unavailable (removed, deleted, or blocked).` exit 1 (yt-dlp: `[youtube] aaaaaaaaaaa: This video is unavailable`).
+- **API** `POST /api/videos/inspect` with both: HTTP 200; `ok: true` (VnQ4VcAqauk, `has_chat: true`), `ok: false` `VIDEO_UNAVAILABLE`.
+- Bugs found by this run and fixed (36ad571): yt-dlp left a 2.9 GB `source.f299.mp4` ("Unable to delete file", deletable a moment later) → download now removes leftover parts with retry; the CLI crashed printing an emoji chat line on the cp1252 console → prints UTF-8.
+- Final checks: pytest 118 passed; ruff/format/mypy strict clean; frontend lint/typecheck/format clean; doctor "Ready. 0 warning(s)".
+
+### Earlier M2 runs (same day)
 - **Link 1, public video** `https://youtu.be/zsCGS-Yzjnw?si=…`, CLI exit 0: `url: https://www.youtube.com/watch?v=zsCGS-Yzjnw`; inspect `{"platform":"youtube","source_id":"zsCGS-Yzjnw","title":"UI Libraries for Claude Code (Ban the AI Look)","channel":"Griffin Wooldridge","duration_s":267.0,…,"has_chat":false,"is_live":false}`; progress 1% → 10% … 97% → 100%; `source.mp4 (41684638 bytes, 1920x1080, 266.8 s)`; ffprobe: vp9 1920x1080 + opus, 266.754 s; chat: "no chat replay for this video (has_chat=false); nothing written". A second run logs `download cached`.
 - **Link 2, past stream** `https://www.youtube.com/live/o0UeucVxYCA?si=…`, CLI exit 0: inspect `{"source_id":"o0UeucVxYCA","title":"I JUST MET WITH PRESIDENT OBAMA","channel":"IShowSpeed","duration_s":10300.0,"has_chat":false,"is_live":false}`; progress 0% → … → 100%; `source.mp4 (2992228637 bytes, 1920x1080, 10300.3 s)`; ffprobe vp9 + opus, 10300.299 s; chat cleanly absent. yt-dlp: `live_status=was_live`, `subtitles: []`; YouTube's watch page says "Live chat replay is not available for this video." So **chat replay was not tested** (open check 1).
 - **Link 3**: not provided. Stand-in (not the owner's link) `https://www.youtube.com/watch?v=zzzzzzzzzz0`: CLI `ERROR VIDEO_UNAVAILABLE: This video is unavailable (removed, deleted, or blocked).` exit 1. CLI `https://vimeo.com/123` → `ERROR UNSUPPORTED_HOST`, `https://www.youtube.com/@somechannel` → `ERROR INVALID_URL`.
@@ -74,6 +81,7 @@ Built in M2: `app/sources/` (allowlist `urls.py`, interface `base.py`, `registry
 ## Session log (newest first)
 | Date | Tool / model | What was done | Result |
 |---|---|---|---|
+| 2026-11-18 | Claude Code / Claude Opus 5.5 | M2 finished: real stream with chat replay (178 messages), owner's "private" link, H.264 preference (D-026), leftover-part cleanup, UTF-8 CLI output; chat-downloader confirmed not needed (AA-024) | M2 Done-when passed; tagged `m2`; stopped before M3 |
 | 2026-11-18 | Claude Code / Claude Opus 5.5 | M2 Done-when on owner links 1–2 + stand-in for 3; fixed progress jitter and "This video is unavailable" mapping; Node 22+ required (D-025); chat-downloader not added (AA-024) | Links 1–2 pass; chat replay untested (link 2 has none); link 3 missing; `m2` not tagged |
 | 2026-11-18 | Claude Code / Claude Opus 5.5 | Fixed and tested start commands (backend needs `--factory`). M2 code: URL allowlist, source adapter interface, YouTube adapter (yt-dlp 2026.10.26 + yt-dlp-ejs 0.8.0, Node runtime), error-code mapping, download/chat stages with caching and ffprobe check, fetch_source CLI, `/api/videos/inspect`, `/api/system/update-downloader`; doctor warns below Node 22; API types regenerated. Re-verified M0 claims (httpx2, FastAPI telemetry) in installed source | pytest 112 passed; ruff/format/mypy strict clean; frontend typecheck/format clean. Done-when pending real links |
 | 2026-11-17 | Claude Code / Claude Opus 5.5 | Python handling: doctor accepts 3.11–3.12, picks the backend interpreter (venv first, then py launcher/python3.x), fails clearly on a wrong-version venv or no supported Python, `--print-python` for start scripts. M1: config (DATA_DIR/LOG_LEVEL/FFMPEG_PATH), AppError + error shape, redacting rotating logs, subprocess helper, SQLite + Alembic (initial schema), settings repo + GET/PUT `/api/settings`, `/api/system`, LLM providers + in-memory session endpoints, regenerated API types | M1 Done-when passed (output above); assumptions AA-009…AA-016 |
