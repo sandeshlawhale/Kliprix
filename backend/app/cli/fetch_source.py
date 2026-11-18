@@ -10,6 +10,7 @@ Default output folder: `DATA_DIR/work/cli-<source id>/`. Exit code 0 on success,
 from __future__ import annotations
 
 import argparse
+import io
 import sys
 from pathlib import Path
 
@@ -35,6 +36,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, help="output folder")
     parser.add_argument("--inspect-only", action="store_true")
     args = parser.parse_args(argv)
+    # Chat text holds emoji; the Windows console code page cannot print them otherwise.
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     config = load_config()
     ensure_data_dirs(config)

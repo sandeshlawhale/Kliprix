@@ -13,6 +13,7 @@ import re
 import shutil
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import SplitResult, parse_qs
@@ -26,6 +27,8 @@ from app.config import (
     DOWNLOAD_RESERVE_GB,
     DOWNLOAD_SIZE_FACTOR,
     DOWNLOAD_UNKNOWN_SIZE_MIN_FREE_GB,
+    LEFTOVER_DELETE_ATTEMPTS,
+    LEFTOVER_DELETE_WAIT_S,
     YTDLP_JS_RUNTIME,
     YTDLP_SOCKET_TIMEOUT_S,
     AppConfig,
@@ -50,6 +53,8 @@ _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 _ID_PATH_PREFIXES = ("shorts", "live", "embed", "v")
 _CHAT_SUBTITLE_KEY = "live_chat"
 _CHAT_FILE_GLOB = "*.live_chat.json"
+# Separate video/audio parts yt-dlp writes before merging, e.g. source.f299.mp4.
+_PART_FILE_GLOB = "source.f*"
 _CACHE_SUBDIR = Path("work") / "yt-dlp-cache"
 # A part still downloading is shown as at most this far done (it is complete only on "finished").
 PART_UNFINISHED_MAX = 0.99
@@ -171,6 +176,7 @@ class YoutubeAdapter:
         source = dest_dir / SOURCE_FILE_NAME
         if not source.is_file():
             raise AppError(ErrorCode.DOWNLOAD_FAILED, "The download finished without a video file.")
+        remove_leftover_parts(dest_dir)
         return source, meta
 
     def get_chat(
@@ -305,6 +311,26 @@ class _ProgressTracker:
         if fraction > self._reported:
             self._reported = fraction
             self._on_progress(fraction)
+
+
+def remove_leftover_parts(dest_dir: Path) -> None:
+    """Delete merged-away video/audio parts that yt-dlp could not remove itself.
+
+    Seen in the M2 run: a 2.9 GB `source.f299.mp4` stayed behind ("Unable to delete file")
+    and could be deleted a moment later. A part that stays locked is logged, not fatal.
+    """
+    for part in dest_dir.glob(_PART_FILE_GLOB):
+        for attempt in range(1, LEFTOVER_DELETE_ATTEMPTS + 1):
+            try:
+                part.unlink(missing_ok=True)
+                break
+            except OSError as exc:
+                if attempt == LEFTOVER_DELETE_ATTEMPTS:
+                    logger.warning(
+                        "could not delete leftover part file=%s error=%s", part.name, exc
+                    )
+                else:
+                    time.sleep(LEFTOVER_DELETE_WAIT_S)
 
 
 def _str_or_none(value: Any) -> str | None:

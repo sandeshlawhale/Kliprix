@@ -318,3 +318,25 @@ def test_format_choice_prefers_h264_at_same_resolution(
     with YoutubeDL(params) as ydl:
         result = ydl.process_video_result(info, download=False)
     assert result["requested_formats"][0]["format_id"] == expected
+
+
+def test_leftover_parts_are_removed_with_retry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    (tmp_path / "source.mp4").write_bytes(b"merged")
+    (tmp_path / "source.f299.mp4").write_bytes(b"video part")
+    (tmp_path / "source.f251.webm").write_bytes(b"audio part")
+    real_unlink = Path.unlink
+    calls: dict[str, int] = {}
+
+    def flaky_unlink(self: Path, missing_ok: bool = False) -> None:
+        calls[self.name] = calls.get(self.name, 0) + 1
+        if self.name == "source.f299.mp4" and calls[self.name] == 1:
+            raise PermissionError("in use by another process")
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", flaky_unlink)
+    monkeypatch.setattr(youtube, "LEFTOVER_DELETE_WAIT_S", 0.0)
+    youtube.remove_leftover_parts(tmp_path)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["source.mp4"]
+    assert calls["source.f299.mp4"] == 2

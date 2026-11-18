@@ -60,6 +60,10 @@ YTDLP_JS_RUNTIME = "node"
 DOWNLOAD_SIZE_FACTOR = 1.1
 DOWNLOAD_RESERVE_GB = 0.5
 DOWNLOAD_UNKNOWN_SIZE_MIN_FREE_GB = 2.0
+# yt-dlp sometimes cannot delete the separate video/audio parts after merging because another
+# program (OneDrive sync, antivirus) briefly holds them; we retry this often, this far apart.
+LEFTOVER_DELETE_ATTEMPTS = 5
+LEFTOVER_DELETE_WAIT_S = 1.0
 # `pip install --upgrade yt-dlp yt-dlp-ejs` for "Update downloader".
 DOWNLOADER_UPDATE_TIMEOUT_S = 300.0
 DOWNLOADER_PACKAGES = ("yt-dlp", "yt-dlp-ejs")
