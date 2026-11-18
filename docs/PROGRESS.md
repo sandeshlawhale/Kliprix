@@ -3,7 +3,7 @@
 Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must update it before stopping, even if it is out of tokens soon. Keep it short and factual. Never claim something is done unless you ran its check.
 
 ## Current state
-- **Current milestone:** M3 (not started; wait for the owner's go-ahead)
+- **Current milestone:** M3 (in progress; continuous run M3→M10, D-027)
 - **Status:** M2 done and verified (tag `m2`); M1 tag `m1`; M0 tag `m0`
 - **Last session:** 2026-11-18, Claude Code (Claude Opus 5.5)
 - **Last commit:** see `git log -1`
@@ -22,7 +22,7 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 - [ ] M10 Storage, README, scripts, Docker, tests
 
 ## In progress (exact next step)
-Nothing in progress. **Do not start M3 until the owner says so.** When they do: read docs 04 and 08, then build M3 (signals and candidates) as a CLI script that runs on a downloaded file; a real 1 h 41 min stream with chat is already in `data/work/cli-VnQ4VcAqauk/` (`source.mp4`, `chat.json`, 178 messages) and can be used for the M3 check if it still exists.
+M3 started (D-027: build M3→M10 without stopping; owner-only checks are listed below). Read docs 04 and 08, then build M3 (signals and candidates) as a CLI script that runs on a downloaded file; a real 1 h 41 min stream with chat is already in `data/work/cli-VnQ4VcAqauk/` (`source.mp4`, `chat.json`, 178 messages) and can be used for the M3 check if it still exists.
 M2 built: `app/sources/` (allowlist `urls.py`, interface `base.py`, `registry.py`, `youtube.py` on the yt-dlp Python API, `ytdlp_errors.py`, `youtube_chat.py`), `app/pipeline/download.py` + `chat.py`, `app/cli/fetch_source.py`, `POST /api/videos/inspect`, `POST /api/system/update-downloader`. Assumptions AA-017…AA-024, decisions D-025 (Node 22+) and D-026 (prefer H.264).
 
 ## Done but unverified
