@@ -3,10 +3,10 @@
 Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must update it before stopping, even if it is out of tokens soon. Keep it short and factual. Never claim something is done unless you ran its check.
 
 ## Current state
-- **Current milestone:** M2 (not started)
-- **Status:** M1 done and verified (tag `m1`); M0 tag `m0`
-- **Last session:** 2026-11-17, Claude Code (Claude Opus 5.5)
-- **Last commit:** see `git log -1` (docs(progress): M1 complete)
+- **Current milestone:** M2 (code done, "Done when" check pending: needs the owner's 3 test links)
+- **Status:** M1 done and verified (tag `m1`); M0 tag `m0`; M2 not tagged yet
+- **Last session:** 2026-11-18, Claude Code (Claude Opus 5.5)
+- **Last commit:** see `git log -1`
 
 ## Milestone checklist
 - [x] M0 Repo scaffold
@@ -22,15 +22,19 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 - [ ] M10 Storage, README, scripts, Docker, tests
 
 ## In progress (exact next step)
-Start M2: read docs 04 and 07. Add yt-dlp (pinned, logged under "Dependencies added"), then `app/sources/base.py` (adapter interface `inspect(url)`, `download(url, dir)`, `get_chat(url)`) and the URL allowlist using `SUPPORTED_HOSTS` from `app/config.py`. Use `app/core/proc.py` `run_command` for subprocesses and raise `AppError` codes from `app/core/errors.py`. Also implement `POST /api/system/update-downloader` (deferred to M2, AA-014). `ytdlp_version` in `/api/system` will start showing a value once yt-dlp is installed.
+M2 "Done when": run the CLI on the owner's three links (public video, past live stream with chat replay, private/deleted video) and paste the real output below; then decide on the `chat-downloader` fallback (AA-024), tag `m2`, and stop before M3.
+`cd backend; .\.venv\Scripts\python.exe -m app.cli.fetch_source <url>` (add `--inspect-only` to skip the download). Also `POST /api/videos/inspect` with all three links through the running backend.
+Built in M2: `app/sources/` (allowlist `urls.py`, interface `base.py`, `registry.py`, `youtube.py` on the yt-dlp Python API, `ytdlp_errors.py`, `youtube_chat.py`), `app/pipeline/download.py` + `chat.py`, `app/cli/fetch_source.py`, `POST /api/videos/inspect`, `POST /api/system/update-downloader`. Assumptions AA-017…AA-024.
 
 ## Done but unverified
-- Nothing. All M1 checks were run (output below).
+- M2 real-link checks (Done when) not run yet. Verified so far on one short public video (19 s): canonical URL, inspect metadata, download to `source.mp4` with progress to 100%, chat absent → None.
+- Chat replay parsing is tested on hand-written lines in yt-dlp's format, not yet on a real stream's file.
 - `scripts/doctor.py` was only tested on Windows (no macOS/Linux machine available).
 
 ## Known problems / blockers
 - None.
-- Notes: backend Python is limited to 3.11–3.12 (AA-009); this machine's default is 3.14, and the backend venv uses 3.12. Endpoints not built yet on purpose: `/api/llm/models` and `/api/llm/test` (M5), `/api/system/update-downloader` (M2), `/api/system/open-folder` (optional, AA-014).
+- YouTube downloads need Node 22+ (yt-dlp JS runtime, AA-017); doctor warns on Node 20–21.
+- Notes: backend Python is limited to 3.11–3.12 (AA-009); this machine's default is 3.14, and the backend venv uses 3.12. Endpoints not built yet on purpose: `/api/llm/models` and `/api/llm/test` (M5), `/api/system/open-folder` (optional, AA-014).
 - Start scripts (`start.bat`/`start.sh`) don't exist yet (M10). They should get the interpreter from `python scripts/doctor.py --print-python`.
 
 ## Commands that work (copy from real runs)
@@ -44,6 +48,8 @@ Start M2: read docs 04 and 07. Add yt-dlp (pinned, logged under "Dependencies ad
 - Migrations by hand: `cd backend && .venv/Scripts/alembic.exe upgrade head` (uses `DATA_DIR`); drift check: `.venv/Scripts/alembic.exe check`
 - New migration: `cd backend && DATA_DIR=<temp dir> .venv/Scripts/alembic.exe revision --autogenerate -m "..."`, then replace `app.db.models.UtcDateTime()` with `sa.DateTime()` in the generated file
 - Start frontend (second terminal, backend running): `cd frontend; npm install; npm run dev` → http://127.0.0.1:3000, proxies `/api/*` to `BACKEND_URL` (default http://127.0.0.1:8000). Tested 2026-11-17: `GET http://127.0.0.1:3000/api/health` → `{"status":"ok","version":"0.1.0"}`, `/` → 200.
+- Source stages for one link (dev CLI, AA-020): `cd backend; .\.venv\Scripts\python.exe -m app.cli.fetch_source <url> [--out DIR] [--inspect-only]`
+- Install/refresh backend deps after a pull: `cd backend; .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt`
 - Run backend tests/checks: `cd backend && .venv/Scripts/ruff.exe check . && .venv/Scripts/ruff.exe format --check . && .venv/Scripts/mypy.exe && .venv/Scripts/python.exe -m pytest`
 - Run frontend checks: `cd frontend && npm run lint && npm run format:check && npm run typecheck`
 - Regenerate API types (backend running): `cd frontend && npm run gen:api`
@@ -58,5 +64,6 @@ Start M2: read docs 04 and 07. Add yt-dlp (pinned, logged under "Dependencies ad
 ## Session log (newest first)
 | Date | Tool / model | What was done | Result |
 |---|---|---|---|
+| 2026-11-18 | Claude Code / Claude Opus 5.5 | Fixed and tested start commands (backend needs `--factory`). M2 code: URL allowlist, source adapter interface, YouTube adapter (yt-dlp 2026.10.26 + yt-dlp-ejs 0.8.0, Node runtime), error-code mapping, download/chat stages with caching and ffprobe check, fetch_source CLI, `/api/videos/inspect`, `/api/system/update-downloader`; doctor warns below Node 22; API types regenerated. Re-verified M0 claims (httpx2, FastAPI telemetry) in installed source | pytest 112 passed; ruff/format/mypy strict clean; frontend typecheck/format clean. Done-when pending real links |
 | 2026-11-17 | Claude Code / Claude Opus 5.5 | Python handling: doctor accepts 3.11–3.12, picks the backend interpreter (venv first, then py launcher/python3.x), fails clearly on a wrong-version venv or no supported Python, `--print-python` for start scripts. M1: config (DATA_DIR/LOG_LEVEL/FFMPEG_PATH), AppError + error shape, redacting rotating logs, subprocess helper, SQLite + Alembic (initial schema), settings repo + GET/PUT `/api/settings`, `/api/system`, LLM providers + in-memory session endpoints, regenerated API types | M1 Done-when passed (output above); assumptions AA-009…AA-016 |
 | 2026-11-17 | Claude Code / Claude Opus 5.5 | M0: moved KB to root; .gitignore, LICENSE, .env.example; `scripts/doctor.py`; FastAPI app factory + `/api/health` + tests (ruff, mypy strict, pytest); Next.js 16 shell with `/api` rewrite, `lib/api.ts`, generated `api-types.ts`, telemetry disabled | Done-when passed: doctor exit 0 with all OK; backend health 200 `{"status":"ok","version":"0.1.0"}`; same via :3000 proxy; page shows "Backend: ok (version 0.1.0)"; backend-down path shows an error message |
