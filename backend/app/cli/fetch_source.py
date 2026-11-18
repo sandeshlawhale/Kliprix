@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         source = out / "source.mp4"
         print(
             f"download: {source} ({source.stat().st_size} bytes, {info.width}x{info.height}, "
-            f"{info.probed_duration_s:.1f} s); {INFO_FILE_NAME} written"
+            f"{info.probed_duration_s:.1f} s); metadata in {INFO_FILE_NAME}"
         )
         chat = run_chat(adapter, url, out)
         if chat is None:

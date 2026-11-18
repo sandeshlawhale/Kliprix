@@ -50,6 +50,8 @@ _ID_PATH_PREFIXES = ("shorts", "live", "embed", "v")
 _CHAT_SUBTITLE_KEY = "live_chat"
 _CHAT_FILE_GLOB = "*.live_chat.json"
 _CACHE_SUBDIR = Path("work") / "yt-dlp-cache"
+# A part still downloading is shown as at most this far done (it is complete only on "finished").
+PART_UNFINISHED_MAX = 0.99
 
 
 class _YtdlpLog:
@@ -251,14 +253,33 @@ class YoutubeAdapter:
         )
 
 
+def _part_fraction(status: dict[str, Any]) -> float | None:
+    """How much of the current part is done, from the most reliable field available.
+
+    Fragmented (HLS/DASH) downloads report `total_bytes_estimate` that swings wildly
+    (measured on a real video: 712 B to 72 MB within one part), so fragment counts win,
+    then exact `total_bytes`, then the estimate as a last resort.
+    """
+    index, count = status.get("fragment_index"), status.get("fragment_count")
+    if isinstance(index, int) and isinstance(count, int) and count > 0:
+        return index / count
+    done = status.get("downloaded_bytes") or 0
+    total = status.get("total_bytes") or status.get("total_bytes_estimate")
+    return done / total if total else None
+
+
 class _ProgressTracker:
-    """Turns yt-dlp progress hooks into one 0-1 fraction across the video and audio parts."""
+    """Turns yt-dlp progress hooks into one 0-1 fraction across the video and audio parts.
+
+    Each part counts equally and the reported fraction never goes down.
+    """
 
     def __init__(self, cancel: threading.Event | None, on_progress: ProgressCallback | None):
         self.parts = 1
         self._cancel = cancel
         self._on_progress = on_progress
         self._finished: set[str] = set()
+        self._reported = 0.0
 
     def hook(self, status: dict[str, Any]) -> None:
         if self._cancel is not None and self._cancel.is_set():
@@ -270,14 +291,18 @@ class _ProgressTracker:
         if status.get("status") == "finished":
             self._finished.add(filename)
             current = 0.0
-        elif status.get("status") == "downloading":
-            done = status.get("downloaded_bytes") or 0
-            total = status.get("total_bytes") or status.get("total_bytes_estimate")
-            current = min(done / total, 1.0) if total else 0.0
+        elif status.get("status") == "downloading" and filename not in self._finished:
+            part = _part_fraction(status)
+            if part is None:
+                return
+            # Never let one part look complete before yt-dlp says "finished".
+            current = min(part, PART_UNFINISHED_MAX)
         else:
             return
-        fraction = (len(self._finished) + current) / max(self.parts, 1)
-        self._on_progress(min(fraction, 1.0))
+        fraction = min((len(self._finished) + current) / max(self.parts, 1), 1.0)
+        if fraction > self._reported:
+            self._reported = fraction
+            self._on_progress(fraction)
 
 
 def _str_or_none(value: Any) -> str | None:

@@ -188,6 +188,39 @@ def test_progress_covers_video_and_audio_parts() -> None:
     assert seen == [0.25, 0.5, 0.75, 1.0]
 
 
+def test_progress_on_fragmented_download_is_monotonic() -> None:
+    """Shape of the real hooks for an HLS video part + https audio part (M2 run)."""
+    seen: list[float] = []
+    tracker = youtube._ProgressTracker(None, seen.append)
+    tracker.parts = 2
+    v, a = "source.f616.mp4", "source.f251.webm"
+    events: list[dict[str, Any]] = [
+        # First event: estimate equals bytes so far; must not count as a finished part.
+        {"status": "downloading", "filename": v, "downloaded_bytes": 712,
+         "total_bytes_estimate": 712, "fragment_index": 0, "fragment_count": 55},
+        {"status": "downloading", "filename": v, "downloaded_bytes": 712,
+         "total_bytes_estimate": 78320.0, "fragment_index": 1, "fragment_count": 55},
+        {"status": "downloading", "filename": v, "downloaded_bytes": 1736,
+         "total_bytes_estimate": 19580.0, "fragment_index": 1, "fragment_count": 55},
+        {"status": "downloading", "filename": v, "downloaded_bytes": 9_000_000,
+         "total_bytes_estimate": 72_108_410.0, "fragment_index": 30, "fragment_count": 55},
+        {"status": "finished", "filename": v},
+        {"status": "downloading", "filename": a, "downloaded_bytes": 2_000_000,
+         "total_bytes": 4_469_727},
+        {"status": "downloading", "filename": a, "downloaded_bytes": 4_469_727,
+         "total_bytes": 4_469_727},
+        {"status": "finished", "filename": a},
+    ]  # fmt: skip
+    for event in events:
+        tracker.hook(event)
+    assert seen == sorted(seen)
+    assert seen[0] == pytest.approx(1 / 55 / 2)
+    assert seen[1] == pytest.approx(30 / 55 / 2)
+    assert seen[2] == 0.5
+    assert seen[-2] == pytest.approx(0.5 + 0.99 / 2)
+    assert seen[-1] == 1.0
+
+
 def test_cancel_stops_the_download() -> None:
     cancel = threading.Event()
     tracker = youtube._ProgressTracker(cancel, None)
