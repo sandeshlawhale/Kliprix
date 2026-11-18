@@ -2,20 +2,32 @@
 
 from __future__ import annotations
 
+import logging
 import platform
+import sys
 from typing import Literal
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.api.deps import ConfigDep
-from app.config import APP_VERSION, SUPPORTED_HOSTS
+from app.config import (
+    APP_VERSION,
+    DOWNLOADER_PACKAGES,
+    DOWNLOADER_UPDATE_TIMEOUT_S,
+    SUPPORTED_HOSTS,
+)
 from app.core import hardware
-from app.core.errors import ERROR_RESPONSES
+from app.core.errors import ERROR_RESPONSES, AppError, ErrorCode
+from app.core.proc import CommandError, run_command
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["system"], responses=ERROR_RESPONSES)
 
 GB_DECIMALS = 1
+# Characters of pip's stderr kept in the log when an update fails.
+PIP_LOG_TAIL = 2000
 
 
 class HealthResponse(BaseModel):
@@ -66,3 +78,50 @@ def get_system(config: ConfigDep) -> SystemInfo:
         disk_free_gb=round(hardware.disk_free_gb(config.data_dir), GB_DECIMALS),
         ytdlp_version=hardware.ytdlp_version(),
     )
+
+
+class DownloaderUpdate(BaseModel):
+    """Installed yt-dlp version before and after the upgrade."""
+
+    before: str | None
+    after: str | None
+
+
+@router.post("/system/update-downloader")
+def update_downloader() -> DownloaderUpdate:
+    """Upgrade yt-dlp and its YouTube scripts with pip in the backend's own environment.
+
+    The running backend keeps using the already imported yt-dlp until it restarts (AA-021).
+
+    Errors: DOWNLOAD_FAILED when pip fails or times out.
+    """
+    before = hardware.ytdlp_version()
+    args = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--upgrade",
+        "--disable-pip-version-check",
+        *DOWNLOADER_PACKAGES,
+    ]
+    try:
+        result = run_command(args, DOWNLOADER_UPDATE_TIMEOUT_S)
+    except CommandError as exc:
+        logger.warning("downloader update failed: %s", exc)
+        raise AppError(
+            ErrorCode.DOWNLOAD_FAILED, "Updating the downloader failed. See the log file."
+        ) from exc
+    if result.returncode != 0:
+        logger.warning(
+            "downloader update failed exit=%s stderr=%s",
+            result.returncode,
+            result.stderr[-PIP_LOG_TAIL:],
+        )
+        raise AppError(
+            ErrorCode.DOWNLOAD_FAILED,
+            "Updating the downloader failed. Check your internet connection and the log file.",
+        )
+    after = hardware.ytdlp_version()
+    logger.info("downloader updated before=%s after=%s", before, after)
+    return DownloaderUpdate(before=before, after=after)
