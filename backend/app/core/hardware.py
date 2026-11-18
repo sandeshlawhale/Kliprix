@@ -6,6 +6,7 @@ Tiers come from docs/11-constraints.md ("Hardware targets").
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 from dataclasses import dataclass
 from importlib import metadata
@@ -15,6 +16,7 @@ from typing import Literal
 import psutil
 
 from app.config import BYTES_PER_GB, PROBE_TIMEOUT_S
+from app.core.errors import AppError, ErrorCode
 from app.core.proc import CommandError, run_command
 
 logger = logging.getLogger(__name__)
@@ -29,6 +31,8 @@ RAM_TIER_TOLERANCE = 0.9
 LOW_FREE_RAM_GB = 1.5
 LARGE_MODEL_MIN_VRAM_GB = 8.0
 MIB_PER_GB = 1024
+# Below this much total RAM, ffmpeg gets at most half the CPU threads (docs/11).
+LOW_RAM_THREADS_GB = 6.0
 
 
 @dataclass(frozen=True)
@@ -134,3 +138,21 @@ def ytdlp_version() -> str | None:
         return metadata.version("yt-dlp")
     except metadata.PackageNotFoundError:
         return None
+
+
+def ffmpeg_thread_args(memory: MemoryInfo) -> list[str]:
+    """`-threads N` limited to half the CPUs on low-RAM machines, else no limit (docs/11)."""
+    if memory.total_gb >= LOW_RAM_THREADS_GB:
+        return []
+    return ["-threads", str(max(1, (os.cpu_count() or 2) // 2))]
+
+
+def require_ffmpeg(ffmpeg_path: str | None) -> str:
+    """The ffmpeg executable, or AppError FFMPEG_MISSING."""
+    path = find_ffmpeg(ffmpeg_path)
+    if path is None:
+        raise AppError(
+            ErrorCode.FFMPEG_MISSING,
+            "ffmpeg was not found. Install ffmpeg and run the system check again.",
+        )
+    return path
