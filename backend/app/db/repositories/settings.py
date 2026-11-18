@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.settings_schema import Settings, merge_stored
 from app.db.models import SettingRow
 
 
@@ -26,3 +27,8 @@ def save_many(session: Session, values: Mapping[str, Any]) -> None:
     """Insert or replace the given keys. The caller commits."""
     for key, value in values.items():
         session.merge(SettingRow(key=key, value_json=json.dumps(value)))
+
+
+def load_settings(session: Session) -> Settings:
+    """Stored settings over the defaults, validated."""
+    return Settings.model_validate(merge_stored(load_all(session)))

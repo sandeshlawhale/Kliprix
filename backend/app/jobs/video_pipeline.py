@@ -1,0 +1,231 @@
+"""The `video_pipeline` job: inspect → download → chat → audio → motion → candidates →
+transcribe → select → clips (docs/04). Each stage is skipped when its output is cached, so a
+restarted job resumes where it stopped. Progress comes from the work actually done.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import threading
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+from app.core.errors import AppError, ErrorCode
+from app.core.hardware import pick_whisper_model
+from app.core.metrics import stage_timer
+from app.core.settings_schema import Settings
+from app.db.models import VideoRow
+from app.db.repositories import batches as repo
+from app.db.repositories.settings import load_settings
+from app.jobs.context import JobContext
+from app.llm.client import LlmClient
+from app.llm.transliterate import transliterate_words
+from app.pipeline.audio import AUDIO_FILE_NAME, run_audio
+from app.pipeline.candidates import run_candidates
+from app.pipeline.chat import run_chat
+from app.pipeline.download import max_download_height, run_download
+from app.pipeline.hinglish import to_hinglish
+from app.pipeline.motion import run_motion
+from app.pipeline.select import VideoFacts, all_words, run_select, words_between
+from app.pipeline.signals import SignalFile, run_chat_signal
+from app.pipeline.transcribe import Word, plan_spans, run_transcribe
+from app.sources.registry import resolve
+
+logger = logging.getLogger(__name__)
+
+# Share of the video's progress bar for each stage (end of stage), from measured stage costs.
+PROGRESS_AT = {
+    "inspect": 0.01,
+    "download": 0.35,
+    "chat": 0.37,
+    "audio": 0.42,
+    "motion": 0.55,
+    "candidates": 0.56,
+    "transcribe": 0.92,
+    "select": 0.99,
+    "clips": 1.0,
+}
+_STAGES = list(PROGRESS_AT)
+
+
+class VideoPipeline:
+    def __init__(self, ctx: JobContext, video_id: str, cancel: threading.Event) -> None:
+        self.ctx = ctx
+        self.video_id = video_id
+        self.cancel = cancel
+
+    # ----- state updates (each in its own short transaction) -----
+
+    def _update(self, **fields: Any) -> VideoRow:
+        with self.ctx.session_factory() as session:
+            video = repo.get_video(session, self.video_id)
+            if video is None:
+                raise AppError(ErrorCode.NOT_FOUND, "The video was deleted.")
+            for key, value in fields.items():
+                setattr(video, key, value)
+            session.commit()
+            self.ctx.publish(
+                video.batch_id, "video", id=video.id, status=video.status,
+                stage=video.stage, progress=video.progress,
+            )  # fmt: skip
+            return video
+
+    def _stage(self, stage: str) -> None:
+        index = _STAGES.index(stage)
+        start = PROGRESS_AT[_STAGES[index - 1]] if index > 0 else 0.0
+        self._update(status="running", stage=stage, progress=round(start, 4))
+
+    def _fraction(self, stage: str, fraction: float) -> None:
+        index = _STAGES.index(stage)
+        start = PROGRESS_AT[_STAGES[index - 1]] if index > 0 else 0.0
+        value = start + (PROGRESS_AT[stage] - start) * max(0.0, min(1.0, fraction))
+        self._update(progress=round(value, 4))
+
+    # ----- the job -----
+
+    def run(self) -> None:
+        with self.ctx.session_factory() as session:
+            video = repo.get_video(session, self.video_id)
+            if video is None:
+                return
+            batch = repo.get_batch(session, video.batch_id)
+            style: dict[str, Any] = json.loads(batch.style_json) if batch else {}
+            settings = load_settings(session)
+            url = video.url
+        memory = self.ctx.memory()
+        ffmpeg = self.ctx.config.ffmpeg_path
+        video_dir = self.ctx.video_dir(self.video_id)
+
+        self._stage("inspect")
+        adapter, canonical = resolve(url, self.ctx.adapters)
+        meta = adapter.inspect(canonical)
+        self._update(
+            platform=meta.platform, source_id=meta.source_id, title=meta.title,
+            channel=meta.channel, duration_s=meta.duration_s, has_chat=int(meta.has_chat),
+            thumbnail_path=meta.thumbnail_url,
+        )  # fmt: skip
+
+        self._stage("download")
+        with stage_timer("download", video=self.video_id):
+            info = run_download(
+                adapter, canonical, video_dir, ffmpeg_path=ffmpeg,
+                max_height=max_download_height(memory), cancel=self.cancel,
+                on_progress=lambda f: self._fraction("download", f),
+            )  # fmt: skip
+        duration = info.probed_duration_s
+        self._update(source_path=self.ctx.relative(video_dir / "source.mp4"))
+
+        self._stage("chat")
+        chat = (
+            run_chat(adapter, canonical, video_dir, cancel=self.cancel) if meta.has_chat else None
+        )
+        self._update(has_chat=int(chat is not None))
+
+        signals: dict[str, SignalFile] = {}
+        self._stage("audio")
+        with stage_timer("audio", video=self.video_id):
+            signals["audio"] = run_audio(
+                video_dir, duration, ffmpeg_path=ffmpeg, memory=memory, cancel=self.cancel
+            )
+        self._stage("motion")
+        with stage_timer("motion", video=self.video_id):
+            signals["motion"] = run_motion(
+                video_dir, duration, info.width, info.height,
+                ffmpeg_path=ffmpeg, memory=memory, cancel=self.cancel,
+            )  # fmt: skip
+        if chat is not None:
+            signals["chat"] = run_chat_signal(video_dir, chat.items, duration)
+
+        self._stage("candidates")
+        candidates = run_candidates(video_dir, signals, duration)
+
+        self._stage("transcribe")
+        language = str(style.get("caption_language", "en"))
+        spans = plan_spans(
+            [(c.start, c.end) for c in candidates.items], duration, thorough=settings.thorough_mode
+        )
+        model = self._whisper_model(settings)
+        with stage_timer("transcribe", video=self.video_id, model=model):
+            transcript = run_transcribe(
+                video_dir, video_dir / AUDIO_FILE_NAME, spans,
+                caption_language="hinglish" if language == "hinglish" else "en",
+                runner_factory=self.ctx.whisper_factory(model, self.ctx.gpu_vram() is not None),
+                cancel=self.cancel, on_progress=lambda f: self._fraction("transcribe", f),
+            )  # fmt: skip
+
+        self._stage("select")
+        client = self._llm_client()
+        count = int(style.get("clips_per_video", 5))
+        extended = style.get("clip_length_mode") == "extended"
+        facts = VideoFacts(meta.title, meta.channel, duration)
+        selection = run_select(
+            video_dir, facts, candidates.items, transcript,
+            count=count, extended=extended, client=client,
+        )  # fmt: skip
+
+        self._stage("clips")
+        words = all_words(transcript)
+        with self.ctx.session_factory() as session:
+            video_row = repo.get_video(session, self.video_id)
+            if video_row is None:
+                return
+            if not repo.clips_of_video(session, self.video_id):
+                for index, chosen in enumerate(selection.clips):
+                    clip_words = [
+                        Word(text=w.text, start=round(max(0.0, w.start - chosen.start), 2),
+                             end=round(max(0.0, w.end - chosen.start), 2))
+                        for w in words_between(words, chosen.start, chosen.end)
+                    ]  # fmt: skip
+                    if language == "hinglish":
+                        clip_words = to_hinglish(
+                            clip_words, lambda texts: transliterate_words(client, texts)
+                        ).words
+                    self._create_clip(session, video_row, index, chosen, clip_words, style)
+            video_row.status = "done"
+            video_row.stage = "clips"
+            video_row.progress = 1.0
+            session.commit()
+            batch_id = video_row.batch_id
+        self.ctx.publish(batch_id, "video", id=self.video_id, status="done", stage="clips",
+                         progress=1.0)  # fmt: skip
+
+    def _create_clip(
+        self,
+        session: Session,
+        video: VideoRow,
+        index: int,
+        chosen: Any,
+        words: list[Word],
+        style: dict[str, Any],
+    ) -> None:
+        clip = repo.add_clip(
+            session,
+            video_id=video.id, batch_id=video.batch_id, idx=index, status="queued",
+            stage=None, progress=0.0, start_s=chosen.start, end_s=chosen.end,
+            title=chosen.title, youtube_title=chosen.youtube_title,
+            youtube_description=chosen.youtube_description,
+            hashtags_json=json.dumps(chosen.hashtags), linkedin_post=chosen.linkedin_post,
+            reason=chosen.reason, score=chosen.score,
+            caption_style=style.get("caption_style", "pop"),
+            caption_language=style.get("caption_language", "en"),
+            crop_mode=style.get("crop_mode", "auto"), blur=int(style.get("blur", 30)),
+            words_json=json.dumps([w.model_dump() for w in words]), edited=0,
+        )  # fmt: skip
+        repo.add_job(session, "clip_render", clip.id, repo.PRIORITY_BACKGROUND)
+
+    def _whisper_model(self, settings: Settings) -> str:
+        if settings.whisper_model != "auto":
+            return settings.whisper_model
+        return pick_whisper_model(self.ctx.memory(), self.ctx.gpu_vram())
+
+    def _llm_client(self) -> LlmClient:
+        session = self.ctx.llm.get()
+        if session is None:
+            raise AppError(
+                ErrorCode.LLM_NOT_CONFIGURED,
+                "The AI model is not configured (the backend restarted). Open Configure API, "
+                "then retry this video.",
+            )
+        return LlmClient(session, completion=self.ctx.completion)
