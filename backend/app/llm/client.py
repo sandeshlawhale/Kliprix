@@ -243,4 +243,26 @@ def _app_error(code: ErrorCode, exc: BaseException, api_key: str) -> AppError:
     # this call's key masked (the key may not be the stored session's, e.g. the "Test"
     # button), and the API gets our own fixed message.
     logger.error("llm call failed: %s: %s", _name(exc), redact(str(exc), (api_key,)))
-    return AppError(code, _MESSAGES[code], {"provider_error": _name(exc)})
+    return AppError(code, _message_for(code, exc), {"provider_error": _name(exc)})
+
+
+# Clearer texts for common provider answers; the error code stays the documented one.
+_NOT_FOUND_MESSAGE = (
+    "This model is not available for your API key (it may be retired or not open to new "
+    "users). Pick another model; Load models shows the ones your key can use."
+)
+_BUSY_MESSAGE = (
+    "The AI model is busy or not answering right now (the provider reported high demand or "
+    "a server error). Try again in a minute, or pick another model."
+)
+_BUSY_NAMES = {"ServiceUnavailableError", "InternalServerError", "BadGatewayError", "Timeout"}
+
+
+def _message_for(code: ErrorCode, exc: BaseException) -> str:
+    if code == ErrorCode.LLM_BAD_RESPONSE:
+        names = _names(exc)
+        if "NotFoundError" in names:
+            return _NOT_FOUND_MESSAGE
+        if names & _BUSY_NAMES:
+            return _BUSY_MESSAGE
+    return _MESSAGES[code]

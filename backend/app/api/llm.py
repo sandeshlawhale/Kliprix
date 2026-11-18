@@ -142,7 +142,8 @@ def post_test(body: SessionRequest, request: Request) -> TestResponse:
     Errors: LLM_AUTH_FAILED, LLM_RATE_LIMITED, LLM_BAD_RESPONSE.
     """
     session = _session_from(body.provider, body.model, body.api_key, body.base_url)
-    client = LlmClient(session, completion=request.app.state.llm_completion)
+    # One attempt, no backoff: the button should answer quickly, not wait ~25 s of retries.
+    client = LlmClient(session, completion=request.app.state.llm_completion, backoff_s=())
     started = time.monotonic()
     client.ping()
     return TestResponse(ok=True, latency_ms=round((time.monotonic() - started) * 1000))

@@ -116,3 +116,25 @@ def test_test_endpoint_errors_never_leak_key(
     log = (config.logs_dir / "app.log").read_text("utf-8")
     assert KEY not in log
     assert "llm call failed" in log
+
+
+def test_test_endpoint_explains_retired_and_busy_models(client: TestClient) -> None:
+    calls: list[int] = []
+
+    def busy(**_: Any) -> Any:
+        calls.append(1)
+        raise litellm.exceptions.ServiceUnavailableError("high demand", "gemini", "m")
+
+    client.app.state.llm_completion = busy  # type: ignore[attr-defined]
+    body = {"provider": "gemini", "model": "m", "api_key": KEY}
+    response = client.post("/api/llm/test", json=body)
+    assert response.json()["error"]["code"] == "LLM_BAD_RESPONSE"
+    assert "busy" in response.json()["error"]["message"]
+    assert len(calls) == 1  # the Test button does not retry
+
+    def retired(**_: Any) -> Any:
+        raise litellm.exceptions.NotFoundError("no longer available", "gemini", "m")
+
+    client.app.state.llm_completion = retired  # type: ignore[attr-defined]
+    message = client.post("/api/llm/test", json=body).json()["error"]["message"]
+    assert "not available for your API key" in message
