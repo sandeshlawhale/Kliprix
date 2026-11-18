@@ -124,15 +124,18 @@ def _clean_work(ctx: JobContext, clips: list[ClipRow]) -> int:
 def cleanup(body: CleanupRequest, db: DbDep, ctx: CtxDep) -> CleanupResult:
     """Free space. `source_videos`: downloaded videos of finished batches; `previews`;
     `work` (cut/crop files; trimming beyond the clip then needs the source); `batch`: all
-    three for one batch. Running work is never touched.
+    three for one batch. `source_videos` with `batch_id` limits it to that batch (the "Ask"
+    retention dialog). Running work is never touched.
 
     Errors: VALIDATION_ERROR (batch scope without batch_id), NOT_FOUND.
     """
-    if body.scope == "batch":
+    if body.batch_id and repo.get_batch(db, body.batch_id) is None:
+        raise AppError(ErrorCode.NOT_FOUND, "This batch does not exist.")
+    if body.scope == "source_videos" and body.batch_id:
+        freed = _clean_sources(db, ctx, repo.videos_of(db, body.batch_id))
+    elif body.scope == "batch":
         if not body.batch_id:
             raise AppError(ErrorCode.VALIDATION_ERROR, "Choose the batch to clean up.")
-        if repo.get_batch(db, body.batch_id) is None:
-            raise AppError(ErrorCode.NOT_FOUND, "This batch does not exist.")
         videos = repo.videos_of(db, body.batch_id)
         clips = repo.clips_of_batch(db, body.batch_id)
         freed = (

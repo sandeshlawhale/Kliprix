@@ -47,6 +47,8 @@ class ClipSummary(BaseModel):
     edited: bool
     has_preview: bool
     has_export: bool
+    # Changes on every update; the UI uses it to reload media after a re-render.
+    updated_at: datetime
 
 
 class Video(BaseModel):
@@ -157,6 +159,7 @@ def clip_summary(ctx: JobContext, clip: ClipRow, positions: dict[str, int]) -> C
         edited=bool(clip.edited),
         has_preview=file_exists(ctx, clip.preview_path),
         has_export=file_exists(ctx, clip.export_path),
+        updated_at=clip.updated_at,
     )
 
 

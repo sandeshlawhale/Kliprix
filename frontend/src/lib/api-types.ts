@@ -464,7 +464,8 @@ export interface paths {
          * Cleanup
          * @description Free space. `source_videos`: downloaded videos of finished batches; `previews`;
          *     `work` (cut/crop files; trimming beyond the clip then needs the source); `batch`: all
-         *     three for one batch. Running work is never touched.
+         *     three for one batch. `source_videos` with `batch_id` limits it to that batch (the "Ask"
+         *     retention dialog). Running work is never touched.
          *
          *     Errors: VALIDATION_ERROR (batch scope without batch_id), NOT_FOUND.
          */
@@ -590,6 +591,11 @@ export interface components {
             has_preview: boolean;
             /** Has Export */
             has_export: boolean;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
             /** Video Id */
             video_id: string;
             /** Batch Id */
@@ -667,6 +673,11 @@ export interface components {
             has_preview: boolean;
             /** Has Export */
             has_export: boolean;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** CreateBatchRequest */
         CreateBatchRequest: {
