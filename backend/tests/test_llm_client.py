@@ -170,7 +170,7 @@ def test_base_url_is_passed_as_api_base() -> None:
     compat = LlmSession("openai_compatible", "local", "k", "http://127.0.0.1:1234/v1")
     LlmClient(compat, completion=script).ping()
     assert script.calls[0]["api_base"] == "http://127.0.0.1:1234/v1"
-    assert script.calls[0]["max_tokens"] == 5
+    assert "max_tokens" not in script.calls[0]
 
 
 # ---------- prompts: every prompt validates sample outputs (docs/10) ----------

@@ -12,6 +12,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, SecretStr
 
+from app.config import LLM_TEST_TIMEOUT_S
 from app.core.errors import ERROR_RESPONSES, AppError, ErrorCode
 from app.llm.client import LlmClient
 from app.llm.models import list_models
@@ -142,8 +143,13 @@ def post_test(body: SessionRequest, request: Request) -> TestResponse:
     Errors: LLM_AUTH_FAILED, LLM_RATE_LIMITED, LLM_BAD_RESPONSE.
     """
     session = _session_from(body.provider, body.model, body.api_key, body.base_url)
-    # One attempt, no backoff: the button should answer quickly, not wait ~25 s of retries.
-    client = LlmClient(session, completion=request.app.state.llm_completion, backoff_s=())
+    # One attempt with a short timeout: the button should answer quickly.
+    client = LlmClient(
+        session,
+        completion=request.app.state.llm_completion,
+        backoff_s=(),
+        timeout_s=LLM_TEST_TIMEOUT_S,
+    )
     started = time.monotonic()
     client.ping()
     return TestResponse(ok=True, latency_ms=round((time.monotonic() - started) * 1000))

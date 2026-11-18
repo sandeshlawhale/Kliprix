@@ -18,7 +18,11 @@ import litellm.exceptions  # must come after the env var above
 KEY = "sk-endpoint-test-SECRET-987654"
 
 
-def ok_reply(**_: Any) -> Any:
+SEEN: list[dict[str, Any]] = []
+
+
+def ok_reply(**kwargs: Any) -> Any:
+    SEEN.append(kwargs)
     return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="OK"))])
 
 
@@ -85,6 +89,7 @@ def test_test_endpoint_ok(client: TestClient) -> None:
     body = response.json()
     assert body["ok"] is True
     assert body["latency_ms"] >= 0
+    assert SEEN[-1]["timeout"] == 20.0
 
 
 @pytest.mark.parametrize(

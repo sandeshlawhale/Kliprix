@@ -178,7 +178,8 @@ LLM_TRANSLITERATE_TEMPERATURE = 0.2
 LLM_BACKOFF_S = (2.0, 6.0, 15.0)
 # Listing models and the connection test: the provider must answer within this time.
 LLM_LIST_TIMEOUT_S = 20.0
-LLM_TEST_MAX_TOKENS = 5
+# The "Test connection" button gives up after this long (batches keep LLM_TIMEOUT_S).
+LLM_TEST_TIMEOUT_S = 20.0
 # Prompt hygiene: each transcript/chat line is capped, and so is the whole prompt.
 LLM_LINE_MAX_CHARS = 300
 LLM_PROMPT_MAX_CHARS = 60000

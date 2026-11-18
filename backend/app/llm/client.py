@@ -18,7 +18,7 @@ from typing import Any, TypeVar
 
 from pydantic import TypeAdapter, ValidationError
 
-from app.config import LLM_BACKOFF_S, LLM_TEST_MAX_TOKENS, LLM_TIMEOUT_S
+from app.config import LLM_BACKOFF_S, LLM_TIMEOUT_S
 from app.core.errors import AppError, ErrorCode
 from app.core.logging import redact
 from app.llm.session import LlmSession
@@ -84,8 +84,10 @@ class LlmClient:
         completion: Completion | None = None,
         sleep: Sleep = time.sleep,
         backoff_s: Sequence[float] = LLM_BACKOFF_S,
+        timeout_s: float = LLM_TIMEOUT_S,
     ) -> None:
         self._session = session
+        self._timeout_s = timeout_s
         self._completion = completion or default_completion
         self._sleep = sleep
         self._backoff_s = tuple(backoff_s)
@@ -98,7 +100,7 @@ class LlmClient:
             "model": litellm_model(self._session),
             "messages": messages,
             "temperature": temperature,
-            "timeout": LLM_TIMEOUT_S,
+            "timeout": self._timeout_s,
             "api_key": self._session.api_key,
             "num_retries": 0,
         }
@@ -166,7 +168,9 @@ class LlmClient:
 
     def ping(self) -> None:
         """A tiny request that proves the key and model work."""
-        self._call([{"role": "user", "content": "Reply with OK."}], 0.0, LLM_TEST_MAX_TOKENS)
+        # No max_tokens: "thinking" models spend output tokens before answering, and a tiny
+        # limit leaves them with an empty reply.
+        self._call([{"role": "user", "content": "Reply with OK."}], 0.0)
 
 
 def _reply_text(response: Any) -> str:
