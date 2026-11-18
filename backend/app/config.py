@@ -129,3 +129,35 @@ def ensure_data_dirs(config: AppConfig) -> None:
     """Create DATA_DIR and its documented subfolders if missing."""
     for name in DATA_SUBDIRS:
         (config.data_dir / name).mkdir(parents=True, exist_ok=True)
+
+
+# Signals and candidates (docs/04 stages 4-6). All signals are on a 1-second grid.
+AUDIO_SAMPLE_RATE = 16000
+# Audio is analysed in chunks of this many seconds so a long WAV never sits in memory.
+AUDIO_CHUNK_S = 60
+# RMS window and hop in samples (0.1 s hop, 0.2 s window at 16 kHz).
+AUDIO_RMS_FRAME = 3200
+AUDIO_RMS_HOP = 1600
+# Spectral flux (librosa onset strength) hop in samples.
+AUDIO_FLUX_HOP = 512
+# Motion: frames sampled per second and the analysis width in pixels (grayscale).
+MOTION_FPS = 1
+MOTION_WIDTH = 160
+# ffmpeg timeouts for the signal stages: a fixed allowance plus this much per second of video.
+SIGNAL_TIMEOUT_BASE_S = 120.0
+SIGNAL_TIMEOUT_PER_VIDEO_S = 2.0
+# Chat reacts after the event, so the chat series is shifted earlier by this many seconds.
+CHAT_LAG_S = 10
+# Extra weight a chat message gets when it contains a laugh/hype token.
+CHAT_HYPE_WEIGHT = 1.0
+CHAT_HYPE_TOKENS = ("lol", "lmao", "😂", "pog", "wtf", "clip it", "gg")
+# Scoring: moving-average window, robust z-score clip range, default signal weights.
+SMOOTH_WINDOW_S = 5
+ROBUST_Z_MAX = 6.0
+# Median absolute deviation to standard deviation for normally distributed data.
+MAD_TO_SIGMA = 1.4826
+SIGNAL_WEIGHTS: dict[str, float] = {"chat": 0.40, "audio": 0.35, "motion": 0.25}
+CANDIDATE_COUNT = 12
+CANDIDATE_MIN_DISTANCE_S = 60
+CANDIDATE_BEFORE_S = 25
+CANDIDATE_AFTER_S = 35
