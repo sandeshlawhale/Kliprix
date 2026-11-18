@@ -93,6 +93,15 @@ def find_ffmpeg(ffmpeg_path: str | None) -> str | None:
     return shutil.which("ffmpeg")
 
 
+def find_ffprobe(ffmpeg_path: str | None) -> str | None:
+    """ffprobe next to FFMPEG_PATH when that is set, otherwise `ffprobe` on PATH."""
+    if ffmpeg_path:
+        ffmpeg = Path(ffmpeg_path)
+        candidate = ffmpeg.with_name(ffmpeg.name.replace("ffmpeg", "ffprobe", 1))
+        return str(candidate) if candidate.is_file() else None
+    return shutil.which("ffprobe")
+
+
 def probe_ffmpeg(ffmpeg_path: str | None) -> FfmpegInfo:
     """Whether ffmpeg runs, its version string, and whether it has libass filters."""
     path = find_ffmpeg(ffmpeg_path)
