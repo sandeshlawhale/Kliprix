@@ -170,3 +170,25 @@ TRANSCRIBE_MARGIN_S = 30
 TRANSCRIBE_CHUNK_S = 600
 # faster-whisper's own default beam size.
 WHISPER_BEAM_SIZE = 5
+
+# LLM (docs/10). Timeout per call, temperatures, backoff waits on 429/5xx before giving up.
+LLM_TIMEOUT_S = 90.0
+LLM_SELECT_TEMPERATURE = 0.3
+LLM_TRANSLITERATE_TEMPERATURE = 0.2
+LLM_BACKOFF_S = (2.0, 6.0, 15.0)
+# Listing models and the connection test: the provider must answer within this time.
+LLM_LIST_TIMEOUT_S = 20.0
+LLM_TEST_MAX_TOKENS = 5
+# Prompt hygiene: each transcript/chat line is capped, and so is the whole prompt.
+LLM_LINE_MAX_CHARS = 300
+LLM_PROMPT_MAX_CHARS = 60000
+
+# Clip length rules (docs/04 "Select", D-017): hard range 25-90 s, target 30-60 s, up to
+# 90 s only when the LLM flags needs_extended and the style allows it.
+CLIP_MIN_S = 25.0
+CLIP_TARGET_MIN_S = 30.0
+CLIP_STANDARD_MAX_S = 60.0
+CLIP_EXTENDED_MAX_S = 90.0
+CLIP_MIN_GAP_S = 30.0
+# Clip times must stay within the candidate region widened by this much.
+CLIP_REGION_MARGIN_S = 30.0

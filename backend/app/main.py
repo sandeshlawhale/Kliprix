@@ -17,6 +17,8 @@ from app.core.errors import install_error_handlers
 from app.core.logging import setup_logging
 from app.db.engine import make_engine, make_session_factory
 from app.db.migrate import upgrade_to_head
+from app.llm.client import default_completion
+from app.llm.models import fetch_json
 from app.llm.session import LlmSessionStore
 from app.sources.registry import build_adapters
 
@@ -43,6 +45,9 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app = FastAPI(title=APP_NAME, version=APP_VERSION, telemetry=_TELEMETRY_OFF)
     app.state.config = active
     app.state.llm_session = llm_session
+    # Provider calls; tests replace these two with fakes (the LLM is mocked in tests only).
+    app.state.llm_completion = default_completion
+    app.state.llm_fetch = fetch_json
     app.state.source_adapters = build_adapters(active)
     app.state.session_factory = make_session_factory(make_engine(active.db_url))
     install_error_handlers(app)
