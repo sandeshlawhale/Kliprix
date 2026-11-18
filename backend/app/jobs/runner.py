@@ -104,7 +104,7 @@ class JobRunner:
         token = CancelToken(job.id, job.ref_id, batch_id)
         with self._lock:
             self._current = token
-        self._refresh_batch(batch_id)
+        self._mark_batch_started(batch_id)
         try:
             if job.kind == "video_pipeline":
                 VideoPipeline(self.ctx, job.ref_id, token.event).run()
@@ -182,6 +182,15 @@ class JobRunner:
         """Cancelled clip work is partial: remove its work folder (docs/04 "Cancellation")."""
         if job.kind != "video_pipeline":
             shutil.rmtree(self.ctx.clip_work_dir(job.ref_id), ignore_errors=True)
+
+    def _mark_batch_started(self, batch_id: str) -> None:
+        """A job of the batch is starting, so the batch is running (not just queued)."""
+        with self.ctx.session_factory() as session:
+            batch = repo.get_batch(session, batch_id)
+            if batch is not None and batch.status in ("queued", "done", "partial", "failed"):
+                batch.status = "running"
+                session.commit()
+                self.ctx.publish(batch_id, "batch", status="running")
 
     def _refresh_batch(self, batch_id: str) -> None:
         with self.ctx.session_factory() as session:

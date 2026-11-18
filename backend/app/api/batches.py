@@ -235,5 +235,7 @@ async def batch_events(batch_id: str, request: Request) -> StreamingResponse:
     return StreamingResponse(
         stream(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        # no-transform keeps proxies (the Next.js dev server compresses responses) from
+        # gzipping and buffering the stream.
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
     )
