@@ -74,6 +74,7 @@ export default function StylePage() {
                 alt={`${STYLE_LABELS[name]} captions rendered by Kliprix on a test pattern`}
                 width={540}
                 height={960}
+                unoptimized
                 className="aspect-[9/16] w-full rounded-md object-cover"
               />
               <span className="font-medium">{STYLE_LABELS[name]}</span>

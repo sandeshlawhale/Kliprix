@@ -1,0 +1,27 @@
+# Optional Docker path (D-004). The main path is scripts/start.bat or scripts/start.sh,
+# because Docker Desktop itself needs about 2 GB of RAM.
+# Ports are published on 127.0.0.1 only, never on all interfaces.
+services:
+  backend:
+    build: ./backend
+    environment:
+      DATA_DIR: /app/data
+      ALLOWED_ORIGIN: http://localhost:3000
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        BACKEND_URL: http://backend:8000
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped

@@ -122,6 +122,7 @@ export function EditPanel({ clip }: { clip: Clip }) {
                 alt=""
                 width={540}
                 height={960}
+                unoptimized
                 className="aspect-[9/16] w-full rounded object-cover"
               />
               {STYLE_LABELS[name]}
