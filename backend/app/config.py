@@ -40,6 +40,26 @@ PROBE_TIMEOUT_S = 15.0
 
 BYTES_PER_GB = 1024**3
 
+# Sources (docs/04 "Download", docs/07 "Videos").
+MAX_VIDEOS_PER_BATCH = 3
+MAX_URL_LENGTH = 2048
+# Download height cap: 1080p normally, 720p when total RAM is below this (docs/04).
+DOWNLOAD_MAX_HEIGHT = 1080
+DOWNLOAD_LOW_RAM_MAX_HEIGHT = 720
+DOWNLOAD_LOW_RAM_GB = 6.0
+# Seconds yt-dlp waits on an unresponsive connection before retrying.
+YTDLP_SOCKET_TIMEOUT_S = 30.0
+# JavaScript runtime yt-dlp uses for YouTube's player challenges (needs Node 22+, AA-017).
+YTDLP_JS_RUNTIME = "node"
+# Disk check before download: estimated size times this factor plus a reserve; when
+# YouTube reports no size, require DOWNLOAD_UNKNOWN_SIZE_MIN_FREE_GB (AA-019).
+DOWNLOAD_SIZE_FACTOR = 1.1
+DOWNLOAD_RESERVE_GB = 0.5
+DOWNLOAD_UNKNOWN_SIZE_MIN_FREE_GB = 2.0
+# `pip install --upgrade yt-dlp yt-dlp-ejs` for "Update downloader".
+DOWNLOADER_UPDATE_TIMEOUT_S = 300.0
+DOWNLOADER_PACKAGES = ("yt-dlp", "yt-dlp-ejs")
+
 
 @dataclass(frozen=True)
 class AppConfig:
