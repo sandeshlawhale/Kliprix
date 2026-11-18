@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from yt_dlp import YoutubeDL
 
-from app.config import AppConfig
+from app.config import DOWNLOAD_FORMAT_SORT, AppConfig
 from app.core.errors import AppError, ErrorCode
 from app.core.hardware import MemoryInfo
 from app.core.proc import run_command
@@ -264,3 +265,56 @@ def test_download_without_ffmpeg_fails_fast(config: AppConfig, tmp_path: Path) -
     with pytest.raises(AppError) as error:
         adapter.download(URL, tmp_path / "v", max_height=720)
     assert error.value.code == ErrorCode.FFMPEG_MISSING
+
+
+def _video_format(format_id: str, vcodec: str, height: int) -> dict[str, Any]:
+    return {
+        "format_id": format_id,
+        "url": f"https://example.invalid/{format_id}",
+        "ext": "mp4",
+        "protocol": "https",
+        "vcodec": vcodec,
+        "acodec": "none",
+        "height": height,
+        "width": height * 16 // 9,
+        "fps": 30,
+    }
+
+
+@pytest.mark.parametrize(
+    ("formats", "expected"),
+    [
+        # Same height: H.264 wins over AV1 and VP9 (D-026).
+        (
+            [("399", "av01.0.08M.08", 1080), ("248", "vp9", 1080), ("137", "avc1.640028", 1080)],
+            "137",
+        ),
+        # Resolution still comes first: 1080p VP9 beats 720p H.264.
+        ([("248", "vp9", 1080), ("136", "avc1.4d401f", 720)], "248"),
+        # The height cap still applies.
+        ([("401", "av01.0.12M.08", 2160), ("137", "avc1.640028", 1080)], "137"),
+    ],
+)
+def test_format_choice_prefers_h264_at_same_resolution(
+    formats: list[tuple[str, str, int]], expected: str
+) -> None:
+    """Runs yt-dlp's real format selection (no network) with our format and sort."""
+    audio = {"format_id": "140", "url": "https://example.invalid/a", "ext": "m4a",
+             "protocol": "https", "vcodec": "none", "acodec": "mp4a.40.2", "abr": 128}  # fmt: skip
+    info = {
+        "id": "aaaaaaaaaaa",
+        "title": "t",
+        "extractor": "youtube",
+        "extractor_key": "Youtube",
+        "webpage_url": URL,
+        "formats": [_video_format(*f) for f in formats] + [audio],
+    }
+    params = {
+        "quiet": True,
+        "simulate": True,
+        "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+        "format_sort": list(DOWNLOAD_FORMAT_SORT),
+    }
+    with YoutubeDL(params) as ydl:
+        result = ydl.process_video_result(info, download=False)
+    assert result["requested_formats"][0]["format_id"] == expected

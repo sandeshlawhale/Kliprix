@@ -47,6 +47,10 @@ MAX_URL_LENGTH = 2048
 DOWNLOAD_MAX_HEIGHT = 1080
 DOWNLOAD_LOW_RAM_MAX_HEIGHT = 720
 DOWNLOAD_LOW_RAM_GB = 6.0
+# yt-dlp format sort: highest resolution first, then H.264 over AV1/VP9/HEVC at the same
+# resolution because it decodes cheapest on low-spec PCs (D-026). "vcodec:h264" ranks codecs
+# that yt-dlp normally prefers over H.264 below it (yt-dlp FormatSorter, limit semantics).
+DOWNLOAD_FORMAT_SORT = ("res", "vcodec:h264")
 # Seconds yt-dlp waits on an unresponsive connection before retrying.
 YTDLP_SOCKET_TIMEOUT_S = 30.0
 # JavaScript runtime yt-dlp uses for YouTube's player challenges (needs Node 22+, AA-017).

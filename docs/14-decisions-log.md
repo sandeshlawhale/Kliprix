@@ -31,6 +31,7 @@ If another doc disagrees with this file, this file wins. New decisions are appen
 | D-023 | Hinglish = Hindi written with English letters (e.g. "Namaste kaise ho aap?"), never Devanagari | Owner clarification |
 | D-024 | Each video shows a muted checkpoint list (7 steps) below the video header and above the clip cards; it ticks off from real backend state and disappears when that video is fully finished; it stays if something failed | Owner UI update |
 | D-025 | Node.js 22 LTS or newer is required (doctor FAILs below 22; `engines` `>=22`; README requirements in M10 must say Node 22+) | Owner decision 2026-11-18: yt-dlp only uses Node ≥ 22 as its JavaScript runtime for YouTube (AA-017) |
+| D-026 | Downloads prefer H.264 (avc1) over AV1/VP9/HEVC at the same resolution: yt-dlp `format_sort=["res", "vcodec:h264"]` on top of the documented format string (height cap unchanged). Resolution still wins (1080p VP9 beats 720p H.264) | Owner decision 2026-11-18: H.264 decodes cheapest on low-spec PCs. Checked on real links: zsCGS-Yzjnw VP9 616 → avc1 137 (1080p24), VnQ4VcAqauk AV1 399 → avc1 299 (1080p60) |
 
 ## Assumptions to confirm with the owner (agent: use these defaults until told otherwise)
 | ID | Assumption |

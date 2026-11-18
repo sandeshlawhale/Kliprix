@@ -22,6 +22,7 @@ from yt_dlp.utils import YoutubeDLError
 
 from app.config import (
     BYTES_PER_GB,
+    DOWNLOAD_FORMAT_SORT,
     DOWNLOAD_RESERVE_GB,
     DOWNLOAD_SIZE_FACTOR,
     DOWNLOAD_UNKNOWN_SIZE_MIN_FREE_GB,
@@ -147,6 +148,7 @@ class YoutubeAdapter:
         tracker = _ProgressTracker(cancel, on_progress)
         params = self._params(
             format=f"bestvideo[height<={max_height}]+bestaudio/best[height<={max_height}]",
+            format_sort=list(DOWNLOAD_FORMAT_SORT),
             paths={"home": str(dest_dir)},
             outtmpl={"default": "source.%(ext)s"},
             merge_output_format="mp4",
