@@ -114,6 +114,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/llm/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Models
+         * @description Models the key can use, fetched live from the provider.
+         *
+         *     Errors: LLM_AUTH_FAILED when the provider refuses or cannot be reached.
+         */
+        post: operations["post_models_api_llm_models_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Test
+         * @description One tiny completion with these settings; reports the round-trip time.
+         *
+         *     Errors: LLM_AUTH_FAILED, LLM_RATE_LIMITED, LLM_BAD_RESPONSE.
+         */
+        post: operations["post_test_api_llm_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/llm/session": {
         parameters: {
             query?: never;
@@ -168,10 +212,414 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/batches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Batches
+         * @description History, newest first, with an opaque cursor.
+         */
+        get: operations["list_batches_api_batches_get"];
+        put?: never;
+        /**
+         * Create Batch
+         * @description Queue 1-3 links with the style snapshot (settings defaults + overrides).
+         *
+         *     Errors: TOO_MANY_VIDEOS, INVALID_URL, UNSUPPORTED_HOST, LLM_NOT_CONFIGURED.
+         */
+        post: operations["create_batch_api_batches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/batches/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Batch
+         * @description The batch with its videos, checkpoints and clips.
+         */
+        get: operations["get_batch_api_batches__batch_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Batch
+         * @description Delete the batch from history; with `delete_files=true` also its files.
+         */
+        delete: operations["delete_batch_api_batches__batch_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/batches/{batch_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Batch
+         * @description Stop the running step, cancel queued work, and remove partial clip files.
+         */
+        post: operations["cancel_batch_api_batches__batch_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/batches/{batch_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Batch Events
+         * @description Server-Sent Events: `video`, `clip`, `batch` hints and a heartbeat every 15 s.
+         */
+        get: operations["batch_events_api_batches__batch_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clips/{clip_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Clip
+         * @description The clip with metadata, edit state, words, and trim bounds.
+         */
+        get: operations["get_clip_api_clips__clip_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Clip
+         * @description Edit metadata, captions, style, blur, crop, or trim.
+         *
+         *     Video-affecting changes (edit fields, words, and the on-video title) set `edited` and
+         *     clear the preview and export. Errors: VALIDATION_ERROR (title > 40 characters, trim
+         *     outside `source_bounds`, length outside 5-90 s), CONFLICT while the clip renders.
+         */
+        patch: operations["patch_clip_api_clips__clip_id__patch"];
+        trace?: never;
+    };
+    "/api/clips/{clip_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Clip
+         * @description Queue a 540x960 preview render (ahead of background clips).
+         */
+        post: operations["preview_clip_api_clips__clip_id__preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clips/{clip_id}/render": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render Clip
+         * @description Queue the full-quality export.
+         */
+        post: operations["render_clip_api_clips__clip_id__render_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clips/{clip_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Clip
+         * @description Render a failed or cancelled clip again.
+         */
+        post: operations["retry_clip_api_clips__clip_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clips/{clip_id}/media/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Clip Media
+         * @description The preview, export, or thumbnail (HTTP Range supported). Only DB-known files under
+         *     DATA_DIR are served.
+         */
+        get: operations["clip_media_api_clips__clip_id__media__kind__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/clips/{clip_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Clip
+         * @description The export as an attachment. Errors: CONFLICT when there is no current export.
+         */
+        get: operations["download_clip_api_clips__clip_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Accepted */
+        Accepted: {
+            /** Queued */
+            queued: boolean;
+        };
+        /** Batch */
+        Batch: {
+            /** Id */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Status */
+            status: string;
+            /** Style */
+            style: {
+                [key: string]: unknown;
+            };
+            /** Videos */
+            videos: components["schemas"]["Video"][];
+        };
+        /** BatchPage */
+        BatchPage: {
+            /** Items */
+            items: components["schemas"]["BatchSummary"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** BatchSummary */
+        BatchSummary: {
+            /** Id */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
+            /** Video Count */
+            video_count: number;
+            /** Clip Count */
+            clip_count: number;
+        };
+        /** Checkpoint */
+        Checkpoint: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "download" | "chat" | "signals" | "candidates" | "transcribe" | "select" | "edit";
+            /** Label */
+            label: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "running" | "done" | "skipped" | "failed";
+            /** Detail */
+            detail?: string | null;
+        };
+        /** Clip */
+        Clip: {
+            /** Id */
+            id: string;
+            /** Index */
+            index: number;
+            /** Status */
+            status: string;
+            /** Stage */
+            stage: string | null;
+            /** Progress */
+            progress: number;
+            /** Queue Position */
+            queue_position?: number | null;
+            /** Title */
+            title: string;
+            /** Start S */
+            start_s: number;
+            /** End S */
+            end_s: number;
+            /** Duration S */
+            duration_s: number;
+            /** Thumbnail Url */
+            thumbnail_url?: string | null;
+            error?: components["schemas"]["ErrorBody"] | null;
+            /** Edited */
+            edited: boolean;
+            /** Has Preview */
+            has_preview: boolean;
+            /** Has Export */
+            has_export: boolean;
+            /** Video Id */
+            video_id: string;
+            /** Batch Id */
+            batch_id: string;
+            metadata: components["schemas"]["Metadata"];
+            edit: components["schemas"]["EditState"];
+            /** Words */
+            words: components["schemas"]["WordOut"][];
+            source_bounds: components["schemas"]["SourceBounds"];
+            /** Warning */
+            warning?: string | null;
+            /** Length Warning */
+            length_warning?: string | null;
+        };
+        /**
+         * ClipPatch
+         * @description Any subset of metadata fields, edit fields, and words.
+         */
+        ClipPatch: {
+            /** Title */
+            title?: string | null;
+            /** Youtube Title */
+            youtube_title?: string | null;
+            /** Youtube Description */
+            youtube_description?: string | null;
+            /** Hashtags */
+            hashtags?: string[] | null;
+            /** Linkedin Post */
+            linkedin_post?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /** Caption Style */
+            caption_style?: ("pop" | "karaoke" | "boxed") | null;
+            /** Caption Language */
+            caption_language?: ("en" | "hinglish") | null;
+            /** Crop Mode */
+            crop_mode?: ("auto" | "face" | "full") | null;
+            /** Blur */
+            blur?: number | null;
+            /** Start S */
+            start_s?: number | null;
+            /** End S */
+            end_s?: number | null;
+            /** Words */
+            words?: components["schemas"]["WordIn"][] | null;
+        };
+        /** ClipSummary */
+        ClipSummary: {
+            /** Id */
+            id: string;
+            /** Index */
+            index: number;
+            /** Status */
+            status: string;
+            /** Stage */
+            stage: string | null;
+            /** Progress */
+            progress: number;
+            /** Queue Position */
+            queue_position?: number | null;
+            /** Title */
+            title: string;
+            /** Start S */
+            start_s: number;
+            /** End S */
+            end_s: number;
+            /** Duration S */
+            duration_s: number;
+            /** Thumbnail Url */
+            thumbnail_url?: string | null;
+            error?: components["schemas"]["ErrorBody"] | null;
+            /** Edited */
+            edited: boolean;
+            /** Has Preview */
+            has_preview: boolean;
+            /** Has Export */
+            has_export: boolean;
+        };
+        /** CreateBatchRequest */
+        CreateBatchRequest: {
+            /** Urls */
+            urls: string[];
+            style?: components["schemas"]["StyleOverridesUpdate"] | null;
+        };
+        /** CreatedBatch */
+        CreatedBatch: {
+            /** Id */
+            id: string;
+        };
         /**
          * DownloaderUpdate
          * @description Installed yt-dlp version before and after the upgrade.
@@ -181,6 +629,30 @@ export interface components {
             before: string | null;
             /** After */
             after: string | null;
+        };
+        /** EditState */
+        EditState: {
+            /**
+             * Caption Style
+             * @enum {string}
+             */
+            caption_style: "pop" | "karaoke" | "boxed";
+            /**
+             * Caption Language
+             * @enum {string}
+             */
+            caption_language: "en" | "hinglish";
+            /**
+             * Crop Mode
+             * @enum {string}
+             */
+            crop_mode: "auto" | "face" | "full";
+            /** Blur */
+            blur: number;
+            /** Start S */
+            start_s: number;
+            /** End S */
+            end_s: number;
         };
         /** ErrorBody */
         ErrorBody: {
@@ -247,6 +719,48 @@ export interface components {
             ok: boolean;
             video?: components["schemas"]["VideoMeta"] | null;
             error?: components["schemas"]["ErrorBody"] | null;
+        };
+        /** Metadata */
+        Metadata: {
+            /** Title */
+            title: string;
+            /** Youtube Title */
+            youtube_title: string;
+            /** Youtube Description */
+            youtube_description: string;
+            /** Hashtags */
+            hashtags: string[];
+            /** Linkedin Post */
+            linkedin_post: string;
+            /** Reason */
+            reason: string;
+        };
+        /** ModelEntry */
+        ModelEntry: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
+        /** ModelsRequest */
+        ModelsRequest: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "gemini" | "anthropic" | "openai" | "openrouter" | "openai_compatible";
+            /**
+             * Api Key
+             * Format: password
+             */
+            api_key: string;
+            /** Base Url */
+            base_url?: string | null;
+        };
+        /** ModelsResponse */
+        ModelsResponse: {
+            /** Models */
+            models: components["schemas"]["ModelEntry"][];
         };
         /** ProviderInfo */
         ProviderInfo: {
@@ -341,6 +855,13 @@ export interface components {
             /** Thorough Mode */
             thorough_mode?: boolean | null;
         };
+        /** SourceBounds */
+        SourceBounds: {
+            /** Min Start S */
+            min_start_s: number;
+            /** Max End S */
+            max_end_s: number;
+        };
         /** StyleOverrides */
         StyleOverrides: {
             /**
@@ -411,6 +932,43 @@ export interface components {
             /** Ytdlp Version */
             ytdlp_version: string | null;
         };
+        /** TestResponse */
+        TestResponse: {
+            /** Ok */
+            ok: boolean;
+            /** Latency Ms */
+            latency_ms: number;
+        };
+        /** Video */
+        Video: {
+            /** Id */
+            id: string;
+            /** Url */
+            url: string;
+            /** Platform */
+            platform: string | null;
+            /** Title */
+            title: string | null;
+            /** Channel */
+            channel: string | null;
+            /** Duration S */
+            duration_s: number | null;
+            /** Thumbnail Url */
+            thumbnail_url: string | null;
+            /** Has Chat */
+            has_chat: boolean;
+            /** Status */
+            status: string;
+            /** Stage */
+            stage: string | null;
+            /** Progress */
+            progress: number;
+            error?: components["schemas"]["ErrorBody"] | null;
+            /** Checkpoints */
+            checkpoints: components["schemas"]["Checkpoint"][];
+            /** Clips */
+            clips: components["schemas"]["ClipSummary"][];
+        };
         /**
          * VideoMeta
          * @description What `inspect` learns about a video without downloading it (docs/07 `video`).
@@ -432,6 +990,24 @@ export interface components {
             has_chat: boolean;
             /** Is Live */
             is_live: boolean;
+        };
+        /** WordIn */
+        WordIn: {
+            /** Text */
+            text: string;
+            /** Start */
+            start: number;
+            /** End */
+            end: number;
+        };
+        /** WordOut */
+        WordOut: {
+            /** Text */
+            text: string;
+            /** Start */
+            start: number;
+            /** End */
+            end: number;
         };
     };
     responses: never;
@@ -620,6 +1196,72 @@ export interface operations {
             };
         };
     };
+    post_models_api_llm_models_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelsResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    post_test_api_llm_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     get_session_api_llm_session_get: {
         parameters: {
             query?: never;
@@ -730,6 +1372,411 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["InspectResponse"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_batches_api_batches_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchPage"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_batch_api_batches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedBatch"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_batch_api_batches__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Batch"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_batch_api_batches__batch_id__delete: {
+        parameters: {
+            query?: {
+                delete_files?: boolean;
+            };
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancel_batch_api_batches__batch_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Batch"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    batch_events_api_batches__batch_id__events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_clip_api_clips__clip_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Clip"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    patch_clip_api_clips__clip_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClipPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Clip"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    preview_clip_api_clips__clip_id__preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Accepted"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    render_clip_api_clips__clip_id__render_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Accepted"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    retry_clip_api_clips__clip_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Accepted"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    clip_media_api_clips__clip_id__media__kind__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+                kind: "preview" | "export" | "thumbnail";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    download_clip_api_clips__clip_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

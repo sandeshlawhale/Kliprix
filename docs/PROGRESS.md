@@ -3,7 +3,7 @@
 Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must update it before stopping, even if it is out of tokens soon. Keep it short and factual. Never claim something is done unless you ran its check.
 
 ## Current state
-- **Current milestone:** M7 (next; continuous run M3→M10, D-027)
+- **Current milestone:** M8 (next; continuous run M3→M10, D-027)
 - **Status:** M2 done and verified (tag `m2`); M1 tag `m1`; M0 tag `m0`
 - **Last session:** 2026-11-18, Claude Code (Claude Opus 5.5)
 - **Last commit:** see `git log -1`
@@ -16,14 +16,14 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 - [x] M4 Transcription and Hinglish (Hinglish sample check open, owner)
 - [x] M5 LLM layer and selection (real-key check open, owner)
 - [x] M6 Rendering (crop, layout, captions) (owner visual review open)
-- [ ] M7 Job queue and orchestration
+- [x] M7 Job queue and orchestration (real 3-link run open: needs the owner's key)
 - [ ] M8 Frontend shell
 - [ ] M9 Results page and clip editor
 - [ ] M10 Storage, README, scripts, Docker, tests
 
 ## In progress (exact next step)
-M7 job queue and orchestration: read docs 04, 06, 07, 08; build `jobs/` (runner thread, queue, resume, cancel, pubsub), batch and clip repositories, `/api/batches*` and `/api/clips*` endpoints, SSE; reuse `pipeline/clip_render.render_clip` for clips.
-M3–M6 built (see "M3–M6 output" below and AA-025…AA-042).
+M8 frontend shell: read docs 02, 03, 07; build layout + sidebar history, themes, Home with inspect cards, Configure API, Edit video style, Settings on the real API (TanStack Query, shadcn).
+M3–M7 built (see "M3–M7 output" below, AA-025…AA-049, proposal P-001).
 
 ## Done but unverified
 - `VIDEO_PRIVATE` on a real private video: the owner's "private" link (`aaaaaaaaaaa`) is answered by YouTube with "This video is unavailable", so it maps to `VIDEO_UNAVAILABLE`. The private mapping is covered by a unit test with YouTube's "Private video" reason only.
@@ -56,12 +56,13 @@ M3–M6 built (see "M3–M6 output" below and AA-025…AA-042).
 - Run frontend checks: `cd frontend && npm run lint && npm run format:check && npm run typecheck`
 - Regenerate API types (backend running): `cd frontend && npm run gen:api`
 
-## M3–M6 output (2026-11-18, real runs)
+## M3–M7 output (2026-11-18, real runs)
 - **M3** `python -m app.cli.find_candidates ../data/work/m3-15min` (15-min slice of VnQ4VcAqauk with its 47 chat messages, AA-029): 12 candidates, e.g. `1. peak 0:11:17 window 0:10:52-0:11:52 score 0.707 (chat=1.00 audio=0.16 motion=1.00)`; audio 8.2 s, motion 111.9 s; **peak memory 0.20 GB**. Full 101-min stream: 12 candidates, audio 62.5 s, motion 645 s, peak 0.20 GB. 4.5-min video zsCGS-Yzjnw: 4 candidates (short video), no chat (weights renormalized).
 - **M4** `transcribe_candidates ../data/work/m3-15min` (≤ 20 min → whole video): Auto = `medium`; GPU failed (`cublas64_12.dll` missing) → CPU; 207 segments, 2101 words, language en, 560 s, peak 2.03 GB. Full stream with `--model base`: 11 merged candidate spans (1400 s of 6076 s), 3232 words, 192 s, **peak 0.66 GB** (budget 1.5 GB at `base`).
 - **M5** no real key here: covered by tests (bad JSON → repair → `LLM_BAD_RESPONSE`, 429 backoff 2/6/15 s → `LLM_RATE_LIMITED`, auth → `LLM_AUTH_FAILED`, key never in logs or responses, select repair/fallback). Owner check: `cd backend; .\.venv\Scripts\python.exe -m app.cli.select_clips ..\data\work\m3-15min --provider gemini --model <id>` (key asked hidden).
 - **M6** `render_clip ../data/work/m3-15min --start 652 --end 700 --title "Clutch round at the last second"` (real gaming stream): pop/auto → Auto chose full frame (faces in 35% of samples < 40%); karaoke/face (forced) → crop follows the streamer's webcam; boxed/full/blur 60 as 540x960 preview. All: 1080x1920 (preview 540x960) @ 30/1, video 48.000 s, audio 48.0 s, **A/V difference 0 ms**; final render 61–84 s; frames at 1/5/10 s in `data/work/m6/frames/` (checked: title above the foreground, captions below, active word highlighted, blur visible, no overlap). Low-RAM run (`--low-ram`, ffmpeg thread limit, face crop): 88 s, **peak 0.89 GB backend + ffmpeg**.
-- pytest 212 passed; ruff/format/mypy strict clean.
+- **M7** integration tests on synthetic ffmpeg videos with a fake source, fake Whisper and fake LLM (tests only): a 3-link batch runs unattended (2 videos done with 2 exported clips each, 1 `VIDEO_PRIVATE` → batch `partial`, the others unaffected); all 7 checkpoints done, edit `2/2`; cancel during a download stops it and marks the batch `cancelled`; **stopping the app mid-download and starting it again resumes and finishes the batch**; edit → preview (HTTP 206 Range) → export → download with `filename="Fake LLM pick.mp4"`; edits survive reload. Real server: `POST /api/batches` without a key → `409 LLM_NOT_CONFIGURED`. The real 3-link run needs the owner's key.
+- pytest 220 passed; ruff/format/mypy strict clean.
 
 ## M1 "Done when" output (2026-11-17)
 - Migrations on a fresh DB (`DATA_DIR` = new temp folder with a space): `Running upgrade  -> 0001, Initial schema` → `0001 (head)`; tables `alembic_version, batches, clips, jobs, settings, videos`; `journal_mode: wal`. `alembic check`: "No new upgrade operations detected."
