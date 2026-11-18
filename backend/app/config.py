@@ -161,3 +161,12 @@ CANDIDATE_COUNT = 12
 CANDIDATE_MIN_DISTANCE_S = 60
 CANDIDATE_BEFORE_S = 25
 CANDIDATE_AFTER_S = 35
+
+# Transcription (docs/04 stage 7, D-012). Videos up to this length are transcribed whole.
+FULL_TRANSCRIBE_MAX_S = 20 * 60
+# Seconds of context added before and after each candidate window.
+TRANSCRIBE_MARGIN_S = 30
+# Longest piece of audio handed to Whisper at once (bounds memory on long spans).
+TRANSCRIBE_CHUNK_S = 600
+# faster-whisper's own default beam size.
+WHISPER_BEAM_SIZE = 5

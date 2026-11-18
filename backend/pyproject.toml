@@ -25,6 +25,11 @@ files = ["app", "tests"]
 module = ["yt_dlp", "yt_dlp.*"]
 ignore_missing_imports = true
 
+# faster-whisper ships no type hints either.
+[[tool.mypy.overrides]]
+module = ["faster_whisper", "faster_whisper.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
