@@ -2,7 +2,30 @@
 // Requests go to same-origin /api/*, which Next.js rewrites to the FastAPI backend.
 import type { components } from "@/lib/api-types";
 
-export type HealthResponse = components["schemas"]["HealthResponse"];
+type Schemas = components["schemas"];
+export type HealthResponse = Schemas["HealthResponse"];
+export type SystemInfo = Schemas["SystemInfo"];
+export type Settings = Schemas["Settings"];
+export type SettingsUpdate = Schemas["SettingsUpdate"];
+export type StyleOverrides = Schemas["StyleOverrides"];
+export type StyleOverridesUpdate = Schemas["StyleOverridesUpdate"];
+export type ProviderInfo = Schemas["ProviderInfo"];
+export type ProviderId = ProviderInfo["id"];
+export type SessionStatus = Schemas["SessionStatus"];
+export type ModelEntry = Schemas["ModelEntry"];
+export type TestResponse = Schemas["TestResponse"];
+export type InspectResult = Schemas["InspectResult"];
+export type VideoMeta = Schemas["VideoMeta"];
+export type Batch = Schemas["Batch"];
+export type BatchPage = Schemas["BatchPage"];
+export type BatchSummary = Schemas["BatchSummary"];
+export type Video = Schemas["Video"];
+export type Checkpoint = Schemas["Checkpoint"];
+export type ClipSummary = Schemas["ClipSummary"];
+export type Clip = Schemas["Clip"];
+export type ClipPatch = Schemas["ClipPatch"];
+export type Word = Schemas["WordOut"];
+export type DownloaderUpdate = Schemas["DownloaderUpdate"];
 
 /** Error shape for every non-2xx response (docs/07-api-contract.md). */
 export interface ApiErrorBody {
@@ -20,7 +43,7 @@ export class ApiError extends Error {
   }
 }
 
-const BACKEND_UNREACHABLE = "BACKEND_UNREACHABLE";
+export const BACKEND_UNREACHABLE = "BACKEND_UNREACHABLE";
 
 function isApiErrorBody(value: unknown): value is ApiErrorBody {
   if (typeof value !== "object" || value === null || !("error" in value)) return false;
@@ -31,7 +54,7 @@ function isApiErrorBody(value: unknown): value is ApiErrorBody {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`/api${path}`, init);
+    response = await fetch(`/api${path}`, { cache: "no-store", ...init });
   } catch {
     throw new ApiError(BACKEND_UNREACHABLE, "Cannot reach the Kliprix backend.", 0);
   }
@@ -47,9 +70,100 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       response.status,
     );
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
-export function getHealth(): Promise<HealthResponse> {
-  return request<HealthResponse>("/health", { cache: "no-store" });
+function json(method: string, body: unknown): RequestInit {
+  return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
+
+/** A message for any thrown value, using the backend's text when there is one. */
+export function errorMessage(error: unknown): string {
+  if (error instanceof ApiError) return error.message;
+  return "Something went wrong.";
+}
+
+// ----- system and settings -----
+export const getHealth = () => request<HealthResponse>("/health");
+export const getSystem = () => request<SystemInfo>("/system");
+export const updateDownloader = () =>
+  request<DownloaderUpdate>("/system/update-downloader", { method: "POST" });
+export const getSettings = () => request<Settings>("/settings");
+export const putSettings = (update: SettingsUpdate) =>
+  request<Settings>("/settings", json("PUT", update));
+
+// ----- LLM session -----
+export interface LlmConfig {
+  provider: ProviderId;
+  model: string;
+  api_key: string;
+  base_url?: string | null;
+}
+
+function llmBody(config: LlmConfig): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    provider: config.provider,
+    model: config.model,
+    api_key: config.api_key,
+  };
+  if (config.base_url) body.base_url = config.base_url;
+  return body;
+}
+
+export const getProviders = () => request<ProviderInfo[]>("/llm/providers");
+export const getLlmSession = () => request<SessionStatus>("/llm/session");
+export const putLlmSession = (config: LlmConfig) =>
+  request<Schemas["SessionConfigured"]>("/llm/session", json("PUT", llmBody(config)));
+export const deleteLlmSession = () => request<void>("/llm/session", { method: "DELETE" });
+export const listModels = (provider: ProviderId, apiKey: string, baseUrl?: string | null) =>
+  request<Schemas["ModelsResponse"]>(
+    "/llm/models",
+    json(
+      "POST",
+      baseUrl ? { provider, api_key: apiKey, base_url: baseUrl } : { provider, api_key: apiKey },
+    ),
+  );
+export const testLlm = (config: LlmConfig) =>
+  request<TestResponse>("/llm/test", json("POST", llmBody(config)));
+
+// ----- videos and batches -----
+export const inspectVideos = (urls: string[]) =>
+  request<Schemas["InspectResponse"]>("/videos/inspect", json("POST", { urls }));
+export const createBatch = (urls: string[], style?: StyleOverridesUpdate) =>
+  request<Schemas["CreatedBatch"]>("/batches", json("POST", style ? { urls, style } : { urls }));
+export const listBatches = (cursor?: string | null) =>
+  request<BatchPage>(`/batches${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+export const getBatch = (id: string) => request<Batch>(`/batches/${encodeURIComponent(id)}`);
+export const cancelBatch = (id: string) =>
+  request<Batch>(`/batches/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+export const deleteBatch = (id: string, deleteFiles: boolean) =>
+  request<void>(`/batches/${encodeURIComponent(id)}?delete_files=${deleteFiles}`, {
+    method: "DELETE",
+  });
+/** URL of the batch's Server-Sent Events stream (opened by the SSE hook). */
+export const batchEventsUrl = (id: string) => `/api/batches/${encodeURIComponent(id)}/events`;
+
+// ----- clips -----
+export const getClip = (id: string) => request<Clip>(`/clips/${encodeURIComponent(id)}`);
+export const patchClip = (id: string, patch: ClipPatch) =>
+  request<Clip>(`/clips/${encodeURIComponent(id)}`, json("PATCH", patch));
+export const previewClip = (id: string) =>
+  request<Schemas["Accepted"]>(`/clips/${encodeURIComponent(id)}/preview`, { method: "POST" });
+export const exportClip = (id: string) =>
+  request<Schemas["Accepted"]>(`/clips/${encodeURIComponent(id)}/render`, { method: "POST" });
+export const retryClip = (id: string) =>
+  request<Schemas["Accepted"]>(`/clips/${encodeURIComponent(id)}/retry`, { method: "POST" });
+export const clipMediaUrl = (id: string, kind: "preview" | "export" | "thumbnail", version = "") =>
+  `/api/clips/${encodeURIComponent(id)}/media/${kind}${version ? `?v=${encodeURIComponent(version)}` : ""}`;
+export const clipDownloadUrl = (id: string) => `/api/clips/${encodeURIComponent(id)}/download`;
+
+// ----- storage -----
+export type StorageInfo = Schemas["StorageInfo"];
+export type CleanupScope = Schemas["CleanupRequest"]["scope"];
+export const getStorage = () => request<StorageInfo>("/storage");
+export const cleanupStorage = (scope: CleanupScope, batchId?: string) =>
+  request<Schemas["CleanupResult"]>(
+    "/storage/cleanup",
+    json("POST", batchId ? { scope, batch_id: batchId } : { scope }),
+  );

@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.telemetry import TelemetryConfig
 
-from app.api import batches, clips, llm, settings, system, videos
+from app.api import batches, clips, llm, settings, storage, system, videos
 from app.config import APP_NAME, APP_VERSION, AppConfig, ensure_data_dirs, load_config
 from app.core.errors import install_error_handlers
 from app.core.events import EventBus
@@ -101,5 +101,6 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.include_router(videos.router)
     app.include_router(batches.router)
     app.include_router(clips.router)
+    app.include_router(storage.router)
     logger.info("backend ready version=%s", APP_VERSION)
     return app
