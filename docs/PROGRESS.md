@@ -3,7 +3,7 @@
 Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must update it before stopping, even if it is out of tokens soon. Keep it short and factual. Never claim something is done unless you ran its check.
 
 ## Current state
-- **Current milestone:** M3 (in progress; continuous run M3→M10, D-027)
+- **Current milestone:** M6 (next; continuous run M3→M10, D-027)
 - **Status:** M2 done and verified (tag `m2`); M1 tag `m1`; M0 tag `m0`
 - **Last session:** 2026-11-18, Claude Code (Claude Opus 5.5)
 - **Last commit:** see `git log -1`
@@ -12,9 +12,9 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 - [x] M0 Repo scaffold
 - [x] M1 Backend foundation
 - [x] M2 Sources (inspect, download, chat)
-- [ ] M3 Signals and candidates
-- [ ] M4 Transcription and Hinglish
-- [ ] M5 LLM layer and selection
+- [x] M3 Signals and candidates
+- [x] M4 Transcription and Hinglish (Hinglish sample check open, owner)
+- [x] M5 LLM layer and selection (real-key check open, owner)
 - [ ] M6 Rendering (crop, layout, captions)
 - [ ] M7 Job queue and orchestration
 - [ ] M8 Frontend shell
@@ -22,8 +22,8 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 - [ ] M10 Storage, README, scripts, Docker, tests
 
 ## In progress (exact next step)
-M3 started (D-027: build M3→M10 without stopping; owner-only checks are listed below). Read docs 04 and 08, then build M3 (signals and candidates) as a CLI script that runs on a downloaded file; a real 1 h 41 min stream with chat is already in `data/work/cli-VnQ4VcAqauk/` (`source.mp4`, `chat.json`, 178 messages) and can be used for the M3 check if it still exists.
-M2 built: `app/sources/` (allowlist `urls.py`, interface `base.py`, `registry.py`, `youtube.py` on the yt-dlp Python API, `ytdlp_errors.py`, `youtube_chat.py`), `app/pipeline/download.py` + `chat.py`, `app/cli/fetch_source.py`, `POST /api/videos/inspect`, `POST /api/system/update-downloader`. Assumptions AA-017…AA-024, decisions D-025 (Node 22+) and D-026 (prefer H.264).
+M6 rendering: read docs 05 and 11, then build cut → face crop → ASS captions → render on one clip (`render/` package + a dev CLI), then M7.
+M3–M5 built (see "M3–M5 output" below and AA-025…AA-036).
 
 ## Done but unverified
 - `VIDEO_PRIVATE` on a real private video: the owner's "private" link (`aaaaaaaaaaa`) is answered by YouTube with "This video is unavailable", so it maps to `VIDEO_UNAVAILABLE`. The private mapping is covered by a unit test with YouTube's "Private video" reason only.
@@ -55,6 +55,12 @@ M2 built: `app/sources/` (allowlist `urls.py`, interface `base.py`, `registry.py
 - Run backend tests/checks: `cd backend && .venv/Scripts/ruff.exe check . && .venv/Scripts/ruff.exe format --check . && .venv/Scripts/mypy.exe && .venv/Scripts/python.exe -m pytest`
 - Run frontend checks: `cd frontend && npm run lint && npm run format:check && npm run typecheck`
 - Regenerate API types (backend running): `cd frontend && npm run gen:api`
+
+## M3–M5 output (2026-11-18, real runs)
+- **M3** `python -m app.cli.find_candidates ../data/work/m3-15min` (15-min slice of VnQ4VcAqauk with its 47 chat messages, AA-029): 12 candidates, e.g. `1. peak 0:11:17 window 0:10:52-0:11:52 score 0.707 (chat=1.00 audio=0.16 motion=1.00)`; audio 8.2 s, motion 111.9 s; **peak memory 0.20 GB**. Full 101-min stream: 12 candidates, audio 62.5 s, motion 645 s, peak 0.20 GB. 4.5-min video zsCGS-Yzjnw: 4 candidates (short video), no chat (weights renormalized).
+- **M4** `transcribe_candidates ../data/work/m3-15min` (≤ 20 min → whole video): Auto = `medium`; GPU failed (`cublas64_12.dll` missing) → CPU; 207 segments, 2101 words, language en, 560 s, peak 2.03 GB. Full stream with `--model base`: 11 merged candidate spans (1400 s of 6076 s), 3232 words, 192 s, **peak 0.66 GB** (budget 1.5 GB at `base`).
+- **M5** no real key here: covered by tests (bad JSON → repair → `LLM_BAD_RESPONSE`, 429 backoff 2/6/15 s → `LLM_RATE_LIMITED`, auth → `LLM_AUTH_FAILED`, key never in logs or responses, select repair/fallback). Owner check: `cd backend; .\.venv\Scripts\python.exe -m app.cli.select_clips ..\data\work\m3-15min --provider gemini --model <id>` (key asked hidden).
+- pytest 191 passed; ruff/format/mypy strict clean.
 
 ## M1 "Done when" output (2026-11-17)
 - Migrations on a fresh DB (`DATA_DIR` = new temp folder with a space): `Running upgrade  -> 0001, Initial schema` → `0001 (head)`; tables `alembic_version, batches, clips, jobs, settings, videos`; `journal_mode: wal`. `alembic check`: "No new upgrade operations detected."
