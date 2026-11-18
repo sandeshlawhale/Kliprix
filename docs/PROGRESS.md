@@ -3,8 +3,8 @@
 Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must update it before stopping, even if it is out of tokens soon. Keep it short and factual. Never claim something is done unless you ran its check.
 
 ## Current state
-- **Current milestone:** M10 (next; continuous run M3→M10, D-027)
-- **Status:** M2 done and verified (tag `m2`); M1 tag `m1`; M0 tag `m0`
+- **Current milestone:** all milestones built (M3→M10 in one run, D-027). **Waiting for the owner's checks** below; no milestone after M0–M2 is tagged yet.
+- **Status:** M0–M2 verified and tagged (`m0`, `m1`, `m2`). M3–M10 built and checked by the agent as far as possible without the owner (real runs on this machine, see "M3–M9 output" and "M10 output"); owner-only checks are listed below.
 - **Last session:** 2026-11-18, Claude Code (Claude Opus 5.5)
 - **Last commit:** see `git log -1`
 
@@ -13,48 +13,58 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 - [x] M1 Backend foundation
 - [x] M2 Sources (inspect, download, chat)
 - [x] M3 Signals and candidates
-- [x] M4 Transcription and Hinglish (Hinglish sample check open, owner)
-- [x] M5 LLM layer and selection (real-key check open, owner)
-- [x] M6 Rendering (crop, layout, captions) (owner visual review open)
-- [x] M7 Job queue and orchestration (real 3-link run open: needs the owner's key)
+- [x] M4 Transcription and Hinglish (Hinglish sample check open)
+- [x] M5 LLM layer and selection (real-key check open)
+- [x] M6 Rendering (crop, layout, captions) (visual review open)
+- [x] M7 Job queue and orchestration (real 3-link run open)
 - [x] M8 Frontend shell
-- [x] M9 Results page and clip editor (checked with a test-only fake LLM; real-key run open)
-- [ ] M10 Storage, README, scripts, Docker, tests
+- [x] M9 Results page and clip editor (real-key run open)
+- [x] M10 Storage, README, scripts, Docker, tests (clean machine, Docker, low-spec timing open)
 
 ## In progress (exact next step)
-M10: README, `scripts/start.bat` + `scripts/start.sh`, Docker Compose + Dockerfiles, THIRD_PARTY_NOTICES, CI workflow, performance notes. Storage endpoints are already built (AA-054).
-M3–M9 built (see "M3–M9 output" below, AA-025…AA-057, proposal P-001).
+Nothing in progress. **Next step: the owner runs the checks below.** Start the app with `scripts\start.bat` (Windows) or `./scripts/start.sh`, configure a real key in Configure API, and paste 3 links. Fix anything found, then tag `m3`…`m10` once each milestone's check passes (the agent did not tag them because the owner checks are open). Then consider proposal P-001 (video retry endpoint) in `14-decisions-log.md`.
+
+## Checks left for the owner
+1. **M5 real key**: `cd backend; .\.venv\Scripts\python.exe -m app.cli.select_clips ..\data\work\m3-15min --provider gemini --model <model id>` (key asked hidden) → 5 valid clips with metadata; then check `data\logs\app.log` does not contain the key. Also try Configure API → Load models / Test connection with the real key.
+2. **M7 real run**: in the app, 3 links (one private/removed) → all stages run unattended, the bad one fails alone; stop the app mid-run (Ctrl+C) and start it again → it resumes (configure the key again after the restart, AA-046).
+3. **M4 Hinglish**: a Hindi/Hinglish video with style language Hinglish → captions in Roman letters with the same word count/timing (needs the key for transliteration).
+4. **M6 visual review**: look at real exports (and `data\work\m6\frames\*.png`) for all 3 caption styles in face and full-frame mode; tune `backend/app/render/layout_constants.py` if needed (A-007).
+5. **M9 with a real key**: edit a clip → preview shows the change → export → download plays; edits survive reload (the agent checked this flow only with a test-only fake LLM).
+6. **M10 clean machine**: fresh clone on another PC following README → shorts produced; **Docker**: start Docker Desktop, `docker compose up --build`, open http://127.0.0.1:3000 (Docker Desktop was not running here, so the images were never built); **low-spec timing** for the README performance table; README batch/clip screenshots from a real run (AA-061); doctor/launcher on macOS/Linux.
 
 ## Done but unverified
-- `VIDEO_PRIVATE` on a real private video: the owner's "private" link (`aaaaaaaaaaa`) is answered by YouTube with "This video is unavailable", so it maps to `VIDEO_UNAVAILABLE`. The private mapping is covered by a unit test with YouTube's "Private video" reason only.
-- Leftover part cleanup (`remove_leftover_parts`) is unit-tested; a real run where yt-dlp leaves a part behind has not happened again since the fix.
-- `POST /api/system/update-downloader` was only tested with pip mocked (a real run would change the installed yt-dlp version).
-- `scripts/doctor.py` was only tested on Windows (no macOS/Linux machine available).
+- `VIDEO_PRIVATE` on a real private video: the owner's "private" link (`aaaaaaaaaaa`) answers "This video is unavailable" → `VIDEO_UNAVAILABLE`; the private mapping is unit-tested only.
+- Leftover part cleanup (`remove_leftover_parts`) is unit-tested; not seen again in a real run.
+- `POST /api/system/update-downloader` only tested with pip mocked.
+- `scripts/doctor.py`, `scripts/run.py`, `start.sh` only run on Windows (CI checks the syntax on Linux).
+- GPU transcription: this machine has an NVIDIA GPU without CUDA libraries, so only the GPU→CPU fallback ran (AA-030).
+- CI workflow was written and its YAML parsed, but it has not run on GitHub yet (nothing pushed).
 
-## Known problems / blockers
-- None.
-- Node 22+ is required (D-025); doctor FAILs below 22.
-- `DATA_DIR` inside a OneDrive folder: OneDrive/antivirus can briefly lock big files (seen once: yt-dlp could not delete a 2.9 GB part file). The download now retries the cleanup; the M10 README should advise a `DATA_DIR` outside synced folders.
-- No README yet (M10). Its requirements section must say Node 22+ (D-025) and "restart after Update downloader" (AA-021).
-- Notes: backend Python is limited to 3.11–3.12 (AA-009); this machine's default is 3.14, and the backend venv uses 3.12. Endpoints not built yet on purpose: `/api/llm/models` and `/api/llm/test` (M5), `/api/system/open-folder` (optional, AA-014).
-- Start scripts (`start.bat`/`start.sh`) don't exist yet (M10). They should get the interpreter from `python scripts/doctor.py --print-python`.
+## Known problems / limits
+- After a backend restart the LLM key is gone (memory only); a resumed video that reaches "Pick clips" fails with `LLM_NOT_CONFIGURED`, and there is no video retry endpoint yet (P-001); the user must start a new batch (it downloads again).
+- Sparse chat (few messages) saturates the chat signal to 0/1 after robust normalization (AA-026); candidates are still sensible but chat weight then acts like a presence flag.
+- Motion analysis decodes every frame: ~11 min for a 101-min 1080p60 stream on this PC.
+- Hinglish captions depend on the LLM transliteration; Whisper `language="hi"` (AA-032) is untested on real Hinglish audio.
+- `DATA_DIR` inside OneDrive can briefly lock big files (README advises a folder outside synced ones).
+- Python 3.11–3.12 only (AA-009); Node 22+ (D-025).
 
 ## Commands that work (copy from real runs)
-- Doctor: `python scripts/doctor.py` (from repo root; exit 0 = ready; any Python 3 can run it)
-- Backend interpreter for scripts: `python scripts/doctor.py --print-python` (prints a path, exit 0; or reason on stderr, exit 1)
-- Create backend venv: `cd backend && py -3.12 -m venv .venv && .venv/Scripts/python.exe -m pip install -r requirements-dev.txt`
-- Start backend (the module has no `app` object, only the `create_app` factory, so `uvicorn app.main:app` fails with "Attribute app not found"; `--factory` is required). Tested 2026-11-17, `GET /api/health` → 200 `{"status":"ok","version":"0.1.0"}`:
-  - PowerShell: `cd backend; .\.venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000`
-  - Git Bash / macOS / Linux: `cd backend && .venv/Scripts/python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000` (on macOS/Linux the venv path is `.venv/bin/python`)
-  - Creates `DATA_DIR` folders and applies migrations on start.
-- Migrations by hand: `cd backend && .venv/Scripts/alembic.exe upgrade head` (uses `DATA_DIR`); drift check: `.venv/Scripts/alembic.exe check`
-- New migration: `cd backend && DATA_DIR=<temp dir> .venv/Scripts/alembic.exe revision --autogenerate -m "..."`, then replace `app.db.models.UtcDateTime()` with `sa.DateTime()` in the generated file
-- Start frontend (second terminal, backend running): `cd frontend; npm install; npm run dev` → http://127.0.0.1:3000, proxies `/api/*` to `BACKEND_URL` (default http://127.0.0.1:8000). Tested 2026-11-17: `GET http://127.0.0.1:3000/api/health` → `{"status":"ok","version":"0.1.0"}`, `/` → 200.
-- Source stages for one link (dev CLI, AA-020): `cd backend; .\.venv\Scripts\python.exe -m app.cli.fetch_source <url> [--out DIR] [--inspect-only]`
-- Install/refresh backend deps after a pull: `cd backend; .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt`
-- Run backend tests/checks: `cd backend && .venv/Scripts/ruff.exe check . && .venv/Scripts/ruff.exe format --check . && .venv/Scripts/mypy.exe && .venv/Scripts/python.exe -m pytest`
-- Run frontend checks: `cd frontend && npm run lint && npm run format:check && npm run typecheck`
+- **Start everything (tested 2026-11-18 on Windows):** `scripts\start.bat --no-browser` (or double-click `scripts\start.bat`; macOS/Linux `./scripts/start.sh`). First run: doctor → deps → migrations → `npm ci` → `npm run build` → http://127.0.0.1:3000. Second run skipped the installs and rebuilt only after a source change. Ctrl+C stops both.
+- Doctor: `python scripts/doctor.py` (exit 0 = ready); backend interpreter: `python scripts/doctor.py --print-python`
+- Backend alone: `cd backend; .\.venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000`
+- Frontend dev server (backend running): `cd frontend; npm run dev` → http://127.0.0.1:3000
+- Backend checks: `cd backend && .venv/Scripts/ruff.exe check . && .venv/Scripts/ruff.exe format --check . && .venv/Scripts/mypy.exe && .venv/Scripts/python.exe -m pytest` (221 passed, ~3.5 min)
+- Frontend checks: `cd frontend && npm run lint && npm run format:check && npm run typecheck && npm test` (Vitest 11 passed)
 - Regenerate API types (backend running): `cd frontend && npm run gen:api`
+- Dev CLIs (AA-020, AA-028): `python -m app.cli.fetch_source <url>`, `find_candidates <folder>`, `transcribe_candidates <folder> [--model base]`, `select_clips <folder> --provider … --model …`, `render_clip <folder> --start S --end E [--style …] [--crop …] [--frames DIR] [--low-ram]`, `style_samples --out ../frontend/public/style-samples` (all from `backend/`)
+- New migration: `cd backend && DATA_DIR=<temp dir> .venv/Scripts/alembic.exe revision --autogenerate -m "..."`, then replace `app.db.models.UtcDateTime()` with `sa.DateTime()`
+- Docker (not run here): `docker compose up --build`
+
+## M10 output (2026-11-18)
+- Launcher run 1 found a real bug: `package-lock.json` was out of sync with `package.json` (`npm ci`: "Missing: @emnapi/core … from lock file"), which would have broken every fresh clone; fixed with `npm install`, `npm ci` then passed. Run 2: all steps, "Kliprix is running at http://127.0.0.1:3000"; `GET /` 200 and `/api/health` through the proxy `{"status":"ok","version":"0.1.0"}`. Run 3 (after a source change) skipped installs and rebuilt the frontend only.
+- Production build in the browser: Home, Style (sample tiles blank → fixed with `unoptimized`, AA-062), Settings; screenshots in `docs/screenshots/`.
+- `docker compose config` valid; images not built (Docker Desktop not running). THIRD_PARTY_NOTICES generated from installed metadata (108 Python + 15 JS runtime packages; LGPL: soxr, FFmpeg libs inside `av` wheels). CI workflow YAML parses.
+- Final checks: pytest 221 passed; ruff/format/mypy strict clean; frontend lint, format, typecheck clean; Vitest 11 passed; `next build` OK; doctor "Ready. 0 warning(s)".
 
 ## M3–M9 output (2026-11-18, real runs)
 - **M3** `python -m app.cli.find_candidates ../data/work/m3-15min` (15-min slice of VnQ4VcAqauk with its 47 chat messages, AA-029): 12 candidates, e.g. `1. peak 0:11:17 window 0:10:52-0:11:52 score 0.707 (chat=1.00 audio=0.16 motion=1.00)`; audio 8.2 s, motion 111.9 s; **peak memory 0.20 GB**. Full 101-min stream: 12 candidates, audio 62.5 s, motion 645 s, peak 0.20 GB. 4.5-min video zsCGS-Yzjnw: 4 candidates (short video), no chat (weights renormalized).
@@ -90,6 +100,7 @@ M3–M9 built (see "M3–M9 output" below, AA-025…AA-057, proposal P-001).
 ## Session log (newest first)
 | Date | Tool / model | What was done | Result |
 |---|---|---|---|
+| 2026-11-18 | Claude Code / Claude Opus 5.5 | Continuous run M3→M10 (D-027): signals/candidates, candidate-first transcription, LLM layer + selection, rendering (face crop, ASS captions, compose), job runner + batches/clips/storage API + SSE, full frontend (shell, Home, Configure API, Style, Settings, batch page, clip editor), launcher, Docker, CI, README, notices. Bugs found by real runs and fixed: key leak in `/api/llm/test` logs, shutdown marking jobs cancelled, SSE buffered by the proxy's gzip, hydration mismatches, out-of-sync package-lock | All agent-runnable checks pass; owner checks listed above; m3–m10 not tagged |
 | 2026-11-18 | Claude Code / Claude Opus 5.5 | M2 finished: real stream with chat replay (178 messages), owner's "private" link, H.264 preference (D-026), leftover-part cleanup, UTF-8 CLI output; chat-downloader confirmed not needed (AA-024) | M2 Done-when passed; tagged `m2`; stopped before M3 |
 | 2026-11-18 | Claude Code / Claude Opus 5.5 | M2 Done-when on owner links 1–2 + stand-in for 3; fixed progress jitter and "This video is unavailable" mapping; Node 22+ required (D-025); chat-downloader not added (AA-024) | Links 1–2 pass; chat replay untested (link 2 has none); link 3 missing; `m2` not tagged |
 | 2026-11-18 | Claude Code / Claude Opus 5.5 | Fixed and tested start commands (backend needs `--factory`). M2 code: URL allowlist, source adapter interface, YouTube adapter (yt-dlp 2026.10.26 + yt-dlp-ejs 0.8.0, Node runtime), error-code mapping, download/chat stages with caching and ffprobe check, fetch_source CLI, `/api/videos/inspect`, `/api/system/update-downloader`; doctor warns below Node 22; API types regenerated. Re-verified M0 claims (httpx2, FastAPI telemetry) in installed source | pytest 112 passed; ruff/format/mypy strict clean; frontend typecheck/format clean. Done-when pending real links |
