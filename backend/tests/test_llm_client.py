@@ -81,6 +81,7 @@ def test_complete_json_passes_session_values() -> None:
     assert call["api_key"] == SECRET
     assert call["temperature"] == 0.3
     assert call["timeout"] == 90.0
+    assert call["drop_params"] is True
     assert "api_base" not in call
 
 

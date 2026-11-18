@@ -103,6 +103,9 @@ class LlmClient:
             "timeout": self._timeout_s,
             "api_key": self._session.api_key,
             "num_retries": 0,
+            # Some models reject settings such as `temperature` (e.g. gemini-3.5-flash-lite);
+            # LiteLLM then drops them instead of failing the call.
+            "drop_params": True,
         }
         if self._session.base_url:
             kwargs["api_base"] = self._session.base_url
