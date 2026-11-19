@@ -5,7 +5,7 @@ they are right after a restart."""
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from app.db.models import ClipRow, VideoRow
@@ -55,6 +55,8 @@ class CheckpointState:
     label: str
     state: str  # pending | running | done | skipped | failed
     detail: str | None = None
+    # Transcribe step only: the engine that ran or runs (D-030, temporary debug display).
+    engine: str | None = None
 
 
 def derive_batch_status(current: str, videos: Sequence[VideoRow], clips: Sequence[ClipRow]) -> str:
@@ -120,7 +122,15 @@ def checkpoints(
             result.append(CheckpointState(key, label, "done"))
         else:
             result.append(CheckpointState(key, label, "pending"))
-    return result
+    return [_with_engine(step, video) for step in result]
+
+
+def _with_engine(step: CheckpointState, video: VideoRow) -> CheckpointState:
+    """The Transcribe step names the engine the pipeline recorded when the step started
+    (D-030, temporary debug display); a step that has not started names none."""
+    if step.key != "transcribe" or step.state == "pending" or not video.transcribe_engine:
+        return step
+    return replace(step, engine=video.transcribe_engine)
 
 
 def _step_percent(key: str, video: VideoRow) -> str | None:

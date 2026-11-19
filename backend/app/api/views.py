@@ -29,6 +29,8 @@ class Checkpoint(BaseModel):
     label: str
     state: CheckpointStateName
     detail: str | None = None
+    # Transcribe step only: the engine that ran or runs, e.g. "Parakeet" (D-030, temporary).
+    engine: str | None = None
 
 
 class ClipSummary(BaseModel):
@@ -184,7 +186,7 @@ def video_view(
         error=error_of(video.error_code, video.error_message),
         note=video.note,
         checkpoints=[
-            Checkpoint(key=s.key, label=s.label, state=s.state, detail=s.detail)  # type: ignore[arg-type]
+            Checkpoint(key=s.key, label=s.label, state=s.state, detail=s.detail, engine=s.engine)  # type: ignore[arg-type]
             for s in states
         ],
         clips=[clip_summary(ctx, clip, positions) for clip in clips],
