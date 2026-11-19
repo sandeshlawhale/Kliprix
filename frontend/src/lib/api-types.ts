@@ -1031,8 +1031,6 @@ export interface components {
             disk_free_gb: number;
             /** Ytdlp Version */
             ytdlp_version: string | null;
-            /** Transcribe Engines */
-            transcribe_engines: ("parakeet" | "whisper")[];
         };
         /** TestResponse */
         TestResponse: {
