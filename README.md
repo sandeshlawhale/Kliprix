@@ -46,8 +46,14 @@ frontend (this takes several minutes and downloads about 1.5 GB of packages). La
 skip what has not changed. Kliprix opens at **http://127.0.0.1:3000**. Press **Ctrl+C** in
 the terminal to stop it.
 
-Speech models (faster-whisper) and the face detector model download once on first use into
-`data/models/`.
+Speech models (faster-whisper; Parakeet, 480 MB) and the face detector model download once on first
+use into `data/models/`.
+
+Speech-to-text: English captions use **Parakeet** (NVIDIA Parakeet-TDT-0.6b-v2 via sherpa-onnx,
+about 4x faster than Whisper `medium` on a 6-core CPU) on PCs with 8 GB of RAM or more; Hinglish
+and smaller PCs use Whisper. Change it in Settings → Transcription. Each video shows which engine
+ran; if Parakeet fails (for example no internet for its first download), Whisper takes over for
+that video and the note says why.
 
 ## Get an API key
 

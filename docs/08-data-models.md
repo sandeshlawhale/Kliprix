@@ -59,7 +59,7 @@ Deleting a batch cascades to videos, clips, jobs; files are removed when `delete
 ## File formats (JSON, UTF-8, versioned with `"version": 1`)
 `signals/<name>.json`: `{ "version":1, "hz":1, "values":[...] }`
 `candidates.json`: `{ "version":1, "items":[{ "peak_t":312, "start":287, "end":347, "score":0.82, "signals":{"chat":0.9,"audio":0.7,"motion":0.6} }] }`
-`transcript.json`: `{ "version":1, "language":"en", "segments":[{ "start":290.1, "end":294.8, "text":"...", "words":[{"text":"no","start":290.1,"end":290.3}] }] }`
+`transcript.json`: `{ "version":1, "language":"en", "engine":"parakeet"|"whisper" (D-028; missing = whisper), "segments":[{ "start":290.1, "end":294.8, "text":"...", "words":[{"text":"no","start":290.1,"end":290.3}] }] }`
 `selection.json`: `{ "version":1, "clips":[{ "start":288.4, "end":340.2, "title":"...", "youtube_title":"...", "youtube_description":"...", "hashtags":["..."], "linkedin_post":"...", "reason":"...", "score":0.9, "needs_extended":false }] }`
 
 ## Retention

@@ -74,7 +74,7 @@ Defaults used for new batches (saved to settings): caption style (3), caption la
 Fields in order: **Provider** dropdown (Gemini, Claude (Anthropic), OpenAI, OpenRouter, Other OpenAI-compatible) → **API key** (password input, never shown after save) → **Load models** button → **Model** dropdown (loaded from the provider; includes "Enter model id manually") → **Test connection** → **Save for this session**. Shows current status: "Configured: Gemini · model-name" (never the key). **Clear** button forgets it. For "OpenAI-compatible", also a Base URL field.
 
 ## Settings `/settings`
-Sections: Appearance (theme), Storage (usage per folder, source-video policy Ask/Delete/Keep, warning size, cleanup buttons with confirmation), Transcription (Whisper model: Auto / tiny / base / small / medium, shows detected RAM and what Auto chose), Downloader (yt-dlp version + "Update downloader"), System check (ffmpeg found, Python/Node versions, GPU yes/no), About (version, MIT license).
+Sections: Appearance (theme), Storage (usage per folder, source-video policy Ask/Delete/Keep, warning size, cleanup buttons with confirmation), Transcription (Speech-to-text engine: Parakeet / Whisper with a one-line note that Hinglish uses Whisper (D-028); Whisper model: Auto / tiny / base / small / medium, shows detected RAM and what Auto chose), Downloader (yt-dlp version + "Update downloader"), System check (ffmpeg found, Python/Node versions, GPU yes/no), About (version, MIT license).
 
 ## Global UI rules
 - Every async action shows loading, success, and error states. Errors use the backend `error.message` text.

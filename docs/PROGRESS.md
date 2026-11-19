@@ -24,11 +24,30 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 ## In progress (exact next step)
 Nothing in progress. **Next step: the owner runs the checks below.** Start the app with `scripts\start.bat` (Windows) or `./scripts/start.sh`, configure a real key in Configure API, and paste 3 links. Fix anything found, then tag `m3`…`m10` once each milestone's check passes (the agent did not tag them because the owner checks are open). Then consider proposal P-001 (video retry endpoint) in `14-decisions-log.md`.
 
-## Parakeet engine (branch `feat/parakeet-engine`, D-028), in progress
-Optional second speech-to-text engine; Whisper code is unchanged. **How to roll back** (any one):
-1. `git switch main`: nothing else needed (main has no Parakeet commits; tag `pre-parakeet` = start point).
+## Parakeet engine (branch `feat/parakeet-engine`, D-028), built, NOT merged
+Second speech-to-text engine; Whisper code kept. **Default = Parakeet** on the owner's instruction (2026-11-19) so the owner can compare. Used only for English captions on PCs with ≥ 8 GB RAM; Hinglish and smaller PCs use Whisper; any Parakeet failure → Whisper for that video with a note on the batch page ("Speech-to-text: …"). The owner decides on merging into `main`.
+
+**How to roll back** (any one):
+1. `git switch main`: nothing else needed (main has no Parakeet commits; tag `pre-parakeet` = start point). Restart the app.
 2. `git revert` the commits on `feat/parakeet-engine` (list them with `git log pre-parakeet..feat/parakeet-engine --oneline`).
 3. Keep the code, but set Settings → Speech-to-text engine to **Whisper**.
+(Migration `0002` only adds a nullable `videos.note` column; `main` ignores it, no DB rollback needed.)
+
+**Measured (2026-11-19, this PC: 6 cores/12 threads, 15.7 GB, CPU only):**
+| Audio | Engine | Transcribe time | RTF | Peak RAM | Words |
+|---|---|---|---|---|---|
+| 15-min English stream (m3-15min) | Parakeet int8, 4 threads, 30 s pieces | 111 s | 0.12 | 1.54 GB | 2133 |
+| same | Whisper small (beam 5, as the app) | 181 s | 0.20 | 1.07 GB | 2130 |
+| same | Whisper medium (current Auto here) | 494 s | 0.55 | 1.93 GB | 2081 |
+| 5-min Hindi podcast (tg2MwT5FPdY 2:00–7:00) | Parakeet | 42 s | 0.14 | 1.17 GB | 207, **unusable** (English-sounding nonsense) |
+| same | Whisper medium, Hinglish mode (`hi` + Roman prompt) | 288 s | 0.96 | 1.99 GB | 833, good Roman Hinglish |
+| same | Whisper small, Hinglish mode | 538 s | 1.79 | 1.26 GB | 774, 595 in Devanagari |
+- Model load: Parakeet ~4 s; first-use download 482 MB + unpack ≈ 130 s here (ran for real through the app code).
+- Word agreement Parakeet vs Whisper medium: 93% over 15 min; word start times differ by 0.08 s median (p90 0.24 s). Neither is clearly more accurate: Parakeet got "Ricochet Cannon", "archer tower"; Whisper got "life gem", "healing tome", "6%", "ice golem". Judged from the game's vocabulary; **nobody listened to the audio**, so there is no true word-error rate.
+- The app path (VAD pieces) on the 15-min audio: 2121 words, peak 1.59 GB, longest word 1.2 s (cap), the earlier "stay. Stay" double word is gone, cached second call 0.02 s.
+- Rendered clip 652–700 s with each transcript (`render_clip … --style pop --crop full`): both 1080x1920, A/V 0 ms, 130 vs 131 caption events, same highlighted word at 5 s; 6 word differences in 129 words.
+
+**Unverified:** a full app run with a real LLM key on both engines (needs the owner's key); a 4 GB PC (Parakeet is skipped there by design); macOS/Linux sherpa-onnx wheels; GPU (Parakeet runs on CPU only).
 
 ## Checks left for the owner
 1. **M5 real key**: `cd backend; .\.venv\Scripts\python.exe -m app.cli.select_clips ..\data\work\m3-15min --provider gemini --model <model id>` (key asked hidden) → 5 valid clips with metadata; then check `data\logs\app.log` does not contain the key. Also try Configure API → Load models / Test connection with the real key.
