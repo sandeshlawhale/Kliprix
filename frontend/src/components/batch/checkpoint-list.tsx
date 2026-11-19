@@ -25,6 +25,11 @@ export function CheckpointList({ checkpoints }: { checkpoints: Checkpoint[] }) {
               {step.label}
               {step.key === "edit" && step.detail ? ` ${step.detail}` : ""}
             </span>
+            {step.engine && (
+              // Temporary debug display (D-030): the engine the backend recorded for this
+              // video when the step started. Remove before production.
+              <span className="border-border rounded border px-1.5 text-xs">{step.engine}</span>
+            )}
             {step.state === "running" && step.key !== "edit" && step.detail && (
               <span className="font-mono text-xs tabular-nums">{step.detail}</span>
             )}

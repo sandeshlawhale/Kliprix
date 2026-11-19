@@ -544,6 +544,8 @@ export interface components {
             state: "pending" | "running" | "done" | "skipped" | "failed";
             /** Detail */
             detail?: string | null;
+            /** Engine */
+            engine?: string | null;
         };
         /** CleanupRequest */
         CleanupRequest: {
@@ -1029,6 +1031,8 @@ export interface components {
             disk_free_gb: number;
             /** Ytdlp Version */
             ytdlp_version: string | null;
+            /** Transcribe Engines */
+            transcribe_engines: ("parakeet" | "whisper")[];
         };
         /** TestResponse */
         TestResponse: {
