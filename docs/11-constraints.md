@@ -5,7 +5,7 @@
 |---|---|---|---|---|
 | Minimum | 4 GB | `base` int8 (`tiny` if free RAM < 1.5 GB) | 720p | Slow but must work |
 | Normal | 8 GB | `small` int8 | 1080p | |
-| Good | 16 GB+ or NVIDIA GPU | `medium` (GPU: `large-v3` allowed if VRAM ≥ 8 GB) | 1080p | |
+| Good | 16 GB+ or NVIDIA GPU | `medium` (NVIDIA GPU with VRAM ≥ 4 GB: `large-v3-turbo` on the GPU, D-032) | 1080p | |
 The user can override the model in Settings. Detect RAM with psutil at startup; show what Auto chose.
 
 ## Memory and CPU rules
