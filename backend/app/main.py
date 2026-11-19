@@ -6,6 +6,7 @@ Start with: `uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000`
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
@@ -14,19 +15,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.telemetry import TelemetryConfig
 
 from app.api import batches, clips, llm, settings, storage, system, videos
-from app.config import APP_NAME, APP_VERSION, AppConfig, ensure_data_dirs, load_config
+from app.config import (
+    APP_NAME,
+    APP_VERSION,
+    PARAKEET_MAX_THREADS,
+    AppConfig,
+    ensure_data_dirs,
+    load_config,
+)
 from app.core.errors import install_error_handlers
 from app.core.events import EventBus
-from app.core.hardware import nvidia_vram_gb
+from app.core.hardware import nvidia_vram_gb, speech_threads
 from app.core.logging import setup_logging
 from app.db.engine import make_engine, make_session_factory
 from app.db.migrate import upgrade_to_head
-from app.jobs.context import JobContext
+from app.jobs.context import JobContext, ParakeetFactory
 from app.jobs.runner import JobRunner
 from app.llm.client import default_completion
 from app.llm.models import fetch_json
 from app.llm.session import LlmSessionStore
 from app.pipeline.transcribe import RunnerFactory, WhisperRunner
+from app.pipeline.transcribe_parakeet import ParakeetRunner
 from app.sources.registry import build_adapters
 
 logger = logging.getLogger(__name__)
@@ -44,6 +53,20 @@ _TELEMETRY_OFF: TelemetryConfig = {
 def _whisper_factory(config: AppConfig) -> Callable[[str, bool], RunnerFactory]:
     def factory(model: str, use_gpu: bool) -> RunnerFactory:
         return lambda: WhisperRunner(model, config.data_dir / "models", use_gpu)
+
+    return factory
+
+
+def _parakeet_factory(config: AppConfig) -> ParakeetFactory:
+    def factory(
+        cancel: threading.Event | None, on_download: Callable[[float], None]
+    ) -> RunnerFactory:
+        return lambda: ParakeetRunner(
+            config.data_dir / "models",
+            speech_threads(PARAKEET_MAX_THREADS),
+            cancel=cancel,
+            on_download=on_download,
+        )
 
     return factory
 
@@ -84,6 +107,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         bus=app.state.event_bus,
         whisper_factory=_whisper_factory(active),
         gpu_vram=nvidia_vram_gb,
+        parakeet_factory=_parakeet_factory(active),
     )
     app.state.job_runner = JobRunner(app.state.job_context)
     install_error_handlers(app)

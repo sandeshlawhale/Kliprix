@@ -89,6 +89,8 @@ class VideoRow(Base):
     error_code: Mapped[str | None] = mapped_column(String)
     error_message: Mapped[str | None] = mapped_column(String)
     source_path: Mapped[str | None] = mapped_column(String)
+    # Which speech-to-text engine ran and why (D-028), shown under the video header.
+    note: Mapped[str | None] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now, onupdate=utc_now)
 

@@ -24,6 +24,9 @@ SLUG_MAX = 40
 _NOT_SLUG = re.compile(r"[^a-z0-9]+")
 # Builds the Whisper runner for a model name and GPU flag (replaced by a fake in tests).
 WhisperFactory = Callable[[str, bool], RunnerFactory]
+# Builds the Parakeet runner (D-028) for a job's cancel event and a model-download progress
+# callback. None = this app has no Parakeet engine, so Whisper is used.
+ParakeetFactory = Callable[[threading.Event | None, Callable[[float], None]], RunnerFactory]
 
 
 def slugify(text: str, fallback: str = "clip") -> str:
@@ -44,6 +47,7 @@ class JobContext:
     completion: Completion = default_completion
     memory: Callable[[], MemoryInfo] = read_memory
     gpu_vram: Callable[[], float | None] = field(default=lambda: None)
+    parakeet_factory: ParakeetFactory | None = None
 
     @property
     def data_dir(self) -> Path:

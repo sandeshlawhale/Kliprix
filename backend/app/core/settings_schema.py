@@ -13,6 +13,8 @@ ClipLengthMode = Literal["standard", "extended"]
 CropMode = Literal["auto", "face", "full"]
 Theme = Literal["light", "dark", "system"]
 WhisperSetting = Literal["auto", "tiny", "base", "small", "medium"]
+# Speech-to-text engine (D-028). Parakeet is English-only; Hinglish always uses Whisper.
+TranscribeEngine = Literal["parakeet", "whisper"]
 SourcePolicy = Literal["ask", "delete", "keep"]
 
 MIN_CLIPS_PER_VIDEO = 1
@@ -39,6 +41,7 @@ class Settings(_Strict):
     theme: Theme
     style_defaults: StyleOverrides
     whisper_model: WhisperSetting
+    transcribe_engine: TranscribeEngine
     source_policy: SourcePolicy
     storage_warn_gb: float = Field(gt=0)
     thorough_mode: bool
@@ -62,6 +65,7 @@ class SettingsUpdate(_Strict):
     theme: Theme | None = None
     style_defaults: StyleOverridesUpdate | None = None
     whisper_model: WhisperSetting | None = None
+    transcribe_engine: TranscribeEngine | None = None
     source_policy: SourcePolicy | None = None
     storage_warn_gb: float | None = Field(default=None, gt=0)
     thorough_mode: bool | None = None
@@ -69,7 +73,8 @@ class SettingsUpdate(_Strict):
 
 # Defaults (AA-012): first caption style, English, standard length, 5 clips, the layout
 # spec's blur radius 30, auto crop, title on; "ask" so nothing is deleted without the user;
-# 10 GB storage warning (A-006).
+# 10 GB storage warning (A-006). Parakeet is the default engine on the owner's instruction
+# (D-028); "whisper" switches back.
 DEFAULT_SETTINGS = Settings(
     theme="system",
     style_defaults=StyleOverrides(
@@ -82,6 +87,7 @@ DEFAULT_SETTINGS = Settings(
         show_title=True,
     ),
     whisper_model="auto",
+    transcribe_engine="parakeet",
     source_policy="ask",
     storage_warn_gb=10.0,
     thorough_mode=False,

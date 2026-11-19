@@ -64,6 +64,8 @@ class Video(BaseModel):
     stage: str | None
     progress: float
     error: ErrorBody | None = None
+    # Which speech-to-text engine ran and why (D-028), e.g. "Speech-to-text: Parakeet".
+    note: str | None = None
     checkpoints: list[Checkpoint]
     clips: list[ClipSummary]
 
@@ -180,6 +182,7 @@ def video_view(
         stage=video.stage,
         progress=video.progress,
         error=error_of(video.error_code, video.error_message),
+        note=video.note,
         checkpoints=[
             Checkpoint(key=s.key, label=s.label, state=s.state, detail=s.detail)  # type: ignore[arg-type]
             for s in states

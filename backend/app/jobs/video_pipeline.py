@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
-from app.core.hardware import pick_whisper_model
+from app.core.hardware import MemoryInfo, pick_whisper_model
 from app.core.metrics import stage_timer
 from app.core.settings_schema import Settings
 from app.db.models import VideoRow
@@ -30,7 +30,15 @@ from app.pipeline.hinglish import to_hinglish
 from app.pipeline.motion import run_motion
 from app.pipeline.select import VideoFacts, all_words, run_select, words_between
 from app.pipeline.signals import SignalFile, run_chat_signal
-from app.pipeline.transcribe import Word, plan_spans, run_transcribe
+from app.pipeline.stt_engine import choose_engine
+from app.pipeline.transcribe import (
+    CaptionLanguage,
+    Span,
+    TranscriptFile,
+    Word,
+    plan_spans,
+    run_transcribe,
+)
 from app.sources.registry import resolve
 
 logger = logging.getLogger(__name__)
@@ -51,6 +59,20 @@ _STAGES = list(PROGRESS_AT)
 # Smallest change of the video's progress (0-1) worth saving and sending to the UI.
 PROGRESS_STEP = 0.005
 
+# The video's note says which speech-to-text engine ran and why (D-028).
+PARAKEET_NOTE = "Speech-to-text: Parakeet."
+PARAKEET_MISSING_NOTE = "Parakeet is not available in this app, so Whisper was used."
+MODEL_DOWNLOAD_NOTE = "Downloading the Parakeet speech model (first use, 480 MB):"
+# Parakeet errors that fall back to Whisper; anything else (e.g. cancel) is not a fallback.
+PARAKEET_FALLBACK_CODES = frozenset(
+    {ErrorCode.TRANSCRIBE_FAILED, ErrorCode.MODEL_DOWNLOAD_FAILED, ErrorCode.DISK_FULL}
+)
+
+
+def _whisper_note(model: str, reason: str | None) -> str:
+    used = f"Speech-to-text: Whisper {model}."
+    return f"{reason} {used}" if reason else used
+
 
 class VideoPipeline:
     def __init__(self, ctx: JobContext, video_id: str, cancel: threading.Event) -> None:
@@ -58,6 +80,7 @@ class VideoPipeline:
         self.video_id = video_id
         self.cancel = cancel
         self._last_progress = -1.0
+        self._download_percent = -1
 
     # ----- state updates (each in its own short transaction) -----
 
@@ -155,14 +178,7 @@ class VideoPipeline:
         spans = plan_spans(
             [(c.start, c.end) for c in candidates.items], duration, thorough=settings.thorough_mode
         )
-        model = self._whisper_model(settings)
-        with stage_timer("transcribe", video=self.video_id, model=model):
-            transcript = run_transcribe(
-                video_dir, video_dir / AUDIO_FILE_NAME, spans,
-                caption_language="hinglish" if language == "hinglish" else "en",
-                runner_factory=self.ctx.whisper_factory(model, self.ctx.gpu_vram() is not None),
-                cancel=self.cancel, on_progress=lambda f: self._fraction("transcribe", f),
-            )  # fmt: skip
+        transcript = self._transcribe(settings, language, spans, memory)
 
         self._stage("select")
         client = self._llm_client()
@@ -223,6 +239,58 @@ class VideoPipeline:
             words_json=json.dumps([w.model_dump() for w in words]), edited=0,
         )  # fmt: skip
         repo.add_job(session, "clip_render", clip.id, repo.PRIORITY_BACKGROUND)
+
+    def _transcribe(
+        self, settings: Settings, language: str, spans: list[Span], memory: MemoryInfo
+    ) -> TranscriptFile:
+        """Transcribe with the engine `choose_engine` picks (D-028). A Parakeet failure
+        (package or model missing, download or runtime error) falls back to Whisper for this
+        video, logged and written to the video's note; cancel is never a failure."""
+        video_dir = self.ctx.video_dir(self.video_id)
+        wav = video_dir / AUDIO_FILE_NAME
+        caption: CaptionLanguage = "hinglish" if language == "hinglish" else "en"
+        choice = choose_engine(settings.transcribe_engine, caption, memory)
+        reason = choice.reason
+        if choice.engine == "parakeet":
+            if self.ctx.parakeet_factory is None:
+                reason = PARAKEET_MISSING_NOTE
+            else:
+                factory = self.ctx.parakeet_factory(self.cancel, self._model_download)
+                try:
+                    with stage_timer("transcribe", video=self.video_id, engine="parakeet"):
+                        transcript = run_transcribe(
+                            video_dir, wav, spans, caption_language="en",
+                            runner_factory=factory, cancel=self.cancel,
+                            on_progress=lambda f: self._fraction("transcribe", f),
+                            engine="parakeet",
+                        )  # fmt: skip
+                    self._update(note=PARAKEET_NOTE)
+                    return transcript
+                except AppError as exc:
+                    if exc.code not in PARAKEET_FALLBACK_CODES:
+                        raise
+                    logger.warning(
+                        "parakeet failed video=%s code=%s: %s; using whisper",
+                        self.video_id, exc.code, exc.message,
+                    )  # fmt: skip
+                    reason = f"Parakeet failed ({exc.message}), so Whisper was used."
+        model = self._whisper_model(settings)
+        # Shown while Whisper runs, so a fallback is visible right away, not only at the end.
+        self._update(note=_whisper_note(model, reason))
+        with stage_timer("transcribe", video=self.video_id, engine="whisper", model=model):
+            transcript = run_transcribe(
+                video_dir, wav, spans, caption_language=caption,
+                runner_factory=self.ctx.whisper_factory(model, self.ctx.gpu_vram() is not None),
+                cancel=self.cancel, on_progress=lambda f: self._fraction("transcribe", f),
+                engine="whisper",
+            )  # fmt: skip
+        return transcript
+
+    def _model_download(self, fraction: float) -> None:
+        percent = int(fraction * 100)
+        if percent != self._download_percent:
+            self._download_percent = percent
+            self._update(note=f"{MODEL_DOWNLOAD_NOTE} {percent}%")
 
     def _whisper_model(self, settings: Settings) -> str:
         if settings.whisper_model != "auto":

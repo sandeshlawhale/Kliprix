@@ -18,6 +18,7 @@ def test_defaults_on_fresh_db(client: TestClient) -> None:
             "show_title": True,
         },
         "whisper_model": "auto",
+        "transcribe_engine": "parakeet",
         "source_policy": "ask",
         "storage_warn_gb": 10.0,
         "thorough_mode": False,
