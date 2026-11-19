@@ -25,9 +25,9 @@ files = ["app", "tests"]
 module = ["yt_dlp", "yt_dlp.*"]
 ignore_missing_imports = true
 
-# faster-whisper, MediaPipe and fontTools ship no type hints either.
+# faster-whisper, MediaPipe, fontTools and sherpa-onnx ship no type hints either.
 [[tool.mypy.overrides]]
-module = ["faster_whisper", "faster_whisper.*", "mediapipe", "mediapipe.*", "fontTools", "fontTools.*"]
+module = ["faster_whisper", "faster_whisper.*", "mediapipe", "mediapipe.*", "fontTools", "fontTools.*", "sherpa_onnx", "sherpa_onnx.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

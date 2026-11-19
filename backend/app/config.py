@@ -171,6 +171,33 @@ TRANSCRIBE_CHUNK_S = 600
 # faster-whisper's own default beam size.
 WHISPER_BEAM_SIZE = 5
 
+# Parakeet engine (D-028): NVIDIA Parakeet-TDT-0.6b-v2 int8 through sherpa-onnx, English only.
+PARAKEET_MODEL_NAME = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
+PARAKEET_MODEL_URL = (
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
+    f"{PARAKEET_MODEL_NAME}.tar.bz2"
+)
+# Longest piece handed to Parakeet at once. Measured on a 15-min stream: 30 s pieces peak at
+# 1.54 GB, 60 s pieces at 2.22 GB with no speed gain.
+PARAKEET_PIECE_S = 30.0
+# Voice detection (Silero, as Whisper's vad_filter) decides where pieces start and end, so a
+# cut never lands inside a word: a pause this long ends a speech region, and padding keeps
+# quiet word edges.
+PARAKEET_VAD_MIN_SILENCE_MS = 500
+PARAKEET_VAD_PAD_MS = 200
+# A word's highlight ends at most this long after it starts. Parakeet gives the last word
+# before a pause the pause's length (measured up to 4.7 s); real words are below 1.2 s.
+PARAKEET_WORD_MAX_S = 1.2
+# A new caption segment starts after sentence punctuation or a pause this long.
+PARAKEET_SEGMENT_GAP_S = 1.0
+# The same word on both sides of a piece boundary within this gap is one word said once.
+PARAKEET_DUPLICATE_GAP_S = 0.4
+# More threads were slower on a 6-core/12-thread CPU (4: 111 s, 6: 124 s for 15 min).
+PARAKEET_MAX_THREADS = 4
+# Model download: socket timeout per read and bytes per read.
+MODEL_DOWNLOAD_TIMEOUT_S = 30.0
+MODEL_DOWNLOAD_BLOCK_BYTES = 1024 * 1024
+
 # LLM (docs/10). Timeout per call, temperatures, backoff waits on 429/5xx before giving up.
 LLM_TIMEOUT_S = 90.0
 LLM_SELECT_TEMPERATURE = 0.3

@@ -6,7 +6,7 @@ Base path `/api`. JSON unless stated. IDs are UUID strings. Times in seconds (fl
 ```json
 { "error": { "code": "VIDEO_PRIVATE", "message": "This video is private.", "details": {} } }
 ```
-Codes: `INVALID_URL`, `UNSUPPORTED_HOST`, `TOO_MANY_VIDEOS`, `VIDEO_PRIVATE`, `VIDEO_AGE_RESTRICTED`, `VIDEO_UNAVAILABLE`, `GEO_BLOCKED`, `DOWNLOAD_FAILED`, `DOWNLOADER_OUTDATED`, `FFMPEG_MISSING`, `LLM_NOT_CONFIGURED`, `LLM_AUTH_FAILED`, `LLM_RATE_LIMITED`, `LLM_BAD_RESPONSE`, `TRANSCRIBE_FAILED`, `RENDER_FAILED`, `DISK_FULL`, `NOT_FOUND`, `VALIDATION_ERROR`, `CONFLICT`, `INTERNAL`.
+Codes: `INVALID_URL`, `UNSUPPORTED_HOST`, `TOO_MANY_VIDEOS`, `VIDEO_PRIVATE`, `VIDEO_AGE_RESTRICTED`, `VIDEO_UNAVAILABLE`, `GEO_BLOCKED`, `DOWNLOAD_FAILED`, `DOWNLOADER_OUTDATED`, `FFMPEG_MISSING`, `LLM_NOT_CONFIGURED`, `LLM_AUTH_FAILED`, `LLM_RATE_LIMITED`, `LLM_BAD_RESPONSE`, `TRANSCRIBE_FAILED`, `MODEL_DOWNLOAD_FAILED`, `RENDER_FAILED`, `DISK_FULL`, `NOT_FOUND`, `VALIDATION_ERROR`, `CONFLICT`, `INTERNAL`.
 Messages are human-readable and never contain keys, tokens, or full file-system paths.
 
 ## System
@@ -30,7 +30,7 @@ Messages are human-readable and never contain keys, tokens, or full file-system 
 - `POST /api/batches` body `{ urls: string[] (1–3), style?: StyleOverrides }` → `201 { id }`. Requires LLM session, else `LLM_NOT_CONFIGURED`. Snapshots the style into the batch.
 - `GET /api/batches?cursor=&limit=` → `{ items: [BatchSummary], next_cursor }` where `BatchSummary = { id, created_at, status, title, video_count, clip_count }`
 - `GET /api/batches/{id}` → `Batch = { id, created_at, status, style, videos: [Video] }`
-  - `Video = { id, url, platform, title, channel, duration_s, thumbnail_url, has_chat, status, stage, progress, error?, checkpoints: [Checkpoint], clips: [ClipSummary] }`
+  - `Video = { id, url, platform, title, channel, duration_s, thumbnail_url, has_chat, status, stage, progress, error?, note?, checkpoints: [Checkpoint], clips: [ClipSummary] }`
   - `Checkpoint = { key: "download"|"chat"|"signals"|"candidates"|"transcribe"|"select"|"edit", label, state: "pending"|"running"|"done"|"skipped"|"failed", detail?: string }` (`detail` examples: "skipped, no chat replay", "2/5", or the error message). Always returned in the fixed order above.
   - `ClipSummary = { id, index, status, stage, progress, queue_position?, title, start_s, end_s, duration_s, thumbnail_url?, error?, edited: bool, has_preview: bool, has_export: bool }`
 - `DELETE /api/batches/{id}?delete_files=true` → `204`
@@ -52,7 +52,7 @@ Messages are human-readable and never contain keys, tokens, or full file-system 
 ## Settings
 - `GET /api/settings` → `Settings`
 - `PUT /api/settings` body partial `Settings` → `Settings`
-  - `Settings = { theme: "light"|"dark"|"system", style_defaults: StyleOverrides, whisper_model: "auto"|"tiny"|"base"|"small"|"medium", source_policy: "ask"|"delete"|"keep", storage_warn_gb, thorough_mode: bool }`
+  - `Settings = { theme: "light"|"dark"|"system", style_defaults: StyleOverrides, whisper_model: "auto"|"tiny"|"base"|"small"|"medium", transcribe_engine: "parakeet"|"whisper", source_policy: "ask"|"delete"|"keep", storage_warn_gb, thorough_mode: bool }`
   - `StyleOverrides = { caption_style, caption_language, clip_length_mode: "standard"|"extended", clips_per_video: 1-5, blur, crop_mode, show_title: bool }`
 
 ## Storage

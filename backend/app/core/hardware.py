@@ -90,6 +90,18 @@ def pick_whisper_model(memory: MemoryInfo, gpu_vram_gb: float | None) -> Whisper
     return "tiny" if memory.available_gb < LOW_FREE_RAM_GB else "base"
 
 
+def reaches_normal_tier(memory: MemoryInfo) -> bool:
+    """True from the 8 GB "Normal" tier up (docs/11). Parakeet needs it (peak 1.5 GB)."""
+    return memory.total_gb >= RAM_TIER_NORMAL_GB * RAM_TIER_TOLERANCE
+
+
+def speech_threads(max_threads: int) -> int:
+    """Threads for the Parakeet engine: the physical cores, at most `max_threads`. Logical
+    (hyper-threaded) cores do not speed up this matrix work and slowed it in a benchmark."""
+    cores = psutil.cpu_count(logical=False) or max(1, (os.cpu_count() or 2) // 2)
+    return max(1, min(max_threads, cores))
+
+
 def find_ffmpeg(ffmpeg_path: str | None) -> str | None:
     """FFMPEG_PATH when set and present, otherwise `ffmpeg` on PATH."""
     if ffmpeg_path:
