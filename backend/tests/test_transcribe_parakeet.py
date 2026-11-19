@@ -1,3 +1,5 @@
+# ruff: noqa: F401, F811
+# (pytest fixtures imported from test_jobs_integration are used as test arguments.)
 """The Parakeet engine (D-028): engine choice, token → word joining, piece planning and
 joining, segments, the transcript cache key, model download errors, the missing package,
 and the pipeline fallback to Whisper. No real model is loaded here (the real runs are in
@@ -16,13 +18,13 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import AppConfig
+from app.config import PARAKEET_MODEL_NAME, PARAKEET_MODEL_URL, PARAKEET_WORD_MAX_S, AppConfig
 from app.core.errors import AppError, ErrorCode
 from app.core.hardware import MemoryInfo
 from app.core.proc import CommandCancelledError
 from app.core.settings_schema import DEFAULT_SETTINGS
 from app.pipeline import transcribe_parakeet as tp
-from app.pipeline.stt_engine import HINGLISH_NOTE, LOW_RAM_NOTE, choose_engine
+from app.pipeline.stt_engine import LOW_RAM_NOTE, choose_engine
 from app.pipeline.transcribe import (
     TRANSCRIPT_FILE_NAME,
     Segment,
@@ -38,7 +40,7 @@ from tests.test_jobs_integration import (
     FakeWhisper,
     build,
     finished,
-    media,  # noqa: F401 - pytest fixture: the synthetic video for the pipeline tests
+    media,
     url,
     wait_for,
 )
@@ -54,15 +56,24 @@ SMALL = MemoryInfo(total_gb=3.9, available_gb=2.0)
 
 def test_default_engine_is_parakeet_and_whisper_stays_selectable() -> None:
     assert DEFAULT_SETTINGS.transcribe_engine == "parakeet"
-    assert choose_engine("whisper", "en", BIG).engine == "whisper"
-    assert choose_engine("whisper", "en", BIG).reason is None
+    assert choose_engine("whisper", BIG).engine == "whisper"
+    assert choose_engine("whisper", BIG).reason is None
 
 
-def test_parakeet_only_for_english_on_8_gb_or_more() -> None:
-    assert choose_engine("parakeet", "en", BIG).engine == "parakeet"
-    hinglish = choose_engine("parakeet", "hinglish", BIG)
-    assert (hinglish.engine, hinglish.reason) == ("whisper", HINGLISH_NOTE)
-    low = choose_engine("parakeet", "en", SMALL)
+def test_parakeet_only_experiment_ignores_setting_and_ram() -> None:
+    for setting in ("parakeet", "whisper"):
+        for memory in (BIG, SMALL):
+            choice = choose_engine(setting, memory, parakeet_only=True)
+            assert (choice.engine, choice.reason) == ("parakeet", None)
+
+
+def test_system_lists_only_parakeet_during_the_experiment(client: TestClient) -> None:
+    assert client.get("/api/system").json()["transcribe_engines"] == ["parakeet"]
+
+
+def test_parakeet_on_8_gb_or_more_whisper_below() -> None:
+    assert choose_engine("parakeet", BIG).engine == "parakeet"
+    low = choose_engine("parakeet", SMALL)
     assert (low.engine, low.reason) == ("whisper", LOW_RAM_NOTE)
 
 
@@ -91,7 +102,7 @@ def test_tokens_join_into_words_with_offset() -> None:
 
 def test_word_before_a_pause_is_not_stretched() -> None:
     words = tp.tokens_to_words([" Vatican"], [10.0], [4.72], offset_s=0.0)
-    assert words[0].end == pytest.approx(10.0 + tp.PARAKEET_WORD_MAX_S)
+    assert words[0].end == pytest.approx(10.0 + PARAKEET_WORD_MAX_S)
 
 
 def test_pieces_end_only_at_region_ends_and_stay_short() -> None:
@@ -198,7 +209,7 @@ def _archive() -> bytes:
     with tarfile.open(fileobj=buffer, mode="w:bz2") as tar:
         for name in tp.MODEL_FILES:
             data = b"x" * 10
-            info = tarfile.TarInfo(f"{tp.PARAKEET_MODEL_NAME}/{name}")
+            info = tarfile.TarInfo(f"{PARAKEET_MODEL_NAME}/{name}")
             info.size = len(data)
             tar.addfile(info, io.BytesIO(data))
     return buffer.getvalue()
@@ -222,8 +233,8 @@ def test_model_downloads_once_with_progress(tmp_path: Path) -> None:
     folder = tp.ensure_model(tmp_path, on_progress=seen.append, opener=opener)
     assert all((folder / name).is_file() for name in tp.MODEL_FILES)
     assert seen[-1] == 1.0
-    assert opened == [tp.PARAKEET_MODEL_URL]
-    assert sorted(p.name for p in folder.parent.iterdir()) == [tp.PARAKEET_MODEL_NAME]
+    assert opened == [PARAKEET_MODEL_URL]
+    assert sorted(p.name for p in folder.parent.iterdir()) == [PARAKEET_MODEL_NAME]
     tp.ensure_model(tmp_path, opener=opener)
     assert len(opened) == 1  # second call: already there
 
@@ -284,6 +295,10 @@ class FakeParakeet(FakeWhisper):
         return segments, language
 
 
+def _transcribe_step(video: dict[str, Any]) -> dict[str, Any]:
+    return next(step for step in video["checkpoints"] if step["key"] == "transcribe")
+
+
 def _run_one(app: Any, config: AppConfig) -> tuple[dict[str, Any], TranscriptFile]:
     with TestClient(app, raise_server_exceptions=False) as client:
         client.put("/api/llm/session", json={"provider": "gemini", "model": "m", "api_key": KEY})
@@ -298,7 +313,9 @@ def _run_one(app: Any, config: AppConfig) -> tuple[dict[str, Any], TranscriptFil
 
 @needs_ffmpeg
 def test_pipeline_uses_parakeet_by_default(
-    config: AppConfig, media: Path, monkeypatch: pytest.MonkeyPatch
+    config: AppConfig,
+    media: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app = build(config, media)
     ctx = app.state.job_context
@@ -307,13 +324,38 @@ def test_pipeline_uses_parakeet_by_default(
     video, transcript = _run_one(app, config)
     assert video["status"] == "done"
     assert video["note"] == "Speech-to-text: Parakeet."
+    assert _transcribe_step(video)["engine"] == "Parakeet"
     assert transcript.engine == "parakeet"
     assert transcript.segments[0].words[0].text.startswith("pk")
 
 
 @needs_ffmpeg
+def test_pipeline_uses_parakeet_for_hinglish_with_a_warning(
+    config: AppConfig,
+    media: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = build(config, media)
+    ctx = app.state.job_context
+    ctx.parakeet_factory = lambda cancel, on_download: FakeParakeet
+    monkeypatch.setattr(ctx, "memory", lambda: BIG)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        client.put("/api/llm/session", json={"provider": "gemini", "model": "m", "api_key": KEY})
+        client.put("/api/settings", json={"style_defaults": {"caption_language": "hinglish"}})
+        created = client.post("/api/batches", json={"urls": [url("aaaaaaaaaaa")]})
+        batch = wait_for(client, created.json()["id"], finished)
+    video = batch["videos"][0]
+    transcript = load_cached(config.data_dir / "downloads" / video["id"])
+    assert transcript is not None
+    assert transcript.engine == "parakeet"
+    assert "only knows English" in video["note"]
+
+
+@needs_ffmpeg
 def test_pipeline_falls_back_to_whisper_when_parakeet_fails(
-    config: AppConfig, media: Path, monkeypatch: pytest.MonkeyPatch
+    config: AppConfig,
+    media: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def broken() -> Any:
         raise AppError(ErrorCode.MODEL_DOWNLOAD_FAILED, "no internet")
@@ -327,7 +369,64 @@ def test_pipeline_falls_back_to_whisper_when_parakeet_fails(
     assert video["error"] is None
     assert video["note"].startswith("Parakeet failed (no internet), so Whisper was used.")
     assert "Speech-to-text: Whisper" in video["note"]
+    assert _transcribe_step(video)["engine"] == "Whisper medium"
     assert transcript.engine == "whisper"
     log = (config.logs_dir / "app.log").read_text(encoding="utf-8")
     assert "parakeet failed" in log
     assert "MODEL_DOWNLOAD_FAILED" in log
+
+
+@needs_ffmpeg
+def test_experiment_uses_parakeet_for_hinglish_on_any_pc_even_if_whisper_is_set(
+    config: AppConfig,
+    media: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = build(config, media)
+    ctx = app.state.job_context
+    ctx.parakeet_only = True
+    ctx.parakeet_factory = lambda cancel, on_download: FakeParakeet
+    monkeypatch.setattr(ctx, "memory", lambda: SMALL)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        client.put("/api/llm/session", json={"provider": "gemini", "model": "m", "api_key": KEY})
+        client.put(
+            "/api/settings",
+            json={
+                "transcribe_engine": "whisper",
+                "style_defaults": {"caption_language": "hinglish"},
+            },
+        )
+        created = client.post("/api/batches", json={"urls": [url("aaaaaaaaaaa")]})
+        batch = wait_for(client, created.json()["id"], finished)
+    video = batch["videos"][0]
+    assert video["status"] == "done"
+    assert _transcribe_step(video)["engine"] == "Parakeet"
+    transcript = load_cached(config.data_dir / "downloads" / video["id"])
+    assert transcript is not None
+    assert transcript.engine == "parakeet"
+
+
+@needs_ffmpeg
+def test_experiment_fails_the_video_instead_of_using_whisper(
+    config: AppConfig,
+    media: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken() -> Any:
+        raise AppError(ErrorCode.MODEL_DOWNLOAD_FAILED, "no internet")
+
+    app = build(config, media)
+    ctx = app.state.job_context
+    ctx.parakeet_only = True
+    ctx.parakeet_factory = lambda cancel, on_download: broken
+    monkeypatch.setattr(ctx, "memory", lambda: BIG)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        client.put("/api/llm/session", json={"provider": "gemini", "model": "m", "api_key": KEY})
+        created = client.post("/api/batches", json={"urls": [url("aaaaaaaaaaa")]})
+        batch = wait_for(client, created.json()["id"], finished)
+    video = batch["videos"][0]
+    assert video["status"] == "failed"
+    assert video["error"]["code"] == "MODEL_DOWNLOAD_FAILED"
+    step = _transcribe_step(video)
+    assert (step["state"], step["engine"]) == ("failed", "Parakeet")
+    assert load_cached(config.data_dir / "downloads" / video["id"]) is None
