@@ -12,7 +12,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.config import AppConfig
+from app.config import PARAKEET_ONLY, AppConfig
 from app.core.events import Event, EventBus
 from app.core.hardware import MemoryInfo, read_memory
 from app.llm.client import Completion, default_completion
@@ -48,6 +48,8 @@ class JobContext:
     memory: Callable[[], MemoryInfo] = read_memory
     gpu_vram: Callable[[], float | None] = field(default=lambda: None)
     parakeet_factory: ParakeetFactory | None = None
+    # Experiment D-030: Parakeet for every video, Whisper switched off (tests turn it off).
+    parakeet_only: bool = PARAKEET_ONLY
 
     @property
     def data_dir(self) -> Path:

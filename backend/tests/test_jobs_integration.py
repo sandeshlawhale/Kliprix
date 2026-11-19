@@ -128,6 +128,7 @@ def build(config: AppConfig, media: Path) -> Any:
     ctx.whisper_factory = lambda model, gpu: FakeWhisper
     # These runs test the pipeline with the fake Whisper; no real Parakeet model (D-028).
     ctx.parakeet_factory = None
+    ctx.parakeet_only = False
     ctx.completion = fake_completion
     ctx.gpu_vram = lambda: None
     return app

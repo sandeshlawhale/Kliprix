@@ -172,6 +172,9 @@ TRANSCRIBE_CHUNK_S = 600
 WHISPER_BEAM_SIZE = 5
 
 # Parakeet engine (D-028): NVIDIA Parakeet-TDT-0.6b-v2 int8 through sherpa-onnx, English only.
+# Experiment (D-030): every video uses Parakeet, Whisper is switched off (no RAM rule, no
+# fallback; a Parakeet failure fails the video). False restores D-028/D-029.
+PARAKEET_ONLY = True
 PARAKEET_MODEL_NAME = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
 PARAKEET_MODEL_URL = (
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"

@@ -61,6 +61,12 @@ PROGRESS_STEP = 0.005
 
 # The video's note says which speech-to-text engine ran and why (D-028).
 PARAKEET_NOTE = "Speech-to-text: Parakeet."
+PARAKEET_HINGLISH_NOTE = (
+    "Speech-to-text: Parakeet. It only knows English, so Hindi words will be wrong; "
+    "choose Whisper in Settings for accurate Hinglish."
+)
+PARAKEET_LABEL = "Parakeet"
+PARAKEET_UNAVAILABLE = "Parakeet is not available in this app (Whisper is switched off)."
 PARAKEET_MISSING_NOTE = "Parakeet is not available in this app, so Whisper was used."
 MODEL_DOWNLOAD_NOTE = "Downloading the Parakeet speech model (first use, 480 MB):"
 # Parakeet errors that fall back to Whisper; anything else (e.g. cancel) is not a fallback.
@@ -245,29 +251,38 @@ class VideoPipeline:
     ) -> TranscriptFile:
         """Transcribe with the engine `choose_engine` picks (D-028). A Parakeet failure
         (package or model missing, download or runtime error) falls back to Whisper for this
-        video, logged and written to the video's note; cancel is never a failure."""
+        video, logged and written to the video's note; cancel is never a failure. In the
+        Parakeet-only experiment (D-030) there is no fallback: the failure fails the video.
+        The engine that actually runs is saved on the video for the Transcribe step."""
         video_dir = self.ctx.video_dir(self.video_id)
         wav = video_dir / AUDIO_FILE_NAME
         caption: CaptionLanguage = "hinglish" if language == "hinglish" else "en"
-        choice = choose_engine(settings.transcribe_engine, caption, memory)
+        only = self.ctx.parakeet_only
+        choice = choose_engine(settings.transcribe_engine, memory, parakeet_only=only)
         reason = choice.reason
         if choice.engine == "parakeet":
             if self.ctx.parakeet_factory is None:
+                if only:
+                    raise AppError(ErrorCode.TRANSCRIBE_FAILED, PARAKEET_UNAVAILABLE)
                 reason = PARAKEET_MISSING_NOTE
             else:
                 factory = self.ctx.parakeet_factory(self.cancel, self._model_download)
+                note = PARAKEET_HINGLISH_NOTE if caption == "hinglish" else PARAKEET_NOTE
+                # Shown while Parakeet runs (a first-use download replaces the note with its
+                # progress), so the engine is visible before the step ends.
+                self._update(note=note, transcribe_engine=PARAKEET_LABEL)
                 try:
                     with stage_timer("transcribe", video=self.video_id, engine="parakeet"):
                         transcript = run_transcribe(
-                            video_dir, wav, spans, caption_language="en",
+                            video_dir, wav, spans, caption_language=caption,
                             runner_factory=factory, cancel=self.cancel,
                             on_progress=lambda f: self._fraction("transcribe", f),
                             engine="parakeet",
                         )  # fmt: skip
-                    self._update(note=PARAKEET_NOTE)
+                    self._update(note=note)
                     return transcript
                 except AppError as exc:
-                    if exc.code not in PARAKEET_FALLBACK_CODES:
+                    if only or exc.code not in PARAKEET_FALLBACK_CODES:
                         raise
                     logger.warning(
                         "parakeet failed video=%s code=%s: %s; using whisper",
@@ -276,7 +291,7 @@ class VideoPipeline:
                     reason = f"Parakeet failed ({exc.message}), so Whisper was used."
         model = self._whisper_model(settings)
         # Shown while Whisper runs, so a fallback is visible right away, not only at the end.
-        self._update(note=_whisper_note(model, reason))
+        self._update(note=_whisper_note(model, reason), transcribe_engine=f"Whisper {model}")
         with stage_timer("transcribe", video=self.video_id, engine="whisper", model=model):
             transcript = run_transcribe(
                 video_dir, wav, spans, caption_language=caption,

@@ -15,6 +15,7 @@ Theme = Literal["light", "dark", "system"]
 WhisperSetting = Literal["auto", "tiny", "base", "small", "medium"]
 # Speech-to-text engine (D-028). Parakeet is English-only; Hinglish always uses Whisper.
 TranscribeEngine = Literal["parakeet", "whisper"]
+TRANSCRIBE_ENGINES: tuple[TranscribeEngine, ...] = ("parakeet", "whisper")
 SourcePolicy = Literal["ask", "delete", "keep"]
 
 MIN_CLIPS_PER_VIDEO = 1
