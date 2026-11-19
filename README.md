@@ -49,9 +49,11 @@ the terminal to stop it.
 Speech models (faster-whisper; Parakeet, 480 MB) and the face detector model download once on first
 use into `data/models/`.
 
-Speech-to-text: English captions use **Parakeet** (NVIDIA Parakeet-TDT-0.6b-v2 via sherpa-onnx,
-about 4x faster than Whisper `medium` on a 6-core CPU) on PCs with 8 GB of RAM or more; Hinglish
-and smaller PCs use Whisper. Change it in Settings → Transcription. Each video shows which engine
+Speech-to-text: captions use **Parakeet** (NVIDIA Parakeet-TDT-0.6b-v2 via sherpa-onnx,
+about 4x faster than Whisper `medium` on a 6-core CPU) on PCs with 8 GB of RAM or more; smaller
+PCs use Whisper. Parakeet only knows English, so for accurate Hinglish choose Whisper. **Current experiment
+(D-030):** Parakeet is used for every video and Whisper is switched off; the Transcribe step
+shows which engine runs. Change it in Settings → Transcription. Each video shows which engine
 ran; if Parakeet fails (for example no internet for its first download), Whisper takes over for
 that video and the note says why.
 

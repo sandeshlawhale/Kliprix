@@ -11,7 +11,7 @@ Messages are human-readable and never contain keys, tokens, or full file-system 
 
 ## System
 - `GET /api/health` → `{ "status": "ok", "version": "x.y.z" }`
-- `GET /api/system` → `{ ffmpeg: {found, version, libass}, python, ram_gb, gpu: bool, whisper_auto_model, supported_hosts: ["youtube.com","youtu.be"], disk_free_gb, ytdlp_version }`
+- `GET /api/system` → `{ ffmpeg: {found, version, libass}, python, ram_gb, gpu: bool, whisper_auto_model, supported_hosts: ["youtube.com","youtu.be"], disk_free_gb, ytdlp_version, transcribe_engines }` (`transcribe_engines`: D-030)
 - `POST /api/system/update-downloader` → `{ before, after }` (runs the yt-dlp upgrade)
 - `POST /api/system/open-folder` body `{ "target": "exports" | "data" }` → opens the folder in the OS file manager (local use only; optional feature)
 
@@ -31,7 +31,7 @@ Messages are human-readable and never contain keys, tokens, or full file-system 
 - `GET /api/batches?cursor=&limit=` → `{ items: [BatchSummary], next_cursor }` where `BatchSummary = { id, created_at, status, title, video_count, clip_count }`
 - `GET /api/batches/{id}` → `Batch = { id, created_at, status, style, videos: [Video] }`
   - `Video = { id, url, platform, title, channel, duration_s, thumbnail_url, has_chat, status, stage, progress, error?, note?, checkpoints: [Checkpoint], clips: [ClipSummary] }`
-  - `Checkpoint = { key: "download"|"chat"|"signals"|"candidates"|"transcribe"|"select"|"edit", label, state: "pending"|"running"|"done"|"skipped"|"failed", detail?: string }` (`detail` examples: "skipped, no chat replay", "2/5", or the error message). Always returned in the fixed order above.
+  - `Checkpoint = { key: "download"|"chat"|"signals"|"candidates"|"transcribe"|"select"|"edit", label, state: "pending"|"running"|"done"|"skipped"|"failed", detail?: string, engine?: string }` (`engine`: Transcribe step only, the engine that runs, D-030 temporary) (`detail` examples: "skipped, no chat replay", "2/5", or the error message). Always returned in the fixed order above.
   - `ClipSummary = { id, index, status, stage, progress, queue_position?, title, start_s, end_s, duration_s, thumbnail_url?, error?, edited: bool, has_preview: bool, has_export: bool }`
 - `DELETE /api/batches/{id}?delete_files=true` → `204`
 - `POST /api/batches/{id}/cancel` → `Batch`
