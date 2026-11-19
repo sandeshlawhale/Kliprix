@@ -5,7 +5,7 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 ## Current state
 - **Current milestone:** all milestones built (M3→M10 in one run, D-027). **Waiting for the owner's checks** below; no milestone after M0–M2 is tagged yet.
 - **Status:** M0–M2 verified and tagged (`m0`, `m1`, `m2`). M3–M10 built and checked by the agent as far as possible without the owner (real runs on this machine, see "M3–M9 output" and "M10 output"); owner-only checks are listed below.
-- **Last session:** 2026-11-18, Claude Code (Claude Opus 5.5)
+- **Last session:** 2026-11-19, Claude Code (Claude Opus 5.5 / Sonnet 5.5): Parakeet engine on branch `feat/parakeet-engine` (D-028), not merged
 - **Last commit:** see `git log -1`
 
 ## Milestone checklist
@@ -36,6 +36,7 @@ Second speech-to-text engine; Whisper code kept. **Default = Parakeet** on the o
 **Measured (2026-11-19, this PC: 6 cores/12 threads, 15.7 GB, CPU only):**
 | Audio | Engine | Transcribe time | RTF | Peak RAM | Words |
 |---|---|---|---|---|---|
+| 2026-11-19 | Claude Code / Claude Opus 5.5 | Parakeet (sherpa-onnx) as a second speech-to-text engine on branch `feat/parakeet-engine` (D-028): benchmark vs Whisper small/medium on English and Hindi, engine file, setting (Parakeet default per owner), Hinglish → Whisper, Whisper fallback with a video note, engine-keyed transcript cache, migration 0002 (`videos.note`), 17 new tests | pytest 242 passed; ruff/format/mypy clean; frontend lint/format/typecheck/Vitest 11 passed; real download + 15-min transcription + clip render checked; full app run with a key not done |
 | 15-min English stream (m3-15min) | Parakeet int8, 4 threads, 30 s pieces | 111 s | 0.12 | 1.54 GB | 2133 |
 | same | Whisper small (beam 5, as the app) | 181 s | 0.20 | 1.07 GB | 2130 |
 | same | Whisper medium (current Auto here) | 494 s | 0.55 | 1.93 GB | 2081 |
