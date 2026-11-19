@@ -51,9 +51,9 @@ use into `data/models/`.
 
 Speech-to-text: captions use **Parakeet** (NVIDIA Parakeet-TDT-0.6b-v2 via sherpa-onnx,
 about 4x faster than Whisper `medium` on a 6-core CPU) on PCs with 8 GB of RAM or more; smaller
-PCs use Whisper. Parakeet only knows English, so for accurate Hinglish choose Whisper. **Current experiment
-(D-030):** Parakeet is used for every video and Whisper is switched off; the Transcribe step
-shows which engine runs. Change it in Settings → Transcription. Each video shows which engine
+PCs use Whisper. Parakeet only knows English, so Hinglish always uses Whisper. On a PC with an
+NVIDIA GPU the launcher also installs NVIDIA's CUDA libraries (about 630 MB) so Whisper runs on
+the GPU (about 1.8x faster in a test); other PCs skip that download and use the CPU. Change it in Settings → Transcription. Each video shows which engine
 ran; if Parakeet fails (for example no internet for its first download), Whisper takes over for
 that video and the note says why.
 
