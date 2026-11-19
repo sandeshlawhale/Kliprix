@@ -24,7 +24,7 @@ from app.core.hardware import MemoryInfo
 from app.core.proc import CommandCancelledError
 from app.core.settings_schema import DEFAULT_SETTINGS
 from app.pipeline import transcribe_parakeet as tp
-from app.pipeline.stt_engine import LOW_RAM_NOTE, choose_engine
+from app.pipeline.stt_engine import HINGLISH_NOTE, LOW_RAM_NOTE, choose_engine
 from app.pipeline.transcribe import (
     TRANSCRIPT_FILE_NAME,
     Segment,
@@ -56,24 +56,15 @@ SMALL = MemoryInfo(total_gb=3.9, available_gb=2.0)
 
 def test_default_engine_is_parakeet_and_whisper_stays_selectable() -> None:
     assert DEFAULT_SETTINGS.transcribe_engine == "parakeet"
-    assert choose_engine("whisper", BIG).engine == "whisper"
-    assert choose_engine("whisper", BIG).reason is None
+    assert choose_engine("whisper", "en", BIG).engine == "whisper"
+    assert choose_engine("whisper", "en", BIG).reason is None
 
 
-def test_parakeet_only_experiment_ignores_setting_and_ram() -> None:
-    for setting in ("parakeet", "whisper"):
-        for memory in (BIG, SMALL):
-            choice = choose_engine(setting, memory, parakeet_only=True)
-            assert (choice.engine, choice.reason) == ("parakeet", None)
-
-
-def test_system_lists_only_parakeet_during_the_experiment(client: TestClient) -> None:
-    assert client.get("/api/system").json()["transcribe_engines"] == ["parakeet"]
-
-
-def test_parakeet_on_8_gb_or_more_whisper_below() -> None:
-    assert choose_engine("parakeet", BIG).engine == "parakeet"
-    low = choose_engine("parakeet", SMALL)
+def test_parakeet_for_english_whisper_for_hinglish_and_small_pcs() -> None:
+    assert choose_engine("parakeet", "en", BIG).engine == "parakeet"
+    hinglish = choose_engine("parakeet", "hinglish", BIG)
+    assert (hinglish.engine, hinglish.reason) == ("whisper", HINGLISH_NOTE)
+    low = choose_engine("parakeet", "en", SMALL)
     assert (low.engine, low.reason) == ("whisper", LOW_RAM_NOTE)
 
 
@@ -329,15 +320,42 @@ def test_pipeline_uses_parakeet_by_default(
     assert transcript.segments[0].words[0].text.startswith("pk")
 
 
+class GpuThenCpuWhisper(FakeWhisper):
+    """Starts on the GPU and, like WhisperRunner when CUDA fails at the first inference,
+    ends on the CPU."""
+
+    def __init__(self) -> None:
+        self.device = "cuda"
+        self.calls = 0
+
+    def transcribe(self, *args: Any, **kwargs: Any) -> tuple[list[Segment], str | None]:
+        self.calls += 1
+        if self.calls == 1:
+            self.device = "cpu"
+        return super().transcribe(*args, **kwargs)
+
+
 @needs_ffmpeg
-def test_pipeline_uses_parakeet_for_hinglish_with_a_warning(
+def test_pipeline_uses_whisper_for_hinglish_and_shows_its_device(
     config: AppConfig,
     media: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from app.jobs import video_pipeline
+
+    labels: list[str] = []
+    original = video_pipeline.VideoPipeline._update
+
+    def spy(self: Any, **fields: Any) -> Any:
+        if "transcribe_engine" in fields:
+            labels.append(fields["transcribe_engine"])
+        return original(self, **fields)
+
+    monkeypatch.setattr(video_pipeline.VideoPipeline, "_update", spy)
     app = build(config, media)
     ctx = app.state.job_context
     ctx.parakeet_factory = lambda cancel, on_download: FakeParakeet
+    ctx.whisper_factory = lambda model, gpu: GpuThenCpuWhisper
     monkeypatch.setattr(ctx, "memory", lambda: BIG)
     with TestClient(app, raise_server_exceptions=False) as client:
         client.put("/api/llm/session", json={"provider": "gemini", "model": "m", "api_key": KEY})
@@ -345,10 +363,14 @@ def test_pipeline_uses_parakeet_for_hinglish_with_a_warning(
         created = client.post("/api/batches", json={"urls": [url("aaaaaaaaaaa")]})
         batch = wait_for(client, created.json()["id"], finished)
     video = batch["videos"][0]
+    assert video["status"] == "done"
+    assert video["note"].startswith("Hinglish uses Whisper")
     transcript = load_cached(config.data_dir / "downloads" / video["id"])
     assert transcript is not None
-    assert transcript.engine == "parakeet"
-    assert "only knows English" in video["note"]
+    assert transcript.engine == "whisper"
+    # Named before loading, then the real device, then the CPU after the GPU gave up.
+    assert labels == ["Whisper medium", "Whisper medium · GPU", "Whisper medium · CPU"]
+    assert _transcribe_step(video)["engine"] == "Whisper medium · CPU"
 
 
 @needs_ffmpeg
@@ -374,59 +396,3 @@ def test_pipeline_falls_back_to_whisper_when_parakeet_fails(
     log = (config.logs_dir / "app.log").read_text(encoding="utf-8")
     assert "parakeet failed" in log
     assert "MODEL_DOWNLOAD_FAILED" in log
-
-
-@needs_ffmpeg
-def test_experiment_uses_parakeet_for_hinglish_on_any_pc_even_if_whisper_is_set(
-    config: AppConfig,
-    media: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    app = build(config, media)
-    ctx = app.state.job_context
-    ctx.parakeet_only = True
-    ctx.parakeet_factory = lambda cancel, on_download: FakeParakeet
-    monkeypatch.setattr(ctx, "memory", lambda: SMALL)
-    with TestClient(app, raise_server_exceptions=False) as client:
-        client.put("/api/llm/session", json={"provider": "gemini", "model": "m", "api_key": KEY})
-        client.put(
-            "/api/settings",
-            json={
-                "transcribe_engine": "whisper",
-                "style_defaults": {"caption_language": "hinglish"},
-            },
-        )
-        created = client.post("/api/batches", json={"urls": [url("aaaaaaaaaaa")]})
-        batch = wait_for(client, created.json()["id"], finished)
-    video = batch["videos"][0]
-    assert video["status"] == "done"
-    assert _transcribe_step(video)["engine"] == "Parakeet"
-    transcript = load_cached(config.data_dir / "downloads" / video["id"])
-    assert transcript is not None
-    assert transcript.engine == "parakeet"
-
-
-@needs_ffmpeg
-def test_experiment_fails_the_video_instead_of_using_whisper(
-    config: AppConfig,
-    media: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def broken() -> Any:
-        raise AppError(ErrorCode.MODEL_DOWNLOAD_FAILED, "no internet")
-
-    app = build(config, media)
-    ctx = app.state.job_context
-    ctx.parakeet_only = True
-    ctx.parakeet_factory = lambda cancel, on_download: broken
-    monkeypatch.setattr(ctx, "memory", lambda: BIG)
-    with TestClient(app, raise_server_exceptions=False) as client:
-        client.put("/api/llm/session", json={"provider": "gemini", "model": "m", "api_key": KEY})
-        created = client.post("/api/batches", json={"urls": [url("aaaaaaaaaaa")]})
-        batch = wait_for(client, created.json()["id"], finished)
-    video = batch["videos"][0]
-    assert video["status"] == "failed"
-    assert video["error"]["code"] == "MODEL_DOWNLOAD_FAILED"
-    step = _transcribe_step(video)
-    assert (step["state"], step["engine"]) == ("failed", "Parakeet")
-    assert load_cached(config.data_dir / "downloads" / video["id"]) is None

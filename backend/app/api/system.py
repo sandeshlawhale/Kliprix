@@ -15,13 +15,11 @@ from app.config import (
     APP_VERSION,
     DOWNLOADER_PACKAGES,
     DOWNLOADER_UPDATE_TIMEOUT_S,
-    PARAKEET_ONLY,
     SUPPORTED_HOSTS,
 )
 from app.core import hardware
 from app.core.errors import ERROR_RESPONSES, AppError, ErrorCode
 from app.core.proc import CommandError, run_command
-from app.core.settings_schema import TRANSCRIBE_ENGINES, TranscribeEngine
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +54,6 @@ class SystemInfo(BaseModel):
     supported_hosts: list[str]
     disk_free_gb: float
     ytdlp_version: str | None
-    # Speech-to-text engines this app can use now (D-030: only Parakeet in the experiment).
-    transcribe_engines: list[TranscribeEngine]
 
 
 @router.get("/health")
@@ -81,7 +77,6 @@ def get_system(config: ConfigDep) -> SystemInfo:
         supported_hosts=list(SUPPORTED_HOSTS),
         disk_free_gb=round(hardware.disk_free_gb(config.data_dir), GB_DECIMALS),
         ytdlp_version=hardware.ytdlp_version(),
-        transcribe_engines=["parakeet"] if PARAKEET_ONLY else list(TRANSCRIBE_ENGINES),
     )
 
 

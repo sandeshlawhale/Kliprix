@@ -34,6 +34,7 @@ from app.pipeline.stt_engine import choose_engine
 from app.pipeline.transcribe import (
     CaptionLanguage,
     Span,
+    SpeechRunner,
     TranscriptFile,
     Word,
     plan_spans,
@@ -61,18 +62,17 @@ PROGRESS_STEP = 0.005
 
 # The video's note says which speech-to-text engine ran and why (D-028).
 PARAKEET_NOTE = "Speech-to-text: Parakeet."
-PARAKEET_HINGLISH_NOTE = (
-    "Speech-to-text: Parakeet. It only knows English, so Hindi words will be wrong; "
-    "choose Whisper in Settings for accurate Hinglish."
-)
+# Shown on the Transcribe step (D-030, temporary debug display).
 PARAKEET_LABEL = "Parakeet"
-PARAKEET_UNAVAILABLE = "Parakeet is not available in this app (Whisper is switched off)."
 PARAKEET_MISSING_NOTE = "Parakeet is not available in this app, so Whisper was used."
 MODEL_DOWNLOAD_NOTE = "Downloading the Parakeet speech model (first use, 480 MB):"
 # Parakeet errors that fall back to Whisper; anything else (e.g. cancel) is not a fallback.
 PARAKEET_FALLBACK_CODES = frozenset(
     {ErrorCode.TRANSCRIBE_FAILED, ErrorCode.MODEL_DOWNLOAD_FAILED, ErrorCode.DISK_FULL}
 )
+
+
+WHISPER_DEVICE_NAMES = {"cuda": "GPU", "cpu": "CPU"}
 
 
 def _whisper_note(model: str, reason: str | None) -> str:
@@ -87,6 +87,7 @@ class VideoPipeline:
         self.cancel = cancel
         self._last_progress = -1.0
         self._download_percent = -1
+        self._engine_label: str | None = None
 
     # ----- state updates (each in its own short transaction) -----
 
@@ -249,28 +250,24 @@ class VideoPipeline:
     def _transcribe(
         self, settings: Settings, language: str, spans: list[Span], memory: MemoryInfo
     ) -> TranscriptFile:
-        """Transcribe with the engine `choose_engine` picks (D-028). A Parakeet failure
-        (package or model missing, download or runtime error) falls back to Whisper for this
-        video, logged and written to the video's note; cancel is never a failure. In the
-        Parakeet-only experiment (D-030) there is no fallback: the failure fails the video.
-        The engine that actually runs is saved on the video for the Transcribe step."""
+        """Transcribe with the engine `choose_engine` picks (D-028): Parakeet for English,
+        Whisper for Hinglish. A Parakeet failure (package or model missing, download or
+        runtime error) falls back to Whisper for this video, logged and written to the
+        video's note; cancel is never a failure. The engine that actually runs (and for
+        Whisper, GPU or CPU) is saved on the video for the Transcribe step (D-030)."""
         video_dir = self.ctx.video_dir(self.video_id)
         wav = video_dir / AUDIO_FILE_NAME
         caption: CaptionLanguage = "hinglish" if language == "hinglish" else "en"
-        only = self.ctx.parakeet_only
-        choice = choose_engine(settings.transcribe_engine, memory, parakeet_only=only)
+        choice = choose_engine(settings.transcribe_engine, caption, memory)
         reason = choice.reason
         if choice.engine == "parakeet":
             if self.ctx.parakeet_factory is None:
-                if only:
-                    raise AppError(ErrorCode.TRANSCRIBE_FAILED, PARAKEET_UNAVAILABLE)
                 reason = PARAKEET_MISSING_NOTE
             else:
                 factory = self.ctx.parakeet_factory(self.cancel, self._model_download)
-                note = PARAKEET_HINGLISH_NOTE if caption == "hinglish" else PARAKEET_NOTE
                 # Shown while Parakeet runs (a first-use download replaces the note with its
                 # progress), so the engine is visible before the step ends.
-                self._update(note=note, transcribe_engine=PARAKEET_LABEL)
+                self._update(note=PARAKEET_NOTE, transcribe_engine=PARAKEET_LABEL)
                 try:
                     with stage_timer("transcribe", video=self.video_id, engine="parakeet"):
                         transcript = run_transcribe(
@@ -279,27 +276,57 @@ class VideoPipeline:
                             on_progress=lambda f: self._fraction("transcribe", f),
                             engine="parakeet",
                         )  # fmt: skip
-                    self._update(note=note)
+                    self._update(note=PARAKEET_NOTE)
                     return transcript
                 except AppError as exc:
-                    if only or exc.code not in PARAKEET_FALLBACK_CODES:
+                    if exc.code not in PARAKEET_FALLBACK_CODES:
                         raise
                     logger.warning(
                         "parakeet failed video=%s code=%s: %s; using whisper",
                         self.video_id, exc.code, exc.message,
                     )  # fmt: skip
                     reason = f"Parakeet failed ({exc.message}), so Whisper was used."
+        return self._transcribe_whisper(settings, caption, spans, reason)
+
+    def _transcribe_whisper(
+        self, settings: Settings, caption: CaptionLanguage, spans: list[Span], reason: str | None
+    ) -> TranscriptFile:
+        video_dir = self.ctx.video_dir(self.video_id)
         model = self._whisper_model(settings)
+        base = self.ctx.whisper_factory(model, self.ctx.gpu_vram() is not None)
+        runners: list[SpeechRunner] = []
+
+        def factory() -> SpeechRunner:
+            runner = base()
+            runners.append(runner)
+            self._show_whisper(model, runner)
+            return runner
+
+        def progress(fraction: float) -> None:
+            # The runner may switch from GPU to CPU at its first inference (AA-030).
+            if runners:
+                self._show_whisper(model, runners[0])
+            self._fraction("transcribe", fraction)
+
         # Shown while Whisper runs, so a fallback is visible right away, not only at the end.
         self._update(note=_whisper_note(model, reason), transcribe_engine=f"Whisper {model}")
         with stage_timer("transcribe", video=self.video_id, engine="whisper", model=model):
             transcript = run_transcribe(
-                video_dir, wav, spans, caption_language=caption,
-                runner_factory=self.ctx.whisper_factory(model, self.ctx.gpu_vram() is not None),
-                cancel=self.cancel, on_progress=lambda f: self._fraction("transcribe", f),
+                video_dir, video_dir / AUDIO_FILE_NAME, spans, caption_language=caption,
+                runner_factory=factory, cancel=self.cancel, on_progress=progress,
                 engine="whisper",
             )  # fmt: skip
         return transcript
+
+    def _show_whisper(self, model: str, runner: SpeechRunner) -> None:
+        """Name the device Whisper really runs on, e.g. "Whisper medium · GPU"."""
+        device = getattr(runner, "device", None)
+        label = f"Whisper {model}"
+        if isinstance(device, str):
+            label += f" · {WHISPER_DEVICE_NAMES.get(device, device)}"
+        if label != self._engine_label:
+            self._engine_label = label
+            self._update(transcribe_engine=label)
 
     def _model_download(self, fraction: float) -> None:
         percent = int(fraction * 100)
