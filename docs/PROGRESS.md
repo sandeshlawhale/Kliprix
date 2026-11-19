@@ -24,6 +24,12 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 ## In progress (exact next step)
 Nothing in progress. **Next step: the owner runs the checks below.** Start the app with `scripts\start.bat` (Windows) or `./scripts/start.sh`, configure a real key in Configure API, and paste 3 links. Fix anything found, then tag `m3`…`m10` once each milestone's check passes (the agent did not tag them because the owner checks are open). Then consider proposal P-001 (video retry endpoint) in `14-decisions-log.md`.
 
+## Parakeet engine (branch `feat/parakeet-engine`, D-028), in progress
+Optional second speech-to-text engine; Whisper code is unchanged. **How to roll back** (any one):
+1. `git switch main`: nothing else needed (main has no Parakeet commits; tag `pre-parakeet` = start point).
+2. `git revert` the commits on `feat/parakeet-engine` (list them with `git log pre-parakeet..feat/parakeet-engine --oneline`).
+3. Keep the code, but set Settings → Speech-to-text engine to **Whisper**.
+
 ## Checks left for the owner
 1. **M5 real key**: `cd backend; .\.venv\Scripts\python.exe -m app.cli.select_clips ..\data\work\m3-15min --provider gemini --model <model id>` (key asked hidden) → 5 valid clips with metadata; then check `data\logs\app.log` does not contain the key. Also try Configure API → Load models / Test connection with the real key.
 2. **M7 real run**: in the app, 3 links (one private/removed) → all stages run unattended, the bad one fails alone; stop the app mid-run (Ctrl+C) and start it again → it resumes (configure the key again after the restart, AA-046).
