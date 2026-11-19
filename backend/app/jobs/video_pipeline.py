@@ -319,9 +319,10 @@ class VideoPipeline:
         return transcript
 
     def _show_whisper(self, model: str, runner: SpeechRunner) -> None:
-        """Name the device Whisper really runs on, e.g. "Whisper medium · GPU"."""
+        """Name the model and device Whisper really runs on, e.g. "Whisper large-v3-turbo ·
+        GPU" (after a GPU failure: the CPU model, D-032)."""
         device = getattr(runner, "device", None)
-        label = f"Whisper {model}"
+        label = f"Whisper {getattr(runner, 'model_name', model)}"
         if isinstance(device, str):
             label += f" · {WHISPER_DEVICE_NAMES.get(device, device)}"
         if label != self._engine_label:

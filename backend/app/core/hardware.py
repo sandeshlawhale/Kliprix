@@ -21,7 +21,10 @@ from app.core.proc import CommandError, run_command
 
 logger = logging.getLogger(__name__)
 
-WhisperModel = Literal["tiny", "base", "small", "medium", "large-v3"]
+WhisperModel = Literal["tiny", "base", "small", "medium", "large-v3-turbo"]
+# Auto picks this on an NVIDIA GPU with enough memory (D-032). It is much slower than
+# `medium` on a CPU, so a GPU failure loads the CPU model instead.
+GPU_WHISPER_MODEL: WhisperModel = "large-v3-turbo"
 
 # Nominal RAM tiers in GB. Machines report a bit less than their nominal size,
 # so a tier counts as reached at this fraction of its nominal value.
@@ -29,7 +32,8 @@ RAM_TIER_NORMAL_GB = 8.0
 RAM_TIER_GOOD_GB = 16.0
 RAM_TIER_TOLERANCE = 0.9
 LOW_FREE_RAM_GB = 1.5
-LARGE_MODEL_MIN_VRAM_GB = 8.0
+# large-v3-turbo int8_float16 ran on a 4 GB GTX 1650 (D-032).
+TURBO_MIN_VRAM_GB = 4.0
 MIB_PER_GB = 1024
 # Below this much total RAM, ffmpeg gets at most half the CPU threads (docs/11).
 LOW_RAM_THREADS_GB = 6.0
@@ -82,7 +86,7 @@ def _is_number(text: str) -> bool:
 def pick_whisper_model(memory: MemoryInfo, gpu_vram_gb: float | None) -> WhisperModel:
     """The model "Auto" uses on this machine (docs/11 hardware table)."""
     if gpu_vram_gb is not None:
-        return "large-v3" if gpu_vram_gb >= LARGE_MODEL_MIN_VRAM_GB else "medium"
+        return GPU_WHISPER_MODEL if gpu_vram_gb >= TURBO_MIN_VRAM_GB else "medium"
     if memory.total_gb >= RAM_TIER_GOOD_GB * RAM_TIER_TOLERANCE:
         return "medium"
     if memory.total_gb >= RAM_TIER_NORMAL_GB * RAM_TIER_TOLERANCE:

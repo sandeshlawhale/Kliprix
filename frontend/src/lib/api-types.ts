@@ -1024,7 +1024,7 @@ export interface components {
              * Whisper Auto Model
              * @enum {string}
              */
-            whisper_auto_model: "tiny" | "base" | "small" | "medium" | "large-v3";
+            whisper_auto_model: "tiny" | "base" | "small" | "medium" | "large-v3-turbo";
             /** Supported Hosts */
             supported_hosts: string[];
             /** Disk Free Gb */

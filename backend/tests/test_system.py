@@ -17,8 +17,9 @@ from app.main import create_app
         (3.8, 1.0, None, "tiny"),  # 4 GB tier, little free RAM
         (7.6, 3.0, None, "small"),  # "8 GB" machine reports a bit less
         (15.7, 4.0, None, "medium"),  # "16 GB" machine
-        (3.8, 2.0, 6.0, "medium"),  # NVIDIA GPU below 8 GB VRAM
-        (7.6, 3.0, 12.0, "large-v3"),  # NVIDIA GPU with 8 GB+ VRAM
+        (3.8, 2.0, 2.0, "medium"),  # NVIDIA GPU below 4 GB VRAM
+        (3.8, 2.0, 4.0, "large-v3-turbo"),  # NVIDIA GPU with 4 GB+ VRAM (D-032)
+        (7.6, 3.0, 12.0, "large-v3-turbo"),
     ],
 )
 def test_whisper_auto_model_tiers(
@@ -35,7 +36,7 @@ def test_system_reports_real_values(client: TestClient) -> None:
     assert body["ram_gb"] > 0
     assert body["disk_free_gb"] > 0
     assert body["python"].count(".") == 2
-    assert body["whisper_auto_model"] in {"tiny", "base", "small", "medium", "large-v3"}
+    assert body["whisper_auto_model"] in {"tiny", "base", "small", "medium", "large-v3-turbo"}
     # ffmpeg presence must match the real machine, not a canned answer.
     assert body["ffmpeg"]["found"] == (shutil.which("ffmpeg") is not None)
 

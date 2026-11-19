@@ -166,14 +166,20 @@ class WhisperRunner:
 
     On a GPU the CUDA libraries are only loaded at the first inference, so a GPU failure
     there switches the runner to the CPU and repeats that piece (the CPU path always works).
+    On the CPU it loads `cpu_model` when given: the GPU's turbo model is much slower on a CPU
+    than `medium` (D-032). `model_name` is the model that runs now.
     """
 
-    def __init__(self, model_name: str, models_dir: Path, use_gpu: bool) -> None:
+    def __init__(
+        self, model_name: str, models_dir: Path, use_gpu: bool, cpu_model: str | None = None
+    ) -> None:
         # huggingface_hub (used by faster-whisper to fetch models) sends usage telemetry
         # unless this is set before it is imported (docs/11: no telemetry).
         os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
         os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
-        self._model_name = model_name
+        self._gpu_model = model_name
+        self._cpu_model = cpu_model or model_name
+        self.model_name = model_name
         self._download_root = str(models_dir / WHISPER_MODELS_DIR)
         self.device = "cpu"
         if use_gpu:
@@ -191,8 +197,9 @@ class WhisperRunner:
         from faster_whisper import WhisperModel  # heavy: imported on demand
 
         compute_type = "int8_float16" if device == "cuda" else "int8"
+        self.model_name = self._gpu_model if device == "cuda" else self._cpu_model
         return WhisperModel(
-            self._model_name, device=device, compute_type=compute_type,
+            self.model_name, device=device, compute_type=compute_type,
             download_root=self._download_root,
         )  # fmt: skip
 

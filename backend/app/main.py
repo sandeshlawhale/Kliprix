@@ -25,7 +25,13 @@ from app.config import (
 )
 from app.core.errors import install_error_handlers
 from app.core.events import EventBus
-from app.core.hardware import nvidia_vram_gb, speech_threads
+from app.core.hardware import (
+    GPU_WHISPER_MODEL,
+    nvidia_vram_gb,
+    pick_whisper_model,
+    read_memory,
+    speech_threads,
+)
 from app.core.logging import setup_logging
 from app.db.engine import make_engine, make_session_factory
 from app.db.migrate import upgrade_to_head
@@ -52,7 +58,11 @@ _TELEMETRY_OFF: TelemetryConfig = {
 
 def _whisper_factory(config: AppConfig) -> Callable[[str, bool], RunnerFactory]:
     def factory(model: str, use_gpu: bool) -> RunnerFactory:
-        return lambda: WhisperRunner(model, config.data_dir / "models", use_gpu)
+        # The GPU model is too slow on a CPU; a GPU failure uses this PC's CPU model (D-032).
+        cpu_model = pick_whisper_model(read_memory(), None) if model == GPU_WHISPER_MODEL else model
+        return lambda: WhisperRunner(
+            model, config.data_dir / "models", use_gpu, cpu_model=cpu_model
+        )
 
     return factory
 
