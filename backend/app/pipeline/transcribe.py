@@ -52,6 +52,9 @@ DEVANAGARI_FIRST = chr(0x0900)
 DEVANAGARI_LAST = chr(0x097F)
 
 CaptionLanguage = Literal["en", "hinglish"]
+# Which speech-to-text engine wrote a transcript (D-028). Files from before D-028 have none
+# and were all made by Whisper.
+Engine = Literal["whisper", "parakeet"]
 # Called with the fraction (0.0-1.0) of the planned audio transcribed so far.
 TranscribeProgress = Callable[[float], None]
 
@@ -83,6 +86,11 @@ class TranscriptFile(BaseModel):
     language: str | None
     spans: list[tuple[float, float]]
     segments: list[Segment]
+    engine: Engine | None = None
+
+    @property
+    def made_by(self) -> Engine:
+        return self.engine or "whisper"
 
 
 @dataclass(frozen=True)
@@ -266,14 +274,19 @@ class SpeechRunner(Protocol):
 RunnerFactory = Callable[[], SpeechRunner]
 
 
-def load_cached(video_dir: Path) -> TranscriptFile | None:
+def load_cached(video_dir: Path, engine: Engine | None = None) -> TranscriptFile | None:
+    """The saved transcript, or None when there is none, it does not parse, or `engine` is
+    given and another engine made it (a Whisper transcript is never reused as Parakeet's)."""
     path = video_dir / TRANSCRIPT_FILE_NAME
     if not path.is_file():
         return None
     try:
-        return TranscriptFile.model_validate_json(path.read_text(encoding="utf-8"))
+        cached = TranscriptFile.model_validate_json(path.read_text(encoding="utf-8"))
     except (OSError, ValidationError):
         return None
+    if engine is not None and cached.made_by != engine:
+        return None
+    return cached
 
 
 def run_transcribe(
@@ -285,14 +298,17 @@ def run_transcribe(
     runner_factory: RunnerFactory,
     cancel: threading.Event | None = None,
     on_progress: TranscribeProgress | None = None,
+    engine: Engine = "whisper",
 ) -> TranscriptFile:
-    """Transcribe `spans` of `wav` into `transcript.json` (skipped when a valid copy exists).
+    """Transcribe `spans` of `wav` into `transcript.json` (skipped when a valid copy made by
+    the same `engine` exists).
 
     Raises:
         AppError TRANSCRIBE_FAILED: the model could not be loaded or failed.
+        AppError MODEL_DOWNLOAD_FAILED: the runner could not download its model.
         CommandCancelledError: `cancel` was set.
     """
-    cached = load_cached(video_dir)
+    cached = load_cached(video_dir, engine)
     if cached is not None:
         return cached
     hinglish = caption_language == "hinglish"
@@ -343,10 +359,12 @@ def run_transcribe(
         language=language_code,
         spans=[(round(s.start, TIME_DECIMALS), round(s.end, TIME_DECIMALS)) for s in spans],
         segments=segments,
+        engine=engine,
     )
     write_json_atomic(video_dir / TRANSCRIPT_FILE_NAME, transcript)
     logger.info(
-        "transcript saved spans=%s segments=%s language=%s",
+        "transcript saved engine=%s spans=%s segments=%s language=%s",
+        engine,
         len(spans),
         len(segments),
         language_code,
