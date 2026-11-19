@@ -78,6 +78,27 @@ export default function SettingsPage() {
         ) : (
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
+              <Label htmlFor="engine">Speech-to-text engine</Label>
+              <Select
+                value={settings.data.transcribe_engine}
+                onValueChange={(value) =>
+                  save({ transcribe_engine: value as Settings["transcribe_engine"] })
+                }
+              >
+                <SelectTrigger id="engine" className="w-60">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="parakeet">Parakeet (faster, English)</SelectItem>
+                  <SelectItem value="whisper">Whisper</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground text-sm">
+                Parakeet is used for English captions on PCs with 8 GB of RAM or more; its 480 MB
+                model downloads on first use. Hinglish uses Whisper.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
               <Label htmlFor="whisper">Whisper model</Label>
               <Select
                 value={settings.data.whisper_model}

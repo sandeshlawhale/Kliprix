@@ -96,6 +96,7 @@ export default function BatchPage({ params }: PageProps<"/history/[batchId]">) {
               )}
             </div>
             {video.channel && <p className="text-muted-foreground text-sm">{video.channel}</p>}
+            {video.note && <p className="text-muted-foreground text-sm">{video.note}</p>}
           </div>
           {video.status === "running" && (
             <Progress

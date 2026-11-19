@@ -738,7 +738,7 @@ export interface components {
          * ErrorCode
          * @enum {string}
          */
-        ErrorCode: "INVALID_URL" | "UNSUPPORTED_HOST" | "TOO_MANY_VIDEOS" | "VIDEO_PRIVATE" | "VIDEO_AGE_RESTRICTED" | "VIDEO_UNAVAILABLE" | "GEO_BLOCKED" | "DOWNLOAD_FAILED" | "DOWNLOADER_OUTDATED" | "FFMPEG_MISSING" | "LLM_NOT_CONFIGURED" | "LLM_AUTH_FAILED" | "LLM_RATE_LIMITED" | "LLM_BAD_RESPONSE" | "TRANSCRIBE_FAILED" | "RENDER_FAILED" | "DISK_FULL" | "NOT_FOUND" | "VALIDATION_ERROR" | "CONFLICT" | "INTERNAL";
+        ErrorCode: "INVALID_URL" | "UNSUPPORTED_HOST" | "TOO_MANY_VIDEOS" | "VIDEO_PRIVATE" | "VIDEO_AGE_RESTRICTED" | "VIDEO_UNAVAILABLE" | "GEO_BLOCKED" | "DOWNLOAD_FAILED" | "DOWNLOADER_OUTDATED" | "FFMPEG_MISSING" | "LLM_NOT_CONFIGURED" | "LLM_AUTH_FAILED" | "LLM_RATE_LIMITED" | "LLM_BAD_RESPONSE" | "TRANSCRIBE_FAILED" | "MODEL_DOWNLOAD_FAILED" | "RENDER_FAILED" | "DISK_FULL" | "NOT_FOUND" | "VALIDATION_ERROR" | "CONFLICT" | "INTERNAL";
         /**
          * ErrorResponse
          * @description The body of every non-2xx response.
@@ -912,6 +912,11 @@ export interface components {
              */
             whisper_model: "auto" | "tiny" | "base" | "small" | "medium";
             /**
+             * Transcribe Engine
+             * @enum {string}
+             */
+            transcribe_engine: "parakeet" | "whisper";
+            /**
              * Source Policy
              * @enum {string}
              */
@@ -931,6 +936,8 @@ export interface components {
             style_defaults?: components["schemas"]["StyleOverridesUpdate"] | null;
             /** Whisper Model */
             whisper_model?: ("auto" | "tiny" | "base" | "small" | "medium") | null;
+            /** Transcribe Engine */
+            transcribe_engine?: ("parakeet" | "whisper") | null;
             /** Source Policy */
             source_policy?: ("ask" | "delete" | "keep") | null;
             /** Storage Warn Gb */
@@ -1055,6 +1062,8 @@ export interface components {
             /** Progress */
             progress: number;
             error?: components["schemas"]["ErrorBody"] | null;
+            /** Note */
+            note?: string | null;
             /** Checkpoints */
             checkpoints: components["schemas"]["Checkpoint"][];
             /** Clips */
