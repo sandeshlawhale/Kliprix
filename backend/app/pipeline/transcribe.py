@@ -28,6 +28,7 @@ from app.config import (
     TRANSCRIBE_MARGIN_S,
     WHISPER_BEAM_SIZE,
 )
+from app.core.cuda_libs import register_cuda_libraries
 from app.core.errors import AppError, ErrorCode
 from app.core.files import write_json_atomic
 from app.core.proc import CommandCancelledError
@@ -176,6 +177,8 @@ class WhisperRunner:
         self._download_root = str(models_dir / WHISPER_MODELS_DIR)
         self.device = "cpu"
         if use_gpu:
+            # The GPU libraries from requirements-gpu.txt (D-031); none installed = CPU below.
+            register_cuda_libraries()
             try:
                 self.model = self._load("cuda")
                 self.device = "cuda"

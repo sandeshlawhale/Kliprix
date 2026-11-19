@@ -24,10 +24,6 @@ import { errorMessage, getHealth, updateDownloader, type Settings } from "@/lib/
 import { useQuery } from "@tanstack/react-query";
 
 const WHISPER = ["auto", "tiny", "base", "small", "medium"] as const;
-const ENGINE_NAMES: Record<Settings["transcribe_engine"], string> = {
-  parakeet: "Parakeet",
-  whisper: "Whisper",
-};
 
 export default function SettingsPage() {
   const settings = useSettings();
@@ -81,68 +77,53 @@ export default function SettingsPage() {
           <p className="text-destructive text-sm">{errorMessage(settings.error)}</p>
         ) : (
           <div className="flex flex-col gap-4">
-            {system.data && system.data.transcribe_engines.length === 1 ? (
-              // Experiment (D-030): the backend offers one engine and uses it for every video.
-              <p className="text-sm">
-                Speech-to-text:{" "}
-                <span className="font-medium">
-                  {ENGINE_NAMES[system.data.transcribe_engines[0]]}
-                </span>{" "}
-                for every video (experiment; the other engine is switched off). Parakeet only knows
-                English, so Hinglish captions will have wrong words.
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="engine">Speech-to-text engine</Label>
+              <Select
+                value={settings.data.transcribe_engine}
+                onValueChange={(value) =>
+                  save({ transcribe_engine: value as Settings["transcribe_engine"] })
+                }
+              >
+                <SelectTrigger id="engine" className="w-60">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="parakeet">Parakeet (faster, English)</SelectItem>
+                  <SelectItem value="whisper">Whisper</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground text-sm">
+                Parakeet is used for English captions on PCs with 8 GB of RAM or more; its 480 MB
+                model downloads on first use. Hinglish uses Whisper.
               </p>
-            ) : (
-              <>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="engine">Speech-to-text engine</Label>
-                  <Select
-                    value={settings.data.transcribe_engine}
-                    onValueChange={(value) =>
-                      save({ transcribe_engine: value as Settings["transcribe_engine"] })
-                    }
-                  >
-                    <SelectTrigger id="engine" className="w-60">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="parakeet">Parakeet (faster, English)</SelectItem>
-                      <SelectItem value="whisper">Whisper</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-muted-foreground text-sm">
-                    Parakeet is used on PCs with 8 GB of RAM or more; its 480 MB model downloads on
-                    first use. It only knows English: for accurate Hinglish choose Whisper.
-                  </p>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="whisper">Whisper model</Label>
-                  <Select
-                    value={settings.data.whisper_model}
-                    onValueChange={(value) =>
-                      save({ whisper_model: value as Settings["whisper_model"] })
-                    }
-                  >
-                    <SelectTrigger id="whisper" className="w-60">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {WHISPER.map((name) => (
-                        <SelectItem key={name} value={name}>
-                          {name === "auto" ? "Auto" : name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {system.data && (
-                    <p className="text-muted-foreground text-sm">
-                      Detected {system.data.ram_gb} GB RAM
-                      {system.data.gpu ? " and an NVIDIA GPU" : ""}; Auto uses{" "}
-                      <span className="font-mono">{system.data.whisper_auto_model}</span>.
-                    </p>
-                  )}
-                </div>
-              </>
-            )}
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="whisper">Whisper model</Label>
+              <Select
+                value={settings.data.whisper_model}
+                onValueChange={(value) =>
+                  save({ whisper_model: value as Settings["whisper_model"] })
+                }
+              >
+                <SelectTrigger id="whisper" className="w-60">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {WHISPER.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name === "auto" ? "Auto" : name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {system.data && (
+                <p className="text-muted-foreground text-sm">
+                  Detected {system.data.ram_gb} GB RAM{system.data.gpu ? " and an NVIDIA GPU" : ""};
+                  Auto uses <span className="font-mono">{system.data.whisper_auto_model}</span>.
+                </p>
+              )}
+            </div>
             <div className="flex items-center gap-3">
               <Switch
                 id="thorough"

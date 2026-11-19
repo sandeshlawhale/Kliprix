@@ -1,0 +1,6 @@
+# Optional GPU libraries for Whisper (faster-whisper / CTranslate2) on NVIDIA cards, pinned.
+# Installed by scripts/run.py only when `nvidia-smi` answers (an NVIDIA GPU and driver are
+# present); every other PC skips this ~630 MB download and transcribes on the CPU (D-031).
+# CTranslate2 4.9 ships cuDNN 9 itself and needs cuBLAS for CUDA 12 (cublas64_12.dll).
+nvidia-cublas-cu12==12.9.2.10 ; platform_system == "Windows" or platform_system == "Linux"
+nvidia-cuda-nvrtc-cu12==12.9.86 ; platform_system == "Windows" or platform_system == "Linux"

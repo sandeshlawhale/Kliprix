@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -35,6 +36,8 @@ START_TIMEOUT_S = 120
 POLL_S = 0.5
 # Stamps record what was installed/built, so unchanged steps are skipped next time.
 REQS_STAMP = VENV / "kliprix-requirements.sha256"
+GPU_STAMP = VENV / "kliprix-requirements-gpu.sha256"
+GPU_PROBE_TIMEOUT_S = 15
 NODE_STAMP = FRONTEND / "node_modules" / ".kliprix-lock.sha256"
 BUILD_STAMP = FRONTEND / ".next" / "kliprix-build.sha256"
 BUILD_INPUTS = ("src", "public", "package-lock.json", "next.config.ts", "tsconfig.json")
@@ -104,9 +107,43 @@ def setup_backend() -> Path:
         run([str(python), "-m", "pip", "install", "--upgrade", "pip"])
         run([str(python), "-m", "pip", "install", "-r", str(requirements)])
         write_stamp(REQS_STAMP, wanted)
+    setup_gpu_libraries(python)
     say("applying database migrations")
     run([str(python), "-m", "alembic", "upgrade", "head"], cwd=BACKEND)
     return python
+
+
+def has_nvidia_gpu() -> bool:
+    """True when `nvidia-smi` lists a GPU (an NVIDIA card with its driver)."""
+    smi = shutil.which("nvidia-smi")
+    if smi is None:
+        return False
+    try:
+        listed = subprocess.run(  # noqa: S603 - fixed command
+            [smi, "-L"], capture_output=True, text=True, timeout=GPU_PROBE_TIMEOUT_S, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return listed.returncode == 0 and "GPU" in listed.stdout
+
+
+def setup_gpu_libraries(python: Path) -> None:
+    """Install NVIDIA's CUDA libraries for Whisper only on PCs with an NVIDIA GPU (D-031).
+    A failure is not fatal: Whisper then runs on the CPU, as on any other PC."""
+    if not has_nvidia_gpu():
+        return
+    requirements = BACKEND / "requirements-gpu.txt"
+    wanted = digest([requirements])
+    if stamp_matches(GPU_STAMP, wanted):
+        return
+    say("NVIDIA GPU found: installing its libraries for faster Hinglish transcription (~630 MB)")
+    args = [str(python), "-m", "pip", "install", "-r", str(requirements)]
+    say("$ " + " ".join(args))
+    code = subprocess.call(args, cwd=str(ROOT))  # noqa: S603 - fixed command
+    if code != 0:
+        say(f"WARNING: GPU libraries not installed (exit code {code}); Whisper will use the CPU")
+        return
+    write_stamp(GPU_STAMP, wanted)
 
 
 def setup_frontend() -> None:
