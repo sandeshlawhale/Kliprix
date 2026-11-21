@@ -26,7 +26,7 @@ from app.sources.youtube import YoutubeAdapter
 
 FFMPEG = shutil.which("ffmpeg")
 pytestmark = pytest.mark.skipif(FFMPEG is None, reason="ffmpeg not installed")
-LENGTH = 150.0
+LENGTH = 240.0
 KEY = "sk-integration-test-key-1234567"
 FAILING_ID = "bbbbbbbbbbb"
 SLOW_ID = "ccccccccccc"
@@ -88,7 +88,9 @@ class FakeSource(YoutubeAdapter):
     def get_chat(
         self, url: str, work_dir: Path, *, cancel: threading.Event | None = None
     ) -> list[ChatMessage] | None:
-        return [ChatMessage(t=t, text="lol") for t in (40.0, 41.0, 42.0, 100.0)]
+        # Two chat moments: the stronger first one is candidate 0 (the fake LLM's pick), the
+        # second fills slot two (30 s clear of the first, not in the last 1.5%, D-033).
+        return [ChatMessage(t=t, text="lol") for t in (40.0, 41.0, 42.0, 180.0, 181.0)]
 
 
 class FakeWhisper:

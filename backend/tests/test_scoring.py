@@ -5,7 +5,9 @@ import pytest
 
 from app.pipeline.candidates import find_candidates
 from app.pipeline.scoring import (
+    agreement,
     combine,
+    edge_limits,
     fit_length,
     moving_average,
     normalize,
@@ -127,13 +129,52 @@ def test_find_candidates_windows_and_bounds() -> None:
     assert peaks[:3] == [100.0, 400.0, 590.0]
     by_peak = {item.peak_t: item for item in items}
     assert (by_peak[100.0].start, by_peak[100.0].end) == (75.0, 135.0)
-    assert by_peak[590.0].end == duration
+    # The outro (1.5% of 600 s = the last 9 s) is never part of a window.
+    assert by_peak[590.0].end == 591.0
     assert all(0 <= item.score <= 1 for item in items)
     assert by_peak[400.0].signals.chat is None
     for a in items:
         for b in items:
             if a is not b:
                 assert abs(a.peak_t - b.peak_t) >= 60
+
+
+def test_agreement_factor() -> None:
+    chat = np.array([1.0, 1.0, 1.0, 0.0])
+    audio = np.array([0.0, 0.15, 0.6, 0.0])
+    motion = np.array([0.0, 0.0, 0.0, 0.0])
+    factor = agreement({"chat": chat, "audio": audio, "motion": motion})
+    # Alone -> floor 0.5; second signal at half the level -> 0.75; at/above the level -> 1.
+    assert factor.tolist() == pytest.approx([0.5, 0.75, 1.0, 0.5])
+    assert agreement({"audio": audio}).tolist() == [1.0] * 4
+
+
+def test_edge_limits_scale_with_duration() -> None:
+    args = (0.03, 180.0, 0.015, 120.0)
+    assert edge_limits(4 * 3600.0, *args) == (180.0, 4 * 3600.0 - 120.0)
+    assert edge_limits(600.0, *args) == pytest.approx((18.0, 591.0))
+
+
+def _spike(values: list[float], at: int, height: float) -> None:
+    for offset in range(-4, 5):
+        values[at + offset] = height - 2 * abs(offset) * height / 10
+
+
+def test_find_candidates_skips_the_intro_and_prefers_agreeing_signals() -> None:
+    duration = 3600.0
+    chat = [0.0] * 3600
+    audio = [0.0] * 3600
+    _spike(chat, 60, 10.0)  # chat flood in the lead-in (first 108 s): never picked
+    _spike(chat, 1000, 10.0)  # chat alone
+    _spike(chat, 2000, 8.0)  # weaker chat, but the audio agrees
+    _spike(audio, 2000, 8.0)
+    items = find_candidates(
+        {"chat": SignalFile(values=chat), "audio": SignalFile(values=audio)}, duration
+    )
+    peaks = [item.peak_t for item in items]
+    assert all(peak >= 108 for peak in peaks)
+    assert all(item.start >= 108 for item in items)
+    assert peaks[:2] == [2000.0, 1000.0]
 
 
 def test_find_candidates_at_most_twelve() -> None:

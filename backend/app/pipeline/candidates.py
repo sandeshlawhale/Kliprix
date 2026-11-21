@@ -14,6 +14,10 @@ from app.config import (
     CANDIDATE_AFTER_S,
     CANDIDATE_BEFORE_S,
     CANDIDATE_COUNT,
+    CANDIDATE_EDGE_LEAD_MAX_S,
+    CANDIDATE_EDGE_LEAD_SHARE,
+    CANDIDATE_EDGE_TAIL_MAX_S,
+    CANDIDATE_EDGE_TAIL_SHARE,
     CANDIDATE_MIN_DISTANCE_S,
     SIGNAL_WEIGHTS,
     SMOOTH_WINDOW_S,
@@ -21,7 +25,9 @@ from app.config import (
 from app.core.files import write_json_atomic
 from app.pipeline.scoring import (
     FloatArray,
+    agreement,
     combine,
+    edge_limits,
     moving_average,
     normalize,
     pick_peaks,
@@ -39,6 +45,8 @@ class SignalScores(BaseModel):
     chat: float | None = None
     audio: float | None = None
     motion: float | None = None
+    # Set at selection from the transcript (D-033); never in candidates.json.
+    speech: float | None = None
 
 
 class Candidate(BaseModel):
@@ -66,8 +74,9 @@ def find_candidates(
     """Top `CANDIDATE_COUNT` windows, best first.
 
     Each signal is smoothed, normalized to 0-1, and combined with `weights` (missing signals
-    dropped and the rest renormalized). Peaks are at least `CANDIDATE_MIN_DISTANCE_S` apart;
-    each window is peak - 25 s to peak + 35 s, clamped to the video.
+    dropped and the rest renormalized), then multiplied by the agreement factor (D-033).
+    Peaks are at least `CANDIDATE_MIN_DISTANCE_S` apart and never in the lead-in or outro;
+    each window is peak - 25 s to peak + 35 s, clamped to the video without those edges.
     """
     length = min(len(signal.values) for signal in signals.values())
     smoothed = {
@@ -75,12 +84,19 @@ def find_candidates(
         for name, signal in signals.items()
     }
     normalized: dict[str, FloatArray] = {name: normalize(v) for name, v in smoothed.items()}
-    score = combine(normalized, weights)
-    tiebreak = combine({name: positive_z(v) for name, v in smoothed.items()}, weights)
+    agree = agreement(normalized)
+    score = combine(normalized, weights) * agree
+    tiebreak = combine({name: positive_z(v) for name, v in smoothed.items()}, weights) * agree
+    first, last = edge_limits(
+        duration_s, CANDIDATE_EDGE_LEAD_SHARE, CANDIDATE_EDGE_LEAD_MAX_S,
+        CANDIDATE_EDGE_TAIL_SHARE, CANDIDATE_EDGE_TAIL_MAX_S,
+    )  # fmt: skip
+    seconds = np.arange(length)
+    score = np.where((seconds >= first) & (seconds < last), score, 0.0)
     items: list[Candidate] = []
     for peak in pick_peaks(score, CANDIDATE_COUNT, CANDIDATE_MIN_DISTANCE_S, tiebreak):
-        start = max(0.0, float(peak - CANDIDATE_BEFORE_S))
-        end = min(duration_s, float(peak + CANDIDATE_AFTER_S))
+        start = max(first, float(peak - CANDIDATE_BEFORE_S))
+        end = min(last, float(peak + CANDIDATE_AFTER_S))
         per_signal = {
             name: round(float(values[peak]), SCORE_DECIMALS) for name, values in normalized.items()
         }

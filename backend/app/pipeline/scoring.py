@@ -8,7 +8,7 @@ from collections.abc import Mapping
 import numpy as np
 import numpy.typing as npt
 
-from app.config import MAD_TO_SIGMA, ROBUST_Z_MAX
+from app.config import AGREEMENT_FLOOR, AGREEMENT_LEVEL, MAD_TO_SIGMA, ROBUST_Z_MAX
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -74,6 +74,27 @@ def combine(signals: Mapping[str, FloatArray], weights: Mapping[str, float]) -> 
     for name, weight in present.items():
         result += signals[name] * (weight / total)
     return result
+
+
+def agreement(signals: Mapping[str, FloatArray]) -> FloatArray:
+    """Per-second factor from the second-strongest normalized signal (D-033): 1 at
+    `AGREEMENT_LEVEL` or above, falling linearly to `AGREEMENT_FLOOR` at 0. With fewer than
+    two signals nothing can agree, so the factor is 1."""
+    arrays = list(signals.values())
+    if len(arrays) < 2:
+        return np.ones(len(arrays[0]) if arrays else 0)
+    second = np.sort(np.vstack(arrays), axis=0)[-2]
+    factor = AGREEMENT_FLOOR + (1.0 - AGREEMENT_FLOOR) * np.minimum(1.0, second / AGREEMENT_LEVEL)
+    return np.asarray(factor, dtype=np.float64)
+
+
+def edge_limits(duration_s: float, lead_share: float, lead_max: float, tail_share: float,
+                tail_max: float) -> tuple[float, float]:  # fmt: skip
+    """(first, last) second a candidate may use: the lead-in and the outro are cut
+    proportionally to the duration, each capped."""
+    lead = min(lead_max, duration_s * lead_share)
+    tail = min(tail_max, duration_s * tail_share)
+    return lead, max(lead, duration_s - tail)
 
 
 def pick_peaks(
