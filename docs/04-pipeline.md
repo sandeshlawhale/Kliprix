@@ -41,6 +41,8 @@ All signals are resampled to a **1-second grid**.
 4. Pick local maxima with minimum distance 60 s, take the top **12**.
 5. Each candidate: `{peak_t, start, end, score, signals:{chat,audio,motion}}` where start = peak − 25 s, end = peak + 35 s (clamped to video bounds).
 
+**D-033:** audio and motion run at the same time; motion reads only keyframes on videos ≥ 10 min with keyframes ≤ 10 s apart. The weighted sum is multiplied by an agreement factor (second-strongest signal: 1 at ≥ 0.3, down to 0.5 when one signal fires alone). No peak or window in the first 3% (max 3 min) or the last 1.5% (max 2 min) of the video.
+
 ### 7. Transcribe
 faster-whisper, int8 on CPU (CUDA if available), `word_timestamps=True`, `vad_filter=True`. Model chosen from RAM (see `11-constraints.md`). Language: auto-detect, unless the style says Hinglish.
 **Parakeet engine (D-028):** setting `transcribe_engine` (`parakeet` default, `whisper`). Parakeet (sherpa-onnx, English-only model) runs when the PC reaches the 8 GB tier; else Whisper. The Transcribe checkpoint carries the running `engine` (D-030 debug badge; Whisper adds its device, e.g. `Whisper medium · GPU`). Hinglish always uses Whisper (D-031); Whisper uses the GPU when NVIDIA's libraries are installed (`requirements-gpu.txt`). Inside each span Silero VAD finds speech, silent parts are skipped, and pieces of at most 30 s are cut only in pauses; word ends are capped at 1.2 s after the start; a word heard on both sides of a cut is kept once. Any Parakeet failure falls back to Whisper for that video (logged, shown in the video's `note`). `transcript.json` records `engine`; a cached transcript is reused only by the same engine.
@@ -48,6 +50,7 @@ faster-whisper, int8 on CPU (CUDA if available), `word_timestamps=True`, `vad_fi
 
 ### 8. Select
 One LLM call per video (see `10-llm-prompts.md`). The LLM receives the candidate list with transcript text and returns up to N clips with final start/end snapped to sentence boundaries or silence, plus metadata. Backend then **validates and repairs**: length 25–90 s (target 30–60), no overlap between clips, minimum 30 s gap, times inside the video, no duplicates. If the LLM returns fewer valid clips than requested, fill from remaining top candidates with auto-generated boundaries and a fallback title from the transcript.
+**D-033:** before the call, candidates are re-ranked by words per second from the transcript (a `speech` signal; skipped for videos with little speech), and windows with < 0.3 words/s are never used as fallback clips. Every clip edge snaps to the nearest sentence start/end within 6 s (sentence end = . ? ! । … or a ≥ 0.5 s pause), with 0.15 s / 0.25 s of room that never reaches a neighbouring word.
 If a video has no speech at all, the LLM gets candidates with signal scores only and writes generic metadata; clips still produce.
 
 ### 9. Cut
