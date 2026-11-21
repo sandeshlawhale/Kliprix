@@ -5,7 +5,7 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 ## Current state
 - **Current milestone:** all milestones built (M3→M10 in one run, D-027). **Waiting for the owner's checks** below; no milestone after M0–M2 is tagged yet.
 - **Status:** M0–M2 verified and tagged (`m0`, `m1`, `m2`). M3–M10 built and checked by the agent as far as possible without the owner (real runs on this machine, see "M3–M9 output" and "M10 output"); owner-only checks are listed below.
-- **Last session:** 2026-11-19, Claude Code (Claude Opus 5.5 / Sonnet 5.5): Parakeet engine on branch `feat/parakeet-engine` (D-028), not merged
+- **Last session:** 2026-11-21, Claude Code (Claude Opus 5.5): D-033 and D-034; `feat/parakeet-engine` merged into `main` (fast-forward, owner's instruction) and pushed
 - **Last commit:** see `git log -1`
 
 ## Milestone checklist
@@ -24,19 +24,19 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 ## In progress (exact next step)
 Nothing in progress. **Next step: the owner runs the checks below.** Start the app with `scripts\start.bat` (Windows) or `./scripts/start.sh`, configure a real key in Configure API, and paste 3 links. Fix anything found, then tag `m3`…`m10` once each milestone's check passes (the agent did not tag them because the owner checks are open). Then consider proposal P-001 (video retry endpoint) in `14-decisions-log.md`.
 
-## More clips from a saved download (D-034, 2026-11-21), built on `feat/parakeet-engine`
+## More clips from a saved download (D-034, 2026-11-21), on `main`
 Batch page → each video → count + **More clips**: new clips from the saved download, never overlapping the existing ones, without downloading or analysing again; only untranscribed parts of the new moments are transcribed. **Owner check:** restart the app (the running backend predates this), open the 4-hour stream's batch, configure the key, ask for 2 more clips → 2 new clips appear after the existing ones, none near 1:24-2:24 or 169:25-170:25; the log shows no download.
 
-## Candidates and clip edges (D-033, 2026-11-21), built on `feat/parakeet-engine`
+## Candidates and clip edges (D-033, 2026-11-21), on `main`
 Audio and motion now run at the same time, and motion on long videos reads only keyframes (4-hour stream: 63 s instead of ~17 min). Candidates skip the first 3% (max 3 min) and last 1.5% (max 2 min) and need two signals to agree for full score; after transcription, windows without speech drop to the bottom and are never used as fallback clips. Clips start and end on whole sentences, and the LLM is told to use the shortest length that carries the moment. **Owner check:** re-run the 4-hour stream (`l-oEKLu4Y3w`) with a real key and judge the clips: no intro screen, no mid-sentence cuts, lengths shorter than 60 s where the moment is short.
 
-## Parakeet engine (branch `feat/parakeet-engine`, D-028), built, NOT merged
+## Parakeet engine (D-028), merged into `main` 2026-11-21
 **Turbo (D-032):** Whisper Auto on an NVIDIA GPU (≥ 4 GB) is `large-v3-turbo`: the owner's 10-min Hinglish video transcribes in 326 s (medium on the GPU 389 s, the CPU about 600+ s). Parallel clip renders were measured (100 s either way for two clips) and not built. **Next speed target:** the face crop takes about 2 min per clip on a podcast (face mode); the encode is 45-80 s.
 **Current rule (D-031):** Parakeet for English (>= 8 GB RAM), Whisper for Hinglish and small PCs, Whisper if Parakeet fails. The Transcribe step shows the engine that runs, e.g. "Parakeet" or "Whisper medium · GPU" (temporary debug badge). The launcher installs NVIDIA CUDA libraries only on PCs with an NVIDIA GPU. **Owner's run (2026-11-19):** a 10-min Hinglish video took 23 min end to end for 2 clips (Parakeet-only experiment, then Whisper). Clean re-measure (machine idle, the app's own WhisperRunner, medium, GPU, Hinglish, the same 618 s video): 389 s (0.63x real time, peak 1.85 GB), against 814 s inside the owner's run, which overlapped with my CPU benchmarks (cause not proven; progress stalled between 60% and 80%, which fits slow stretches of speech). The owner's run: download+audio+motion 2.2 min, transcribe 13.6 min, two clip renders 6.3 min (167 s and 211 s). Hinglish is the slow path: Whisper medium on the GPU measured 0.54x real time on 5 min of Hindi (CPU 0.96x), so a 2-hour video would still take over an hour in the transcribe step unless transcription is limited to the candidate spans (D-012, already used above 20 min).
 Second speech-to-text engine; Whisper code kept. **Default = Parakeet** on the owner's instruction (2026-11-19) so the owner can compare. Used on PCs with ≥ 8 GB RAM, **including Hinglish** (D-029, owner's experiment; its Hindi text is wrong, a note says so); smaller PCs use Whisper; any Parakeet failure → Whisper for that video with a note on the batch page ("Speech-to-text: …"). The owner decides on merging into `main`.
 
 **How to roll back** (any one):
-1. `git switch main`: nothing else needed (main has no Parakeet commits; tag `pre-parakeet` = start point). Restart the app.
+1. `git switch pre-parakeet` (the tag marks main before the merge; branch from it to work there). Restart the app.
 2. `git revert` the commits on `feat/parakeet-engine` (list them with `git log pre-parakeet..feat/parakeet-engine --oneline`).
 3. Keep the code, but set Settings → Speech-to-text engine to **Whisper**.
 (Migration `0002` only adds a nullable `videos.note` column; `main` ignores it, no DB rollback needed.)
