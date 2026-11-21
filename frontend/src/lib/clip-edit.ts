@@ -5,7 +5,7 @@ import type { Clip, ClipPatch, Word } from "@/lib/api";
 export const TITLE_MAX = 40;
 export const EDIT_MIN_S = 5;
 export const EDIT_MAX_S = 90;
-export const GOOD_MIN_S = 25;
+export const GOOD_MIN_S = 15;
 
 export interface EditDraft {
   start_s: number;
@@ -48,11 +48,11 @@ export function draftErrors(draft: EditDraft, clip: Clip): string[] {
   return errors;
 }
 
-/** A soft warning outside 25–90 s (still allowed). */
+/** A soft warning outside 15–90 s (still allowed, D-035). */
 export function lengthWarning(draft: EditDraft): string | null {
   const length = draft.end_s - draft.start_s;
   if (length >= EDIT_MIN_S && length < GOOD_MIN_S) {
-    return `${length.toFixed(1)} s is short for a short; 25–90 s works best.`;
+    return `${length.toFixed(1)} s is very short; 15–90 s works best.`;
   }
   return null;
 }

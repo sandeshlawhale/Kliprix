@@ -180,6 +180,19 @@ CANDIDATE_EDGE_TAIL_MAX_S = 120.0
 # fires alone (e.g. a chat flood over a silent, still screen).
 AGREEMENT_LEVEL = 0.3
 AGREEMENT_FLOOR = 0.5
+# Chat only counts in the middle of a stream (D-035): viewers flood the chat with greetings
+# right after the intro and with goodbyes at the end, so near the edges the score uses the
+# other signals only.
+CHAT_EDGE_LEAD_SHARE = 0.15
+CHAT_EDGE_LEAD_MAX_S = 900.0
+CHAT_EDGE_TAIL_SHARE = 0.10
+CHAT_EDGE_TAIL_MAX_S = 600.0
+# Coverage windows (D-035): besides the signal peaks, windows spread evenly over the video
+# so a strong moment without loud audio, motion or chat still reaches the LLM. Short videos
+# are transcribed whole, so they get as many as fit; long ones only a few, because each
+# window adds about two minutes of transcription.
+COVERAGE_LONG_COUNT = 4
+COVERAGE_SHORT_MAX = 12
 
 # Transcription (docs/04 stage 7, D-012). Videos up to this length are transcribed whole.
 FULL_TRANSCRIBE_MAX_S = 20 * 60
@@ -232,10 +245,10 @@ LLM_TEST_TIMEOUT_S = 20.0
 LLM_LINE_MAX_CHARS = 300
 LLM_PROMPT_MAX_CHARS = 60000
 
-# Clip length rules (docs/04 "Select", D-017): hard range 25-90 s, target 30-60 s, up to
-# 90 s only when the LLM flags needs_extended and the style allows it.
-CLIP_MIN_S = 25.0
-CLIP_TARGET_MIN_S = 30.0
+# Clip length rules (D-035, replaces D-017): the moment decides, 15-60 s, up to 90 s when
+# the LLM flags needs_extended. No user setting.
+CLIP_MIN_S = 15.0
+CLIP_TARGET_MIN_S = 15.0
 CLIP_STANDARD_MAX_S = 60.0
 CLIP_EXTENDED_MAX_S = 90.0
 CLIP_MIN_GAP_S = 30.0

@@ -14,6 +14,8 @@ class LlmClip(BaseModel):
     start: float
     end: float
     needs_extended: bool = False
+    # funny, informative, emotional, conflict, surprising, ... (D-035); shown in the reason.
+    category: str = ""
     title: str = ""
     youtube_title: str = ""
     youtube_description: str = ""

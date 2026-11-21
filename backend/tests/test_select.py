@@ -88,10 +88,31 @@ def test_extended_clip_allowed_up_to_ninety() -> None:
     assert clip.needs_extended
 
 
-def test_short_clip_is_extended_to_thirty() -> None:
+def test_short_clip_is_extended_to_fifteen() -> None:
+    # D-035: 15 s is enough for a quick moment; shorter ones grow to 15 s.
     answer = SelectionAnswer(clips=[llm(start=120.0, end=130.0)])
     clip = build_selection(answer, CANDIDATES, FACTS, None, 1, extended=False).clips[0]
-    assert clip.end - clip.start == 30.0
+    assert clip.end - clip.start == 15.0
+
+
+def test_a_twenty_second_moment_stays_twenty_seconds() -> None:
+    answer = SelectionAnswer(clips=[llm(start=120.0, end=140.0)])
+    clip = build_selection(answer, CANDIDATES, FACTS, None, 1, extended=False).clips[0]
+    assert clip.end - clip.start == 20.0
+
+
+def test_most_important_clip_comes_first_with_its_category() -> None:
+    answer = SelectionAnswer(
+        clips=[
+            llm(candidate_id=0, start=100.0, end=130.0, score=0.5),
+            llm(candidate_id=4, start=880.0, end=910.0, score=0.9).model_copy(
+                update={"category": "funny", "reason": "He falls off the chair."}
+            ),
+        ]
+    )
+    clips = build_selection(answer, CANDIDATES, FACTS, None, 2, extended=True).clips
+    assert clips[0].start >= 870.0
+    assert clips[0].reason == "Funny: He falls off the chair."
 
 
 def test_times_clamped_to_candidate_region_and_video() -> None:
@@ -156,7 +177,7 @@ def test_text_repairs() -> None:
 
 def test_fit_window_rejects_impossible() -> None:
     assert fit_window(990.0, 980.0, 1000.0, 60.0, []) is None
-    assert fit_window(0.0, 10.0, 20.0, 60.0, []) is None
+    assert fit_window(0.0, 5.0, 10.0, 60.0, []) is None
 
 
 def sentences(starts: list[float], words_each: int = 8) -> list[Word]:
@@ -194,10 +215,10 @@ def test_fit_window_trims_long_clips_at_a_sentence_end() -> None:
 
 def test_fit_window_grows_short_clips_to_a_sentence_end() -> None:
     words = sentences([100.0 + 4 * k for k in range(40)])
-    window = fit_window(100.0, 112.0, 1000.0, 60.0, words)
+    window = fit_window(100.0, 108.0, 1000.0, 60.0, words)
     assert window is not None
-    # The first sentence end at least 30 s after 100.0 is 131.9 (sentence at 128).
-    assert window[1] == 131.9 + 0.1
+    # The first sentence end at least 15 s after 100.0 is 115.9 (sentence at 112).
+    assert window[1] == 115.9 + 0.1
 
 
 def test_rank_by_speech_demotes_silent_windows() -> None:

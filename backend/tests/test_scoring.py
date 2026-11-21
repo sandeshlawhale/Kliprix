@@ -124,7 +124,8 @@ def test_find_candidates_windows_and_bounds() -> None:
             if 0 <= peak + offset < 600:
                 audio[peak + offset] = motion[peak + offset] = 10.0 - 2 * abs(offset)
     signals = {"audio": SignalFile(values=audio), "motion": SignalFile(values=motion)}
-    items = find_candidates(signals, duration)
+    everything = find_candidates(signals, duration)
+    items = [item for item in everything if item.source == "signals"]
     peaks = sorted(item.peak_t for item in items)
     assert peaks[:3] == [100.0, 400.0, 590.0]
     by_peak = {item.peak_t: item for item in items}
@@ -133,8 +134,10 @@ def test_find_candidates_windows_and_bounds() -> None:
     assert by_peak[590.0].end == 591.0
     assert all(0 <= item.score <= 1 for item in items)
     assert by_peak[400.0].signals.chat is None
-    for a in items:
-        for b in items:
+    # Coverage windows (D-035) fill the quiet stretches, never near a peak or each other.
+    assert any(item.source == "coverage" for item in everything)
+    for a in everything:
+        for b in everything:
             if a is not b:
                 assert abs(a.peak_t - b.peak_t) >= 60
 
@@ -193,7 +196,29 @@ def test_find_candidates_excludes_clips_already_made() -> None:
 def test_find_candidates_at_most_twelve() -> None:
     rng = np.random.default_rng(1)
     values = rng.random(3600).tolist()
-    items = find_candidates({"audio": SignalFile(values=values)}, 3600.0)
+    everything = find_candidates({"audio": SignalFile(values=values)}, 3600.0)
+    items = [item for item in everything if item.source == "signals"]
     assert len(items) == 12
+    # A long video gets only a few coverage windows (each costs transcription time).
+    assert len(everything) - len(items) <= 4
     scores = [item.score for item in items]
     assert scores == sorted(scores, reverse=True)
+
+
+def test_chat_is_ignored_near_the_stream_start() -> None:
+    """D-035: a chat flood right after the intro (greetings) does not make a candidate; the
+    same flood mid-stream does."""
+    duration = 3600
+    rng = np.random.default_rng(7)
+    audio = (1.0 + rng.random(duration)).tolist()
+    chat = rng.random(duration).tolist()
+    for peak in (400, 1800):  # 400 s is inside the first 15%; 1800 s is mid-stream
+        for offset in range(-4, 5):
+            chat[peak + offset] = 20.0 - 2 * abs(offset)
+            audio[peak + offset] = 2.0 + 0.1 * (4 - abs(offset))
+    signals = {"chat": SignalFile(values=chat), "audio": SignalFile(values=audio)}
+    items = [i for i in find_candidates(signals, float(duration)) if i.source == "signals"]
+    by_peak = {item.peak_t: item for item in items}
+    assert by_peak[1800.0].score > by_peak[400.0].score
+    assert by_peak[1800.0].signals.chat is not None
+    assert by_peak[400.0].signals.chat is None

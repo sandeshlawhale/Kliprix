@@ -304,10 +304,17 @@ def repair_clip(
         youtube_description=truncate_words(raw.youtube_description.strip(), DESCRIPTION_MAX_CHARS),
         hashtags=clean_hashtags(raw.hashtags),
         linkedin_post=truncate_words(raw.linkedin_post.strip(), LINKEDIN_MAX_CHARS),
-        reason=truncate_words(raw.reason.strip(), REASON_MAX_CHARS),
+        reason=truncate_words(_reason_text(raw), REASON_MAX_CHARS),
         score=min(1.0, max(0.0, raw.score)),
         needs_extended=end - start > CLIP_STANDARD_MAX_S,
     )
+
+
+def _reason_text(raw: LlmClip) -> str:
+    """The LLM's reason, led by its category when it gave one: "Funny: ..." (D-035)."""
+    reason = raw.reason.strip()
+    category = strip_emoji(raw.category).strip().strip(".:").capitalize()[:20]
+    return f"{category}: {reason}" if category and reason else reason or category
 
 
 def fallback_title(words: Sequence[Word], start: float) -> str:
@@ -416,7 +423,9 @@ def build_selection(
     Nothing may overlap or come within the gap of a `taken` window (clips already made)."""
     words = all_words(transcript)
     accepted: list[SelectionClip] = []
-    for raw in sorted(answer.clips, key=lambda clip: -clip.score):
+    # Most important first (D-035): the LLM's own score, then the order it listed them in.
+    ranked = sorted(enumerate(answer.clips), key=lambda pair: (-pair[1].score, pair[0]))
+    for _, raw in ranked:
         if len(accepted) >= count:
             break
         clip = repair_clip(raw, candidates, facts, words, extended)

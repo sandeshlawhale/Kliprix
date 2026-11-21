@@ -203,7 +203,8 @@ class VideoPipeline:
         self._stage("select")
         client = self._llm_client()
         count = int(style.get("clips_per_video", 5))
-        extended = style.get("clip_length_mode") == "extended"
+        # Length follows the moment (D-035): up to 90 s whenever the LLM says it needs it.
+        extended = True
         facts = VideoFacts(meta.title, meta.channel, duration)
         selection = run_select(
             video_dir, facts, candidates.items, transcript,
@@ -270,7 +271,7 @@ class VideoPipeline:
             client = self._llm_client()
             chosen = select_more(
                 VideoFacts(title, channel, duration), candidates, transcript, taken,
-                count=count, extended=style.get("clip_length_mode") == "extended",
+                count=count, extended=True,
                 client=client,
             )  # fmt: skip
             words = all_words(transcript)
