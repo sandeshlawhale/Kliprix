@@ -2,7 +2,6 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, TriangleAlert } from "lucide-react";
-import Image from "next/image";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -10,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { CaptionStylePicker } from "@/components/style/caption-style-picker";
 import { invalidateBatch, keys } from "@/hooks/queries";
 import { errorMessage, patchClip, type Clip } from "@/lib/api";
 import {
@@ -22,8 +21,7 @@ import {
   wordLines,
   type EditDraft,
 } from "@/lib/clip-edit";
-import { CROP_LABELS, STYLE_LABELS, clock } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { clock } from "@/lib/format";
 
 /** Video-affecting edits are collected here and saved together with "Apply changes"; the
  * clip is then marked edited and needs a new preview (edits never re-render silently). */
@@ -102,33 +100,10 @@ export function EditPanel({ clip }: { clip: Clip }) {
 
       <section className="flex flex-col gap-3">
         <h3 className="font-medium">Caption style</h3>
-        <div className="grid grid-cols-3 gap-3" role="radiogroup" aria-label="Caption style">
-          {(Object.keys(STYLE_LABELS) as (keyof typeof STYLE_LABELS)[]).map((name) => (
-            <button
-              key={name}
-              type="button"
-              role="radio"
-              aria-checked={draft.caption_style === name}
-              onClick={() => set("caption_style", name)}
-              className={cn(
-                "focus-visible:ring-ring/50 flex flex-col gap-1 rounded-lg border p-1.5 text-left text-sm outline-none focus-visible:ring-[3px]",
-                draft.caption_style === name
-                  ? "border-primary ring-primary ring-1"
-                  : "hover:bg-muted/50",
-              )}
-            >
-              <Image
-                src={`/style-samples/${name}.png`}
-                alt=""
-                width={540}
-                height={960}
-                unoptimized
-                className="aspect-[9/16] w-full rounded object-cover"
-              />
-              {STYLE_LABELS[name]}
-            </button>
-          ))}
-        </div>
+        <CaptionStylePicker
+          value={draft.caption_style}
+          onChange={(value) => set("caption_style", value)}
+        />
       </section>
 
       <section className="flex flex-col gap-3">
@@ -169,37 +144,6 @@ export function EditPanel({ clip }: { clip: Clip }) {
         )}
       </section>
 
-      <section className="flex flex-col gap-3">
-        <Label htmlFor="edit-blur">Background blur: {draft.blur}</Label>
-        <Slider
-          id="edit-blur"
-          min={0}
-          max={60}
-          step={1}
-          value={[draft.blur]}
-          onValueChange={([value]) => set("blur", value ?? draft.blur)}
-          className="max-w-sm"
-          aria-label="Background blur"
-        />
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h3 className="font-medium">Crop</h3>
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          value={draft.crop_mode}
-          onValueChange={(value) => value && set("crop_mode", value as EditDraft["crop_mode"])}
-          aria-label="Crop mode"
-        >
-          {(Object.keys(CROP_LABELS) as (keyof typeof CROP_LABELS)[]).map((key) => (
-            <ToggleGroupItem key={key} value={key}>
-              {CROP_LABELS[key]}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </section>
-
       {errors.length > 0 && (
         <ul className="text-destructive list-disc pl-5 text-sm" role="alert">
           {errors.map((error) => (
@@ -207,7 +151,7 @@ export function EditPanel({ clip }: { clip: Clip }) {
           ))}
         </ul>
       )}
-      <div className="flex items-center gap-3">
+      <div className="bg-background/90 sticky bottom-0 -mx-1 flex items-center gap-3 border-t px-1 py-3 backdrop-blur">
         <Button
           disabled={!dirty || errors.length > 0 || save.isPending || busy}
           onClick={() => save.mutate()}

@@ -158,6 +158,7 @@ export default function HomePage() {
       <div className="flex flex-col items-start gap-2">
         <Button
           size="lg"
+          variant="brand"
           disabled={items.length === 0 || !configured || start.isPending}
           onClick={() => start.mutate()}
         >

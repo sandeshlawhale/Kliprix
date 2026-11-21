@@ -1103,6 +1103,8 @@ export interface components {
             can_add_clips: boolean;
             /** Add Clips Blocked */
             add_clips_blocked?: string | null;
+            /** Active Since */
+            active_since?: string | null;
             /** Checkpoints */
             checkpoints: components["schemas"]["Checkpoint"][];
             /** Clips */

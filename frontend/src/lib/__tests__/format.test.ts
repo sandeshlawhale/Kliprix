@@ -24,11 +24,9 @@ describe("format helpers", () => {
     expect(
       styleSummary({
         caption_style: "pop",
-        caption_language: "en",
-        clip_length_mode: "standard",
         clips_per_video: 5,
       }),
-    ).toBe("Pop captions · 30–60 s · 5 clips · English");
+    ).toBe("Pop captions · 5 clips");
   });
 });
 

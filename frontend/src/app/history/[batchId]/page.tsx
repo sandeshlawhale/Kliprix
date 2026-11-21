@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { CheckpointList } from "@/components/batch/checkpoint-list";
 import { ClipCard } from "@/components/batch/clip-card";
+import { ElapsedTimer } from "@/components/batch/elapsed-timer";
 import { MoreClips } from "@/components/batch/more-clips";
 import { SourcePolicyPrompt } from "@/components/batch/source-policy-prompt";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -17,7 +18,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { invalidateBatch, useBatch } from "@/hooks/queries";
 import { useBatchEvents } from "@/hooks/use-batch-events";
 import { cancelBatch, errorMessage, type Video } from "@/lib/api";
-import { localDateTime } from "@/lib/format";
 
 const STATUS_LABELS: Record<string, string> = {
   queued: "Queued",
@@ -63,21 +63,35 @@ export default function BatchPage({ params }: PageProps<"/history/[batchId]">) {
 
   const data = batch.data;
   const active = ACTIVE.includes(data.status);
+  const first = data.videos[0];
+  const heading = first?.title ?? first?.url ?? "Batch";
+  const created = new Date(data.created_at);
   return (
     <div className="flex flex-col gap-10">
-      <header className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">{localDateTime(data.created_at)}</h1>
-        <Badge variant="outline">{STATUS_LABELS[data.status] ?? data.status}</Badge>
-        {active && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => cancel.mutate()}
-            disabled={cancel.isPending}
-          >
-            Cancel
-          </Button>
-        )}
+      <header className="flex items-start justify-between gap-6">
+        <div className="flex min-w-0 flex-col gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight text-balance">{heading}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{STATUS_LABELS[data.status] ?? data.status}</Badge>
+            {active && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => cancel.mutate()}
+                disabled={cancel.isPending}
+              >
+                Cancel
+              </Button>
+            )}
+          </div>
+        </div>
+        <time
+          dateTime={data.created_at}
+          className="text-muted-foreground flex shrink-0 flex-col items-end text-sm tabular-nums"
+        >
+          <span>{created.toLocaleDateString(undefined, { dateStyle: "medium" })}</span>
+          <span>{created.toLocaleTimeString(undefined, { timeStyle: "short" })}</span>
+        </time>
       </header>
       <SourcePolicyPrompt batch={data} />
       {data.videos.map((video) => (
@@ -88,13 +102,19 @@ export default function BatchPage({ params }: PageProps<"/history/[batchId]">) {
         >
           <div className="flex flex-col gap-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-medium">{video.title ?? video.url}</h2>
+              {/* One video: its title is already the page heading. */}
+              {data.videos.length > 1 ? (
+                <h2 className="text-lg font-medium">{video.title ?? video.url}</h2>
+              ) : (
+                <h2 className="sr-only">{video.title ?? video.url}</h2>
+              )}
               {video.platform && <Badge variant="secondary">{video.platform}</Badge>}
               {video.status === "done" && (
                 <Badge variant="outline">
                   {video.has_chat ? "Chat replay used" : "No chat replay"}
                 </Badge>
               )}
+              {video.active_since && <ElapsedTimer since={video.active_since} />}
             </div>
             {video.channel && <p className="text-muted-foreground text-sm">{video.channel}</p>}
             {video.note && <p className="text-muted-foreground text-sm">{video.note}</p>}
@@ -115,7 +135,7 @@ export default function BatchPage({ params }: PageProps<"/history/[batchId]">) {
           )}
           {!videoFinished(video) && <CheckpointList checkpoints={video.checkpoints} />}
           {video.clips.length > 0 && (
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
               {video.clips.map((clip) => (
                 <ClipCard key={clip.id} clip={clip} batchId={batchId} />
               ))}

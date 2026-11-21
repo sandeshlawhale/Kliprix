@@ -71,6 +71,8 @@ class Video(BaseModel):
     # More clips from the saved download (D-034): possible now, or why not.
     can_add_clips: bool = False
     add_clips_blocked: str | None = None
+    # When the work now running for this video began (None when idle); drives the timer.
+    active_since: datetime | None = None
     checkpoints: list[Checkpoint]
     clips: list[ClipSummary]
 
@@ -171,7 +173,11 @@ def clip_summary(ctx: JobContext, clip: ClipRow, positions: dict[str, int]) -> C
 
 
 def video_view(
-    ctx: JobContext, video: VideoRow, clips: list[ClipRow], positions: dict[str, int]
+    ctx: JobContext,
+    video: VideoRow,
+    clips: list[ClipRow],
+    positions: dict[str, int],
+    active_since: datetime | None = None,
 ) -> Video:
     states = checkpoints(video, clips, ctx.video_dir(video.id))
     blocked = more_clips_blocker(video, ctx.video_dir(video.id))
@@ -191,6 +197,7 @@ def video_view(
         note=video.note,
         can_add_clips=blocked is None,
         add_clips_blocked=blocked,
+        active_since=active_since,
         checkpoints=[
             Checkpoint(key=s.key, label=s.label, state=s.state, detail=s.detail, engine=s.engine)  # type: ignore[arg-type]
             for s in states
@@ -201,10 +208,11 @@ def video_view(
 
 def batch_view(ctx: JobContext, session: Session, batch: BatchRow) -> Batch:
     positions = repo.queued_clip_positions(session)
-    videos = [
-        video_view(ctx, video, repo.clips_of_video(session, video.id), positions)
-        for video in repo.videos_of(session, batch.id)
-    ]
+    videos = []
+    for video in repo.videos_of(session, batch.id):
+        clips = repo.clips_of_video(session, video.id)
+        since = repo.generation_started_at(session, video.id, [clip.id for clip in clips])
+        videos.append(video_view(ctx, video, clips, positions, since))
     return Batch(
         id=batch.id,
         created_at=batch.created_at,

@@ -32,21 +32,15 @@ export function localDateTime(iso: string): string {
 }
 
 export const STYLE_LABELS = { pop: "Pop", karaoke: "Karaoke", boxed: "Boxed" } as const;
-export const LANGUAGE_LABELS = { en: "English", hinglish: "Hinglish" } as const;
-export const CROP_LABELS = { auto: "Auto", face: "Face", full: "Full frame" } as const;
-export const LENGTH_LABELS = { standard: "30–60 s", extended: "up to 90 s" } as const;
 
+/** Clip length, language, crop and blur are decided by Kliprix, so only these are shown. */
 export function styleSummary(style: {
   caption_style: keyof typeof STYLE_LABELS;
-  caption_language: keyof typeof LANGUAGE_LABELS;
-  clip_length_mode: keyof typeof LENGTH_LABELS;
   clips_per_video: number;
 }): string {
   return [
     `${STYLE_LABELS[style.caption_style]} captions`,
-    LENGTH_LABELS[style.clip_length_mode],
     plural(style.clips_per_video, "clip"),
-    LANGUAGE_LABELS[style.caption_language],
   ].join(" · ");
 }
 

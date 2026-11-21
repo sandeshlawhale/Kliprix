@@ -1,17 +1,14 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Loader2, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { Skeleton } from "@/components/ui/skeleton";
 import { invalidateBatch } from "@/hooks/queries";
 import { clipMediaUrl, errorMessage, retryClip, type ClipSummary } from "@/lib/api";
 import { clock } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 const STAGE_LABELS: Record<string, string> = {
   cut: "Cutting",
@@ -33,6 +30,19 @@ export function clipStatusText(clip: ClipSummary): string {
   return clip.edited && !clip.has_export ? "Edited" : "Done";
 }
 
+/** What the working badge says: "42% · Rendering" or "Queued #2". */
+function workingText(clip: ClipSummary): string {
+  if (clip.status === "queued")
+    return clip.queue_position ? `Queued #${clip.queue_position}` : "Queued";
+  const stage = STAGE_LABELS[clip.stage ?? ""] ?? "Processing";
+  return `${Math.round(clip.progress * 100)}% · ${stage}`;
+}
+
+const CHIP =
+  "absolute right-2 bottom-2 inline-flex items-center gap-1 rounded-md bg-black/70 px-1.5 py-0.5 font-mono text-[11px] text-white tabular-nums backdrop-blur-sm";
+
+/** A bare 9:16 tile: the frame, and in the corner its length or what is happening to it.
+ * Title and the rest live on the clip page. */
 export function ClipCard({ clip, batchId }: { clip: ClipSummary; batchId: string }) {
   const client = useQueryClient();
   const retry = useMutation({
@@ -40,64 +50,68 @@ export function ClipCard({ clip, batchId }: { clip: ClipSummary; batchId: string
     onSuccess: () => invalidateBatch(client, batchId),
     onError: (error) => toast.error(errorMessage(error)),
   });
-  const status = clipStatusText(clip);
+  const working = clip.status === "queued" || clip.status === "running";
+  const failed = clip.status === "failed";
   const openable = clip.status === "done" || clip.has_export || clip.has_preview;
+  const label = `${clip.title || "Untitled clip"} — ${clipStatusText(clip)}`;
 
   const body = (
-    <Card className="flex h-full flex-col gap-2 overflow-hidden p-2">
+    <div
+      className="bg-muted relative aspect-[9/16] w-full overflow-hidden rounded-xl"
+      aria-label={openable ? undefined : label}
+      title={clip.title || undefined}
+    >
       {clip.thumbnail_url ? (
         // Local frame served by the backend; next/image adds nothing for it.
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={clipMediaUrl(clip.id, "thumbnail", clip.updated_at)}
           alt=""
-          className="bg-muted aspect-[9/16] w-full rounded-md object-cover"
+          className={cn(
+            "size-full object-cover transition-[filter,transform] duration-500",
+            (working || failed) && "scale-110 blur-md brightness-75",
+          )}
         />
       ) : (
-        <Skeleton className="aspect-[9/16] w-full" />
+        working && <div className="bg-muted-foreground/10 absolute inset-0 animate-pulse" />
       )}
-      <p className="line-clamp-2 text-sm font-medium">{clip.title || "Untitled clip"}</p>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-muted-foreground font-mono text-xs">{clock(clip.duration_s)}</span>
-        <Badge
-          variant={
-            clip.status === "failed"
-              ? "destructive"
-              : clip.status === "done"
-                ? "secondary"
-                : "outline"
-          }
-        >
-          {status}
-        </Badge>
-      </div>
-      {clip.status === "running" && (
-        <Progress value={clip.progress * 100} aria-label="Clip progress" />
+
+      {working && (
+        <span className={CHIP} role="status">
+          <Loader2 className="size-3 animate-spin" aria-hidden />
+          {workingText(clip)}
+        </span>
       )}
-      {clip.status === "failed" && (
-        <div className="flex flex-col gap-2">
-          {clip.error && <p className="text-destructive text-xs">{clip.error.message}</p>}
-          <Button
-            size="sm"
-            variant="outline"
+
+      {failed && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-3 text-center">
+          <p className="line-clamp-4 text-xs text-white">
+            {clip.error?.message ?? "This clip failed."}
+          </p>
+          <button
+            type="button"
             disabled={retry.isPending}
             onClick={(event) => {
               event.preventDefault();
               retry.mutate();
             }}
+            className="inline-flex items-center gap-1 rounded-md bg-white/90 px-2 py-1 text-xs font-medium text-black hover:bg-white disabled:opacity-60"
           >
-            Retry
-          </Button>
+            <RotateCcw className="size-3" aria-hidden /> Retry
+          </button>
         </div>
       )}
-    </Card>
+
+      {!working && !failed && <span className={CHIP}>{clock(clip.duration_s)}</span>}
+    </div>
   );
 
   if (!openable) return body;
   return (
     <Link
       href={`/history/${batchId}/clips/${clip.id}`}
-      className="focus-visible:ring-ring/50 rounded-xl outline-none focus-visible:ring-[3px]"
+      aria-label={label}
+      className="focus-visible:ring-brand/60 block rounded-xl transition-transform outline-none hover:scale-[1.02] focus-visible:ring-[3px]"
     >
       {body}
     </Link>

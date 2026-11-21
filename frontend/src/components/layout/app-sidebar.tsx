@@ -42,9 +42,16 @@ export function AppSidebar() {
   const items = history.data?.pages.flatMap((page) => page.items) ?? [];
 
   return (
-    <Sidebar collapsible="none" className="h-svh border-r">
+    // Sticky so it stays put while the main area scrolls.
+    <Sidebar collapsible="none" className="sticky top-0 h-svh self-start border-r">
       <SidebarHeader className="gap-3 p-4">
-        <span className="text-base font-semibold tracking-tight">Kliprix</span>
+        <Link
+          href="/"
+          className="self-center text-lg font-semibold tracking-tight"
+          aria-label="Kliprix home"
+        >
+          <span className="text-brand">K</span>liprix
+        </Link>
         <Button asChild className="w-full justify-start" variant="outline">
           <Link href="/">
             <Plus aria-hidden /> New clips

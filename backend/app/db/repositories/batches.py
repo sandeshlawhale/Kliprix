@@ -168,6 +168,51 @@ def active_video_job(session: Session, video_id: str) -> JobRow | None:
     return session.scalars(query).first()
 
 
+# A clip job queued this soon after its video job finished belongs to the same run.
+_RUN_GAP_S = 10.0
+
+
+def generation_started_at(
+    session: Session, video_id: str, clip_ids: Sequence[str]
+) -> datetime | None:
+    """When the work now running for this video began, or None when nothing runs.
+
+    The pipeline (or "more clips") job and the clip renders it queued count as one run, so
+    the batch page's timer covers download to the last clip. A later re-render of one clip
+    from the editor starts its own run.
+    """
+    active = ("queued", "running")
+    video_jobs = list(
+        session.scalars(
+            select(JobRow)
+            .where(JobRow.ref_id == video_id, JobRow.kind.in_(VIDEO_JOB_KINDS))
+            .order_by(JobRow.created_at.desc())
+        )
+    )
+    latest = video_jobs[0] if video_jobs else None
+    if latest is not None and latest.status in active:
+        return latest.created_at
+    clip_jobs = (
+        list(
+            session.scalars(
+                select(JobRow).where(JobRow.ref_id.in_(clip_ids), JobRow.status.in_(active))
+            )
+        )
+        if clip_ids
+        else []
+    )
+    if not clip_jobs:
+        return None
+    first = min(job.created_at for job in clip_jobs)
+    if (
+        latest is not None
+        and latest.finished_at is not None
+        and (first - latest.finished_at).total_seconds() <= _RUN_GAP_S
+    ):
+        return latest.created_at
+    return first
+
+
 def _sort_key(session: Session, job: JobRow) -> tuple[Any, ...]:
     """Queue order (docs/08): priority, batch creation, video position, clip index."""
     if job.kind in VIDEO_JOB_KINDS:
