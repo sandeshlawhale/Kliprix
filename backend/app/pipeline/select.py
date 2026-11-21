@@ -1,9 +1,10 @@
 """Stage 8, select: one LLM call per video picks up to N clips with metadata, then the backend
 validates and repairs them and fills gaps from the remaining candidates (docs/04, 10).
 
-Repairs: times inside the video and the candidate region, length 25-90 s (target 30-60,
-up to 90 only with `needs_extended` in extended mode), no overlap and a 30 s gap between
-clips, no duplicates, text lengths, emoji-free titles, and hashtag format.
+Repairs: times inside the video and the candidate region, whole sentences (D-033), length
+25-90 s (target 30-60, up to 90 only with `needs_extended` in extended mode), no overlap and
+a 30 s gap between clips, no duplicates, text lengths, emoji-free titles, and hashtag format.
+Before the LLM call, candidates are re-ranked by how much is said in them (D-033).
 """
 
 from __future__ import annotations
@@ -20,18 +21,32 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.config import (
     CLIP_EXTENDED_MAX_S,
+    CLIP_LEAD_PAD_S,
     CLIP_MIN_GAP_S,
     CLIP_MIN_S,
     CLIP_REGION_MARGIN_S,
     CLIP_STANDARD_MAX_S,
+    CLIP_TAIL_PAD_S,
     CLIP_TARGET_MIN_S,
     LLM_SELECT_TEMPERATURE,
+    SENTENCE_SNAP_S,
+    SPEECH_FALLBACK_MIN_WPS,
+    SPEECH_FLOOR,
+    SPEECH_FULL_WPS,
+    SPEECH_VIDEO_MIN_WPS,
 )
 from app.core.files import write_json_atomic
 from app.llm.client import LlmClient
 from app.llm.prompts import PromptCandidate, clock, select_system, select_user
 from app.llm.schemas import LlmClip, SelectionAnswer
 from app.pipeline.candidates import Candidate
+from app.pipeline.sentences import (
+    first_between,
+    last_between,
+    nearest,
+    sentence_edges,
+    words_per_second,
+)
 from app.pipeline.transcribe import TranscriptFile, Word
 
 logger = logging.getLogger(__name__)
@@ -174,24 +189,54 @@ def snap_end_before(t: float, words: Sequence[Word]) -> float:
 def fit_window(
     start: float, end: float, duration_s: float, max_len: float, words: Sequence[Word]
 ) -> tuple[float, float] | None:
-    """Clamp to the video, snap to word edges, and bring the length into
-    [CLIP_MIN_S, max_len] (short clips grow to CLIP_TARGET_MIN_S). None if impossible."""
+    """Clamp to the video, snap to whole sentences (D-033; word edges where no sentence edge
+    is near), and bring the length into [CLIP_MIN_S, max_len]: a long clip ends at the last
+    sentence that fits, a short one grows to the first sentence end past CLIP_TARGET_MIN_S
+    (or to CLIP_TARGET_MIN_S when there is none). Then a little room around the words.
+    None if impossible."""
     start = max(0.0, min(start, duration_s))
     end = max(0.0, min(end, duration_s))
     if end <= start:
         return None
-    start = snap_start(start, words)
-    end = min(duration_s, snap_end(end, words))
+    edges = sentence_edges(words)
+    snapped_start = nearest(edges.starts, start, SENTENCE_SNAP_S)
+    snapped_end = nearest(edges.ends, end, SENTENCE_SNAP_S)
+    start = snapped_start if snapped_start is not None else snap_start(start, words)
+    end = min(duration_s, snapped_end if snapped_end is not None else snap_end(end, words))
     if end - start > max_len:
-        end = snap_end_before(start + max_len, words)
+        fitting = last_between(edges.ends, start + CLIP_TARGET_MIN_S, start + max_len)
+        end = fitting if fitting is not None else snap_end_before(start + max_len, words)
     if end - start < CLIP_MIN_S:
-        missing = CLIP_TARGET_MIN_S - (end - start)
-        end = min(duration_s, end + missing)
-        start = max(0.0, end - CLIP_TARGET_MIN_S)
+        longer = first_between(
+            edges.ends, start + CLIP_TARGET_MIN_S, min(duration_s, start + max_len)
+        )
+        if longer is not None:
+            end = longer
+        else:
+            end = min(duration_s, start + CLIP_TARGET_MIN_S)
+            start = max(0.0, end - CLIP_TARGET_MIN_S)
+    start, end = pad_window(start, end, duration_s, max_len, words)
     length = end - start
     if length < CLIP_MIN_S or length > max_len + 1e-6:
         return None
     return round(start, TIME_DECIMALS), round(end, TIME_DECIMALS)
+
+
+def pad_window(
+    start: float, end: float, duration_s: float, max_len: float, words: Sequence[Word]
+) -> tuple[float, float]:
+    """Widen by CLIP_LEAD_PAD_S / CLIP_TAIL_PAD_S so the first and last words are not
+    clipped, never into a neighbouring word, past the video, or beyond `max_len`. Without
+    words there is nothing to protect, so the window stays as it is."""
+    if not words:
+        return start, end
+    before = max((w.end for w in words if w.end <= start), default=0.0)
+    after = min((w.start for w in words if w.start >= end), default=duration_s)
+    padded_start = max(0.0, before, start - CLIP_LEAD_PAD_S)
+    padded_end = min(duration_s, after, end + CLIP_TAIL_PAD_S)
+    if padded_end - padded_start > max_len:
+        return start, end
+    return padded_start, padded_end
 
 
 def conflicts(start: float, end: float, accepted: Sequence[SelectionClip]) -> bool:
@@ -265,10 +310,45 @@ def fallback_title(words: Sequence[Word], start: float) -> str:
     return text or f"Highlight at {clock(start)}"
 
 
+def rank_by_speech(candidates: Sequence[Candidate], words: Sequence[Word]) -> list[Candidate]:
+    """Weigh each candidate by how much is said in its window (D-033) and sort best first.
+
+    The factor runs from SPEECH_FLOOR (silence) to 1 (SPEECH_FULL_WPS words per second or
+    more) and is recorded as the `speech` signal. Videos where the windows together hold
+    little speech (music, gameplay without commentary) keep their order and scores.
+    """
+    if not words or not candidates:
+        return list(candidates)
+    rates = [words_per_second(words, c.start, c.end) for c in candidates]
+    seconds = sum(c.end - c.start for c in candidates)
+    overall = sum(r * (c.end - c.start) for r, c in zip(rates, candidates, strict=True))
+    if seconds <= 0 or overall / seconds < SPEECH_VIDEO_MIN_WPS:
+        return list(candidates)
+    ranked: list[Candidate] = []
+    for candidate, rate in zip(candidates, rates, strict=True):
+        speech = min(1.0, rate / SPEECH_FULL_WPS)
+        factor = SPEECH_FLOOR + (1.0 - SPEECH_FLOOR) * speech
+        ranked.append(
+            candidate.model_copy(
+                update={
+                    "score": round(candidate.score * factor, 3),
+                    "signals": candidate.signals.model_copy(update={"speech": round(speech, 3)}),
+                }
+            )
+        )
+    return sorted(ranked, key=lambda c: -c.score)
+
+
 def fallback_clip(
     candidate: Candidate, facts: VideoFacts, words: Sequence[Word]
 ) -> SelectionClip | None:
-    """A clip made from a candidate window without the LLM (docs/04: fill from candidates)."""
+    """A clip made from a candidate window without the LLM (docs/04: fill from candidates).
+    None for a window with too little speech in a video that has speech (D-033): fewer
+    clips beat a clip of a waiting screen."""
+    speech = candidate.signals.speech
+    if speech is not None and speech * SPEECH_FULL_WPS < SPEECH_FALLBACK_MIN_WPS:
+        logger.info("fallback skipped: little speech at %.0f-%.0f", candidate.start, candidate.end)
+        return None
     window = fit_window(
         candidate.start, candidate.end, facts.duration_s, CLIP_STANDARD_MAX_S, words
     )
@@ -371,6 +451,8 @@ def run_select(
     cached = load_cached(video_dir)
     if cached is not None:
         return cached
+    # Candidate ids in the prompt and in the answer refer to this re-ranked list.
+    candidates = rank_by_speech(candidates, all_words(transcript))
     system = select_system(count, extended)
     user = select_user(
         facts.title, facts.channel, facts.duration_s, count,

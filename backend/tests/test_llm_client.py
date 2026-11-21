@@ -183,7 +183,11 @@ def test_select_prompt_contents_and_sample_output() -> None:
     assert "<transcript>" in system
     assert "needs_extended" in system
     assert "30 to 60 seconds." in system
+    # D-033: shortest length that carries the moment, sentence edges.
+    assert "shortest length" in system
+    assert "beginning of a sentence" in system
     assert "up to 90" in select_system(5, extended=True)
+    assert "shortest length" in select_system(5, extended=True)
     candidates = [
         PromptCandidate(0, 100.0, 160.0, 0.8, {"audio": 0.7}, [(101.0, "hello\x07 there")]),
         PromptCandidate(1, 300.0, 360.0, 0.5, {"motion": 0.4}, []),

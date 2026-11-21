@@ -3,6 +3,7 @@
 import itertools
 from pathlib import Path
 
+from app.config import SPEECH_FLOOR
 from app.llm.schemas import LlmClip, SelectionAnswer
 from app.pipeline.candidates import Candidate, SignalScores
 from app.pipeline.select import (
@@ -13,6 +14,7 @@ from app.pipeline.select import (
     clean_title,
     fit_window,
     load_cached,
+    rank_by_speech,
     run_select,
     truncate_words,
 )
@@ -64,8 +66,10 @@ def test_valid_clip_is_kept_with_snapped_times() -> None:
     answer = SelectionAnswer(clips=[llm(start=110.3, end=150.5)])
     result = build_selection(answer, CANDIDATES, FACTS, transcript(), 1, extended=False)
     clip = result.clips[0]
-    # 110.3 is inside word w110 (110.0-110.8): start moves back; 150.5 -> end of w150 (150.8).
-    assert (clip.start, clip.end) == (110.0, 150.8)
+    # No sentence edge near (no punctuation, 0.2 s gaps), so word edges: 110.3 is inside w110
+    # (110.0-110.8) and 150.5 inside w150 (-150.8). Then 0.15 s / 0.25 s of room, but never
+    # into w109 (ends 109.8) or w151 (starts 151.0).
+    assert (clip.start, clip.end) == (109.85, 151.0)
     assert clip.title == "Nice play"
 
 
@@ -152,6 +156,77 @@ def test_text_repairs() -> None:
 def test_fit_window_rejects_impossible() -> None:
     assert fit_window(990.0, 980.0, 1000.0, 60.0, []) is None
     assert fit_window(0.0, 10.0, 20.0, 60.0, []) is None
+
+
+def sentences(starts: list[float], words_each: int = 8) -> list[Word]:
+    """Sentences of `words_each` words, 0.5 s apart, ending with a full stop at each start in
+    `starts`, with no pause between sentences (only the punctuation ends them)."""
+    words: list[Word] = []
+    for first in starts:
+        for i in range(words_each):
+            text = f"s{int(first)}w{i}" + ("." if i == words_each - 1 else "")
+            words.append(Word(text=text, start=first + i * 0.5, end=first + i * 0.5 + 0.4))
+    return words
+
+
+def test_fit_window_snaps_to_whole_sentences() -> None:
+    # Sentences start every 4 s: 100, 104, ... each ends 3.9 s later.
+    words = sentences([100.0 + 4 * k for k in range(30)])
+    # Starts mid-sentence (106.2) and ends mid-sentence (141.3).
+    window = fit_window(106.2, 141.3, 1000.0, 60.0, words)
+    assert window is not None
+    start, end = window
+    # Nearest sentence start is 108.0 (not 104.0); nearest end is 139.9 (not 143.9).
+    assert start == 108.0 - 0.1  # room up to the previous word's end (107.9)
+    assert end == 139.9 + 0.1  # room up to the next sentence's first word (140.0)
+
+
+def test_fit_window_trims_long_clips_at_a_sentence_end() -> None:
+    words = sentences([100.0 + 4 * k for k in range(40)])
+    window = fit_window(100.0, 185.0, 1000.0, 60.0, words)
+    assert window is not None
+    start, end = window
+    # The last sentence end that fits in 60 s from 100.0 is 159.9 (sentence at 156); room
+    # around it would pass 60 s, so none is added.
+    assert (start, end) == (100.0, 159.9)
+
+
+def test_fit_window_grows_short_clips_to_a_sentence_end() -> None:
+    words = sentences([100.0 + 4 * k for k in range(40)])
+    window = fit_window(100.0, 112.0, 1000.0, 60.0, words)
+    assert window is not None
+    # The first sentence end at least 30 s after 100.0 is 131.9 (sentence at 128).
+    assert window[1] == 131.9 + 0.1
+
+
+def test_rank_by_speech_demotes_silent_windows() -> None:
+    talk = cand(100, 0.6)
+    silent = cand(300, 0.9)  # the intro screen: top signals, nobody talking
+    words = [Word(text="hi", start=100.0 + i * 0.5, end=100.0 + i * 0.5 + 0.3) for i in range(120)]
+    ranked = rank_by_speech([silent, talk], words + sentences([500.0], 60))
+    assert [c.start for c in ranked] == [100.0, 300.0]
+    assert ranked[0].signals.speech == 1.0
+    assert ranked[1].signals.speech == 0.0
+    assert ranked[1].score == round(0.9 * SPEECH_FLOOR, 3)
+
+
+def test_rank_by_speech_keeps_videos_without_speech() -> None:
+    few = [Word(text="oh", start=110.0, end=110.3)]
+    ranked = rank_by_speech([cand(300, 0.9), cand(100, 0.6)], few)
+    assert [(c.start, c.score, c.signals.speech) for c in ranked] == [
+        (300.0, 0.9, None),
+        (100.0, 0.6, None),
+    ]
+
+
+def test_fallback_skips_windows_without_speech() -> None:
+    silent = cand(300, 0.9).model_copy(
+        update={"signals": SignalScores(chat=0.9, audio=0.4, motion=0.0, speech=0.0)}
+    )
+    result = build_selection(
+        SelectionAnswer(clips=[]), [silent, cand(100, 0.5)], FACTS, transcript(), 2, False
+    )
+    assert [clip.start for clip in result.clips] == [100.0]
 
 
 class FakeClient:
