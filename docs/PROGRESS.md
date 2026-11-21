@@ -7,6 +7,7 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 - **Status:** M0–M2 verified and tagged (`m0`, `m1`, `m2`). M3–M10 built and checked by the agent as far as possible without the owner (real runs on this machine, see "M3–M9 output" and "M10 output"); owner-only checks are listed below.
 - **Last session:** 2026-11-21, Claude Code (Claude Opus 5.5): D-033 and D-034; `feat/parakeet-engine` merged into `main` (fast-forward, owner's instruction) and pushed
 - **Last commit:** see `git log -1`
+- **Branches (owner, 2026-11-21):** all development happens on `dev`; `main` gets a merge only after the owner confirms the work runs. Never commit straight to `main`.
 
 ## Milestone checklist
 - [x] M0 Repo scaffold
