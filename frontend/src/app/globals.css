@@ -77,8 +77,9 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  /* The one highlight color (logo "K", main action, progress, focus). Use sparingly. */
-  --brand: oklch(0.64 0.2 38);
+  /* The one highlight color: logo "K", the main action, progress, selection. Use sparingly.
+     #cb3904: white text on it 4.95:1, on the white page 5.09:1 (WCAG AA). */
+  --brand: oklch(0.56 0.19 36);
   --brand-foreground: oklch(0.99 0 0);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
@@ -91,6 +92,7 @@
 }
 
 .dark {
+  /* #f77036: dark text on it 6.78:1, on the dark page 6.92:1. */
   --brand: oklch(0.7 0.18 42);
   --brand-foreground: oklch(0.16 0 0);
   --background: oklch(0.145 0 0);
@@ -135,5 +137,20 @@
   }
   html {
     @apply font-sans;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--brand) 28%, transparent);
+  }
+}
+
+/* Respect the system "reduce motion" setting: no spinners, pulses or scale effects. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

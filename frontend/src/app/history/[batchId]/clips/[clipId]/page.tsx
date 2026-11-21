@@ -12,6 +12,7 @@ import { MetadataPanel } from "@/components/clip/metadata-panel";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { invalidateBatch, keys, useClip } from "@/hooks/queries";
 import { useBatchEvents } from "@/hooks/use-batch-events";
@@ -171,6 +172,9 @@ function Player({ clip }: { clip: Clip }) {
           </div>
         )}
       </div>
+      {clip.status === "running" && (
+        <Progress value={clip.progress * 100} aria-label="Render progress" />
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant={clip.status === "failed" ? "destructive" : "outline"}>
           {needsPreview ? "Edited — preview needed" : clipStatusText(clip)}

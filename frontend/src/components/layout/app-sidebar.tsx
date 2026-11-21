@@ -94,7 +94,7 @@ export function AppSidebar() {
                         <SidebarMenuButton
                           asChild
                           isActive={pathname.startsWith(href)}
-                          className="h-auto flex-col items-start gap-0.5 py-2"
+                          className="before:bg-brand relative h-auto flex-col items-start gap-0.5 py-2 before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:opacity-0 before:transition-opacity data-active:before:opacity-100"
                         >
                           <Link href={href}>
                             <span className="w-full truncate">

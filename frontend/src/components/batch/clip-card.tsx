@@ -39,7 +39,7 @@ function workingText(clip: ClipSummary): string {
 }
 
 const CHIP =
-  "absolute right-2 bottom-2 inline-flex items-center gap-1 rounded-md bg-black/70 px-1.5 py-0.5 font-mono text-[11px] text-white tabular-nums backdrop-blur-sm";
+  "absolute right-2 bottom-2 inline-flex items-center gap-1 rounded-md bg-black/70 px-1.5 py-0.5 font-mono text-xs text-white tabular-nums backdrop-blur-sm";
 
 /** A bare 9:16 tile: the frame, and in the corner its length or what is happening to it.
  * Title and the rest live on the clip page. */
@@ -57,7 +57,7 @@ export function ClipCard({ clip, batchId }: { clip: ClipSummary; batchId: string
 
   const body = (
     <div
-      className="bg-muted relative aspect-[9/16] w-full overflow-hidden rounded-xl"
+      className="bg-muted ring-border/60 relative aspect-[9/16] w-full overflow-hidden rounded-xl ring-1 transition-shadow duration-200 group-hover:shadow-lg group-hover:shadow-black/20"
       aria-label={openable ? undefined : label}
       title={clip.title || undefined}
     >
@@ -111,7 +111,7 @@ export function ClipCard({ clip, batchId }: { clip: ClipSummary; batchId: string
     <Link
       href={`/history/${batchId}/clips/${clip.id}`}
       aria-label={label}
-      className="focus-visible:ring-brand/60 block rounded-xl transition-transform outline-none hover:scale-[1.02] focus-visible:ring-[3px]"
+      className="focus-visible:ring-brand/60 group block rounded-xl transition-transform duration-200 ease-out outline-none hover:-translate-y-0.5 focus-visible:ring-[3px] active:translate-y-0"
     >
       {body}
     </Link>
