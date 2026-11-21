@@ -52,6 +52,7 @@ class FakeSource(YoutubeAdapter):
         self.media = media
         self.release = threading.Event()
         self.release.set()
+        self.downloads = 0
 
     def _fake_meta(self, url: str) -> VideoMeta:
         source_id = url.rsplit("=", 1)[-1]
@@ -80,6 +81,7 @@ class FakeSource(YoutubeAdapter):
                 if cancel is not None and cancel.is_set():
                     raise SourceCancelledError("cancelled")
         dest_dir.mkdir(parents=True, exist_ok=True)
+        self.downloads += 1
         if on_progress is not None:
             on_progress(0.5)
         shutil.copyfile(self.media, dest_dir / "source.mp4")
@@ -269,6 +271,78 @@ def test_cancel_stops_running_download(client: TestClient, app: Any) -> None:
     source.release.set()
     assert client.delete(f"/api/batches/{batch_id}?delete_files=true").status_code == 204
     assert client.get(f"/api/batches/{batch_id}").status_code == 404
+
+
+def _all_rendered(clips: int) -> Callable[[dict[str, Any]], bool]:
+    def check(batch: dict[str, Any]) -> bool:
+        video = batch["videos"][0]
+        return (
+            finished(batch)
+            and len(video["clips"]) == clips
+            and all(clip["status"] == "done" for clip in video["clips"])
+        )
+
+    return check
+
+
+def test_more_clips_reuse_the_download(config: AppConfig, media: Path) -> None:
+    app = build(config, media)
+    ctx = app.state.job_context
+    source: FakeSource = ctx.adapters[0]
+    prompts: list[str] = []
+
+    def recording(**kwargs: Any) -> Any:
+        prompts.append(str(kwargs.get("messages")))
+        return fake_completion(**kwargs)
+
+    ctx.completion = recording
+    with TestClient(app, raise_server_exceptions=False) as client:
+        client.put("/api/llm/session", json={"provider": "gemini", "model": "m", "api_key": KEY})
+        client.put("/api/settings", json={"style_defaults": {"clips_per_video": 1}})
+        batch_id = client.post("/api/batches", json={"urls": [url("aaaaaaaaaaa")]}).json()["id"]
+        video = wait_for(client, batch_id, _all_rendered(1))["videos"][0]
+        assert video["can_add_clips"] is True
+        first = video["clips"][0]
+        downloads = source.downloads
+        queued = client.post(f"/api/videos/{video['id']}/more-clips", json={"count": 1})
+        assert queued.status_code == 202
+        batch = wait_for(client, batch_id, _all_rendered(2))
+    video = batch["videos"][0]
+    assert [clip["index"] for clip in video["clips"]] == [0, 1]
+    new = video["clips"][1]
+    # Never on top of (or within 30 s of) the clip already made.
+    assert new["start_s"] >= first["end_s"] + 30 or new["end_s"] <= first["start_s"] - 30
+    assert source.downloads == downloads
+    assert "Clips already made (do not repeat these moments)" in prompts[-1]
+    assert video["note"].endswith("More clips: 1 more clip added.")
+    assert all(step["state"] in ("done", "skipped") for step in video["checkpoints"])
+
+
+def test_more_clips_refused_while_running_or_without_the_download(
+    client: TestClient, app: Any
+) -> None:
+    source: FakeSource = app.state.job_context.adapters[0]
+    source.release.clear()
+    batch_id = client.post("/api/batches", json={"urls": [url(SLOW_ID)]}).json()["id"]
+    video_id = client.get(f"/api/batches/{batch_id}").json()["videos"][0]["id"]
+    busy = client.post(f"/api/videos/{video_id}/more-clips", json={"count": 2})
+    assert busy.status_code == 409
+    assert busy.json()["error"]["code"] == "CONFLICT"
+    source.release.set()
+    batch = wait_for(client, batch_id, finished)
+    assert batch["videos"][0]["can_add_clips"] is True
+    cleaned = client.post(
+        "/api/storage/cleanup", json={"scope": "source_videos", "batch_id": batch_id}
+    )
+    assert cleaned.status_code == 200
+    video = client.get(f"/api/batches/{batch_id}").json()["videos"][0]
+    assert video["can_add_clips"] is False
+    assert "deleted" in video["add_clips_blocked"]
+    gone = client.post(f"/api/videos/{video_id}/more-clips", json={"count": 2})
+    assert gone.json()["error"]["code"] == "CONFLICT"
+    assert client.post("/api/videos/nope/more-clips", json={"count": 1}).status_code == 404
+    too_many = client.post(f"/api/videos/{video_id}/more-clips", json={"count": 6})
+    assert too_many.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 def test_resume_after_restart(config: AppConfig, media: Path) -> None:

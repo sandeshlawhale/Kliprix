@@ -52,6 +52,8 @@ from app.pipeline.transcribe import TranscriptFile, Word
 logger = logging.getLogger(__name__)
 
 SELECTION_FILE_NAME = "selection.json"
+# (start, end) seconds of a clip already made.
+Window = tuple[float, float]
 TITLE_MAX_CHARS = 40
 TITLE_MAX_WORDS = 7
 YOUTUBE_TITLE_MAX_CHARS = 100
@@ -239,10 +241,14 @@ def pad_window(
     return padded_start, padded_end
 
 
-def conflicts(start: float, end: float, accepted: Sequence[SelectionClip]) -> bool:
-    """True when the window overlaps an accepted clip or comes within the minimum gap."""
+def conflicts(
+    start: float, end: float, accepted: Sequence[SelectionClip], taken: Sequence[Window] = ()
+) -> bool:
+    """True when the window overlaps an accepted clip or an already made one (`taken`), or
+    comes within the minimum gap of it."""
+    windows = [*((clip.start, clip.end) for clip in accepted), *taken]
     return any(
-        start < clip.end + CLIP_MIN_GAP_S and end > clip.start - CLIP_MIN_GAP_S for clip in accepted
+        start < high + CLIP_MIN_GAP_S and end > low - CLIP_MIN_GAP_S for low, high in windows
     )
 
 
@@ -404,8 +410,10 @@ def build_selection(
     transcript: TranscriptFile | None,
     count: int,
     extended: bool,
+    taken: Sequence[Window] = (),
 ) -> SelectionFile:
-    """Validate and repair the LLM's clips, then fill up to `count` from the candidates."""
+    """Validate and repair the LLM's clips, then fill up to `count` from the candidates.
+    Nothing may overlap or come within the gap of a `taken` window (clips already made)."""
     words = all_words(transcript)
     accepted: list[SelectionClip] = []
     for raw in sorted(answer.clips, key=lambda clip: -clip.score):
@@ -417,7 +425,7 @@ def build_selection(
                 "llm clip dropped: times cannot be repaired (%.1f-%.1f)", raw.start, raw.end
             )
             continue
-        if conflicts(clip.start, clip.end, accepted):
+        if conflicts(clip.start, clip.end, accepted, taken):
             logger.info("llm clip dropped: overlaps another clip (%.1f-%.1f)", clip.start, clip.end)
             continue
         accepted.append(clip)
@@ -426,7 +434,7 @@ def build_selection(
         if len(accepted) >= count:
             break
         clip = fallback_clip(candidate, facts, words)
-        if clip is not None and not conflicts(clip.start, clip.end, accepted):
+        if clip is not None and not conflicts(clip.start, clip.end, accepted, taken):
             accepted.append(clip)
     logger.info("selection clips=%s from_llm=%s fallback=%s", len(accepted), from_llm,
                 len(accepted) - from_llm)  # fmt: skip
@@ -462,3 +470,32 @@ def run_select(
     selection = build_selection(answer, candidates, facts, transcript, count, extended)
     write_json_atomic(video_dir / SELECTION_FILE_NAME, selection)
     return selection
+
+
+def select_more(
+    facts: VideoFacts,
+    candidates: Sequence[Candidate],
+    transcript: TranscriptFile | None,
+    taken: Sequence[Window],
+    *,
+    count: int,
+    extended: bool,
+    client: LlmClient,
+) -> list[SelectionClip]:
+    """More clips for a video that has some (D-034): the same selection as `run_select`, but
+    the prompt lists the clips already made, no new clip may overlap or come within the gap
+    of one, and nothing is cached (each round is a new choice).
+
+    Raises:
+        AppError: LLM_AUTH_FAILED, LLM_RATE_LIMITED, or LLM_BAD_RESPONSE from the call.
+    """
+    if not candidates:
+        return []
+    candidates = rank_by_speech(candidates, all_words(transcript))
+    system = select_system(count, extended)
+    user = select_user(
+        facts.title, facts.channel, facts.duration_s, count,
+        prompt_candidates(candidates, transcript), taken=taken,
+    )  # fmt: skip
+    answer = client.complete_json(system, user, SelectionAnswer, LLM_SELECT_TEMPERATURE)
+    return build_selection(answer, candidates, facts, transcript, count, extended, taken).clips

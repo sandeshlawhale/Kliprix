@@ -16,6 +16,7 @@ from app.pipeline.download import INFO_FILE_NAME
 from app.pipeline.select import SELECTION_FILE_NAME
 from app.pipeline.signals import signal_path
 from app.pipeline.transcribe import TRANSCRIPT_FILE_NAME
+from app.sources.base import SOURCE_FILE_NAME
 
 ACTIVE = ("queued", "running")
 
@@ -108,6 +109,10 @@ def checkpoints(
         if key == "edit":
             result.append(_edit_checkpoint(video, clips))
             continue
+        # A step that runs again over its saved file (more clips, D-034) shows as running.
+        if video.status == "running" and current == key:
+            result.append(CheckpointState(key, label, "running", _step_percent(key, video)))
+            continue
         if _files_done(video_dir, key, clips):
             result.append(CheckpointState(key, label, "done"))
             continue
@@ -116,13 +121,21 @@ def checkpoints(
             result.append(CheckpointState(key, label, "skipped", "skipped, no chat replay"))
         elif video.status == "failed" and current == key:
             result.append(CheckpointState(key, label, "failed", video.error_message))
-        elif video.status == "running" and current == key:
-            result.append(CheckpointState(key, label, "running", _step_percent(key, video)))
         elif passed:
             result.append(CheckpointState(key, label, "done"))
         else:
             result.append(CheckpointState(key, label, "pending"))
     return [_with_engine(step, video) for step in result]
+
+
+def more_clips_blocker(video: VideoRow, video_dir: Path) -> str | None:
+    """Why "more clips" (D-034) cannot start for this video now, or None when it can: it
+    needs the video idle and its download (`info.json` + `source.mp4`) still on disk."""
+    if video.status in ACTIVE:
+        return "Wait until this video has finished."
+    if not (video_dir / INFO_FILE_NAME).is_file() or not (video_dir / SOURCE_FILE_NAME).is_file():
+        return "The downloaded video was deleted, so more clips need a new batch."
+    return None
 
 
 def _with_engine(step: CheckpointState, video: VideoRow) -> CheckpointState:

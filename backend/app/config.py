@@ -187,6 +187,8 @@ FULL_TRANSCRIBE_MAX_S = 20 * 60
 TRANSCRIBE_MARGIN_S = 30
 # Longest piece of audio handed to Whisper at once (bounds memory on long spans).
 TRANSCRIBE_CHUNK_S = 600
+# More clips (D-034): untranscribed pieces shorter than this are not worth a model run.
+UNCOVERED_MIN_S = 2.0
 # faster-whisper's own default beam size.
 WHISPER_BEAM_SIZE = 5
 

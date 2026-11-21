@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Literal
 
@@ -70,6 +70,7 @@ def find_candidates(
     signals: Mapping[str, SignalFile],
     duration_s: float,
     weights: Mapping[str, float] = SIGNAL_WEIGHTS,
+    exclude: Sequence[tuple[float, float]] = (),
 ) -> list[Candidate]:
     """Top `CANDIDATE_COUNT` windows, best first.
 
@@ -77,6 +78,7 @@ def find_candidates(
     dropped and the rest renormalized), then multiplied by the agreement factor (D-033).
     Peaks are at least `CANDIDATE_MIN_DISTANCE_S` apart and never in the lead-in or outro;
     each window is peak - 25 s to peak + 35 s, clamped to the video without those edges.
+    No peak lies inside an `exclude` range (clips already made, D-034).
     """
     length = min(len(signal.values) for signal in signals.values())
     smoothed = {
@@ -93,6 +95,8 @@ def find_candidates(
     )  # fmt: skip
     seconds = np.arange(length)
     score = np.where((seconds >= first) & (seconds < last), score, 0.0)
+    for low, high in exclude:
+        score = np.where((seconds >= low) & (seconds <= high), 0.0, score)
     items: list[Candidate] = []
     for peak in pick_peaks(score, CANDIDATE_COUNT, CANDIDATE_MIN_DISTANCE_S, tiebreak):
         start = max(first, float(peak - CANDIDATE_BEFORE_S))

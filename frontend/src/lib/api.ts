@@ -141,6 +141,9 @@ export const deleteBatch = (id: string, deleteFiles: boolean) =>
   request<void>(`/batches/${encodeURIComponent(id)}?delete_files=${deleteFiles}`, {
     method: "DELETE",
   });
+/** Up to `count` more clips from a video's saved download (D-034); returns the batch. */
+export const moreClips = (videoId: string, count: number) =>
+  request<Batch>(`/videos/${encodeURIComponent(videoId)}/more-clips`, json("POST", { count }));
 /** URL of the batch's Server-Sent Events stream (opened by the SSE hook). */
 export const batchEventsUrl = (id: string) => `/api/batches/${encodeURIComponent(id)}/events`;
 

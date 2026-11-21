@@ -20,10 +20,12 @@ from app.pipeline.transcribe import (
     candidate_spans,
     contains_devanagari,
     load_cached,
+    merge_ranges,
     plan_spans,
     read_span,
     run_transcribe,
     split_spans,
+    uncovered,
 )
 
 RATE = 16000
@@ -109,6 +111,40 @@ def test_run_transcribe_offsets_spans_and_caches(tmp_path: Path) -> None:
     again = run_transcribe(
         tmp_path, wav, spans, caption_language="en", runner_factory=_fail_factory
     )
+    assert again == result
+
+
+def test_uncovered_and_merge_ranges() -> None:
+    covered = [(0.0, 10.0), (20.0, 30.0)]
+    assert uncovered([Span(5.0, 40.0)], covered) == [Span(10.0, 20.0), Span(30.0, 40.0)]
+    # A sliver under UNCOVERED_MIN_S (2 s) is not worth a model run.
+    assert uncovered([Span(9.0, 11.0), Span(0.0, 10.0)], covered) == []
+    assert merge_ranges([(20.0, 30.0), (0.0, 10.0), (10.0, 15.0)]) == [(0.0, 15.0), (20.0, 30.0)]
+
+
+def test_run_transcribe_extend_only_runs_new_parts(tmp_path: Path) -> None:
+    wav = tmp_path / "audio.wav"
+    _write_wav(wav, 60)
+    first = FakeRunner()
+    run_transcribe(
+        tmp_path, wav, [Span(0.0, 20.0)], caption_language="en",
+        runner_factory=lambda: first, engine="parakeet",
+    )  # fmt: skip
+    more = FakeRunner()
+    result = run_transcribe(
+        tmp_path, wav, [Span(10.0, 30.0), Span(40.0, 50.0)], caption_language="en",
+        runner_factory=lambda: more, engine="whisper", extend=True,
+    )  # fmt: skip
+    assert [call[0] for call in more.calls] == [20.0, 40.0]
+    assert result.spans == [(0.0, 30.0), (40.0, 50.0)]
+    assert [s.start for s in result.segments] == [1.0, 21.0, 41.0]
+    assert result.engine == "parakeet"  # the saved transcript's engine stays
+    assert load_cached(tmp_path) == result
+    # Everything covered: no model run at all.
+    again = run_transcribe(
+        tmp_path, wav, [Span(0.0, 30.0)], caption_language="en",
+        runner_factory=_fail_factory, extend=True,
+    )  # fmt: skip
     assert again == result
 
 

@@ -16,6 +16,7 @@ from app.pipeline.select import (
     load_cached,
     rank_by_speech,
     run_select,
+    select_more,
     truncate_words,
 )
 from app.pipeline.transcribe import Segment, TranscriptFile, Word
@@ -219,6 +220,27 @@ def test_rank_by_speech_keeps_videos_without_speech() -> None:
     ]
 
 
+def test_clips_already_made_block_new_ones() -> None:
+    # A clip exists at 300-360: candidate 1 (300-360) and anything within 30 s are refused.
+    answer = SelectionAnswer(clips=[llm(candidate_id=1, start=310.0, end=350.0)])
+    result = build_selection(answer, CANDIDATES, FACTS, None, 2, False, taken=[(300.0, 360.0)])
+    assert [clip.start for clip in result.clips] == [100.0, 500.0]
+    assert all(clip.reason.startswith("Picked from") for clip in result.clips)
+
+
+def test_select_more_lists_clips_already_made() -> None:
+    fake = FakeClient(SelectionAnswer(clips=[]))
+    clips = select_more(
+        FACTS, CANDIDATES, None, [(300.0, 360.0)], count=1, extended=False,
+        client=fake,  # type: ignore[arg-type]
+    )  # fmt: skip
+    assert fake.calls == 1
+    assert "Clips already made (do not repeat these moments): 05:00-06:00" in fake.last_user
+    assert [clip.start for clip in clips] == [100.0]
+    assert select_more(FACTS, [], None, [], count=1, extended=False, client=fake) == []  # type: ignore[arg-type]
+    assert fake.calls == 1
+
+
 def test_fallback_skips_windows_without_speech() -> None:
     silent = cand(300, 0.9).model_copy(
         update={"signals": SignalScores(chat=0.9, audio=0.4, motion=0.0, speech=0.0)}
@@ -233,9 +255,11 @@ class FakeClient:
     def __init__(self, answer: SelectionAnswer) -> None:
         self.answer = answer
         self.calls = 0
+        self.last_user = ""
 
     def complete_json(self, system: str, user: str, schema: object, temperature: float) -> object:
         self.calls += 1
+        self.last_user = user
         assert "Candidate 0" in user
         assert temperature == 0.3
         return self.answer

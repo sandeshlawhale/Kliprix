@@ -128,13 +128,20 @@ def select_user(
     duration_s: float,
     count: int,
     candidates: Sequence[PromptCandidate],
+    taken: Sequence[tuple[float, float]] = (),
 ) -> str:
-    """The user message for the selection call, kept under `LLM_PROMPT_MAX_CHARS`."""
+    """The user message for the selection call, kept under `LLM_PROMPT_MAX_CHARS`. `taken`
+    lists clips already made from this video (D-034), which the new ones must not repeat."""
+    made = ""
+    if taken:
+        ranges = ", ".join(f"{clock(start)}-{clock(end)}" for start, end in sorted(taken))
+        made = f"Clips already made (do not repeat these moments): {ranges}\n"
     head = (
         f"Video title: {clean_text(title)}\n"
         f"Channel: {clean_text(channel or 'unknown')}\n"
         f"Duration: {duration_s:.0f} s ({clock(duration_s)})\n"
         f"Clips wanted: up to {count}\n"
+        f"{made}"
         "Language: English\n\nCandidates:\n"
     )
     budget = max(1000, (LLM_PROMPT_MAX_CHARS - len(head)) // max(1, len(candidates)) - 300)

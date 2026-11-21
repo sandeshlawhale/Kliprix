@@ -26,6 +26,7 @@ from app.config import (
     FULL_TRANSCRIBE_MAX_S,
     TRANSCRIBE_CHUNK_S,
     TRANSCRIBE_MARGIN_S,
+    UNCOVERED_MIN_S,
     WHISPER_BEAM_SIZE,
 )
 from app.core.cuda_libs import register_cuda_libraries
@@ -299,6 +300,34 @@ def load_cached(video_dir: Path, engine: Engine | None = None) -> TranscriptFile
     return cached
 
 
+def uncovered(spans: Sequence[Span], covered: Sequence[tuple[float, float]]) -> list[Span]:
+    """The parts of `spans` outside every `covered` range, without pieces shorter than
+    `UNCOVERED_MIN_S` (a sliver at a span edge holds no words worth a model run)."""
+    result: list[Span] = []
+    for span in spans:
+        pieces = [(span.start, span.end)]
+        for low, high in covered:
+            pieces = [
+                part
+                for start, end in pieces
+                for part in ((start, min(end, low)), (max(start, high), end))
+                if part[1] > part[0]
+            ]
+        result.extend(Span(start, end) for start, end in pieces if end - start >= UNCOVERED_MIN_S)
+    return result
+
+
+def merge_ranges(ranges: Iterable[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Sorted ranges with overlapping or touching ones joined."""
+    merged: list[tuple[float, float]] = []
+    for start, end in sorted(ranges):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
 def run_transcribe(
     video_dir: Path,
     wav: Path,
@@ -309,18 +338,29 @@ def run_transcribe(
     cancel: threading.Event | None = None,
     on_progress: TranscribeProgress | None = None,
     engine: Engine = "whisper",
+    extend: bool = False,
 ) -> TranscriptFile:
     """Transcribe `spans` of `wav` into `transcript.json` (skipped when a valid copy made by
     the same `engine` exists).
+
+    With `extend` (more clips, D-034) a saved transcript of any engine is kept and only the
+    parts of `spans` it does not cover are transcribed and added to it; the saved `engine`
+    stays. Nothing runs when it covers them all.
 
     Raises:
         AppError TRANSCRIBE_FAILED: the model could not be loaded or failed.
         AppError MODEL_DOWNLOAD_FAILED: the runner could not download its model.
         CommandCancelledError: `cancel` was set.
     """
-    cached = load_cached(video_dir, engine)
-    if cached is not None:
-        return cached
+    base_transcript = load_cached(video_dir) if extend else None
+    if base_transcript is not None:
+        spans = split_spans(uncovered(spans, base_transcript.spans), TRANSCRIBE_CHUNK_S)
+        if not spans:
+            return base_transcript
+    else:
+        cached = load_cached(video_dir, engine)
+        if cached is not None:
+            return cached
     hinglish = caption_language == "hinglish"
     language = HINGLISH_LANGUAGE if hinglish else None
     prompt = HINGLISH_INITIAL_PROMPT if hinglish else None
@@ -365,12 +405,18 @@ def run_transcribe(
         del runner
         gc.collect()
     language_code = max(set(languages), key=languages.count) if languages else None
-    transcript = TranscriptFile(
-        language=language_code,
-        spans=[(round(s.start, TIME_DECIMALS), round(s.end, TIME_DECIMALS)) for s in spans],
-        segments=segments,
-        engine=engine,
-    )
+    new_spans = [(round(s.start, TIME_DECIMALS), round(s.end, TIME_DECIMALS)) for s in spans]
+    if base_transcript is not None:
+        transcript = TranscriptFile(
+            language=base_transcript.language or language_code,
+            spans=merge_ranges([*base_transcript.spans, *new_spans]),
+            segments=sorted([*base_transcript.segments, *segments], key=lambda s: s.start),
+            engine=base_transcript.engine,
+        )
+    else:
+        transcript = TranscriptFile(
+            language=language_code, spans=new_spans, segments=segments, engine=engine
+        )
     write_json_atomic(video_dir / TRANSCRIPT_FILE_NAME, transcript)
     logger.info(
         "transcript saved engine=%s spans=%s segments=%s language=%s",

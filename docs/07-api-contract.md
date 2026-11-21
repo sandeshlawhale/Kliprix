@@ -25,12 +25,13 @@ Messages are human-readable and never contain keys, tokens, or full file-system 
 
 ## Videos
 - `POST /api/videos/inspect` body `{ urls: string[] }` (1–3) → `{ results: [{ url, ok, video?: {platform, source_id, title, channel, duration_s, thumbnail_url, has_chat, is_live}, error? }] }`. Live (ongoing) streams are rejected with `VIDEO_UNAVAILABLE` ("Live streams are not supported yet").
+- `POST /api/videos/{id}/more-clips` body `{ count }` (1–5) → `202 Batch` (D-034). Up to `count` more clips from the video's saved download: no new download or signals; candidates are found again with the existing clips (± 30 s) blocked; only parts of the new candidate spans that were never transcribed are transcribed; the LLM is told which moments already have clips; new clips follow the existing indexes. Finding nothing new is not a failure (the video's `note` says so). Errors: `NOT_FOUND`, `LLM_NOT_CONFIGURED`, `CONFLICT` (the video is queued/running, or its download was deleted), `VALIDATION_ERROR`.
 
 ## Batches (history)
 - `POST /api/batches` body `{ urls: string[] (1–3), style?: StyleOverrides }` → `201 { id }`. Requires LLM session, else `LLM_NOT_CONFIGURED`. Snapshots the style into the batch.
 - `GET /api/batches?cursor=&limit=` → `{ items: [BatchSummary], next_cursor }` where `BatchSummary = { id, created_at, status, title, video_count, clip_count }`
 - `GET /api/batches/{id}` → `Batch = { id, created_at, status, style, videos: [Video] }`
-  - `Video = { id, url, platform, title, channel, duration_s, thumbnail_url, has_chat, status, stage, progress, error?, note?, checkpoints: [Checkpoint], clips: [ClipSummary] }`
+  - `Video = { id, url, platform, title, channel, duration_s, thumbnail_url, has_chat, status, stage, progress, error?, note?, can_add_clips, add_clips_blocked?, checkpoints: [Checkpoint], clips: [ClipSummary] }` (`can_add_clips` / `add_clips_blocked`: whether more clips can start now, else why, D-034)
   - `Checkpoint = { key: "download"|"chat"|"signals"|"candidates"|"transcribe"|"select"|"edit", label, state: "pending"|"running"|"done"|"skipped"|"failed", detail?: string, engine?: string }` (`engine`: Transcribe step only, the engine that runs, D-030 temporary) (`detail` examples: "skipped, no chat replay", "2/5", or the error message). Always returned in the fixed order above.
   - `ClipSummary = { id, index, status, stage, progress, queue_position?, title, start_s, end_s, duration_s, thumbnail_url?, error?, edited: bool, has_preview: bool, has_export: bool }`
 - `DELETE /api/batches/{id}?delete_files=true` → `204`

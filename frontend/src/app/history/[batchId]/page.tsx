@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { CheckpointList } from "@/components/batch/checkpoint-list";
 import { ClipCard } from "@/components/batch/clip-card";
+import { MoreClips } from "@/components/batch/more-clips";
 import { SourcePolicyPrompt } from "@/components/batch/source-policy-prompt";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -119,6 +120,14 @@ export default function BatchPage({ params }: PageProps<"/history/[batchId]">) {
                 <ClipCard key={clip.id} clip={clip} batchId={batchId} />
               ))}
             </div>
+          )}
+          {/* Only for videos that got past the download (D-034). */}
+          {video.checkpoints[0]?.state === "done" && (
+            <MoreClips
+              video={video}
+              batchId={batchId}
+              defaultCount={Number(data.style.clips_per_video ?? 5)}
+            />
           )}
         </section>
       ))}

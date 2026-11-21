@@ -7,6 +7,7 @@ Cancel sets the running job's event (subprocesses are killed) and removes partia
 
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import threading
@@ -16,6 +17,7 @@ from app.core.errors import AppError, ErrorCode
 from app.core.proc import CommandCancelledError, CommandError
 from app.db.models import JobRow, utc_now
 from app.db.repositories import batches as repo
+from app.db.repositories.batches import VIDEO_JOB_KINDS
 from app.jobs.clip_jobs import ClipJob
 from app.jobs.context import CancelToken, JobContext
 from app.jobs.state import derive_batch_status
@@ -90,7 +92,7 @@ class JobRunner:
 
     def _batch_of(self, job: JobRow) -> str | None:
         with self.ctx.session_factory() as session:
-            if job.kind == "video_pipeline":
+            if job.kind in VIDEO_JOB_KINDS:
                 video = repo.get_video(session, job.ref_id)
                 return video.batch_id if video else None
             clip = repo.get_clip(session, job.ref_id)
@@ -108,6 +110,10 @@ class JobRunner:
         try:
             if job.kind == "video_pipeline":
                 VideoPipeline(self.ctx, job.ref_id, token.event).run()
+            elif job.kind == "video_more_clips":
+                payload = json.loads(job.payload_json or "{}")
+                count = int(payload.get("count", 1))
+                VideoPipeline(self.ctx, job.ref_id, token.event).run_more(count)
             else:
                 ClipJob(self.ctx, job.ref_id, job.kind == "clip_preview", token.event).run()
             self._finish(job, "done", None)
@@ -130,7 +136,7 @@ class JobRunner:
             logger.error("job failed id=%s kind=%s: %s", job.id, job.kind, exc)
             code = (
                 ErrorCode.TRANSCRIBE_FAILED
-                if job.kind == "video_pipeline"
+                if job.kind in VIDEO_JOB_KINDS
                 else ErrorCode.RENDER_FAILED
             )
             error = AppError(code, "A processing step failed or took too long. Retry it.")
@@ -163,7 +169,7 @@ class JobRunner:
         with self.ctx.session_factory() as session:
             row = (
                 repo.get_video(session, job.ref_id)
-                if job.kind == "video_pipeline"
+                if job.kind in VIDEO_JOB_KINDS
                 else repo.get_clip(session, job.ref_id)
             )
             if row is None:
@@ -172,7 +178,7 @@ class JobRunner:
             row.error_code = error.code.value if error else None
             row.error_message = error.message[:MESSAGE_LIMIT] if error else None
             session.commit()
-            kind = "video" if job.kind == "video_pipeline" else "clip"
+            kind = "video" if job.kind in VIDEO_JOB_KINDS else "clip"
             self.ctx.publish(
                 row.batch_id, kind, id=row.id, status=row.status, stage=row.stage,
                 progress=row.progress,
@@ -180,7 +186,7 @@ class JobRunner:
 
     def _cleanup_partial(self, job: JobRow) -> None:
         """Cancelled clip work is partial: remove its work folder (docs/04 "Cancellation")."""
-        if job.kind != "video_pipeline":
+        if job.kind not in VIDEO_JOB_KINDS:
             shutil.rmtree(self.ctx.clip_work_dir(job.ref_id), ignore_errors=True)
 
     def _mark_batch_started(self, batch_id: str) -> None:

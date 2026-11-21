@@ -41,7 +41,7 @@ States: empty, inspecting, inspect-failed (per card error), ready, starting.
 
 ## Batch results `/history/[batchId]`
 - Header: batch date, overall status.
-- Per video section, top to bottom: video header (title, source badge), then the **checkpoint list**, then a grid of up to 5 **clip cards**.
+- Per video section, top to bottom: video header (title, source badge), then the **checkpoint list**, then a grid of up to 5 **clip cards**. Below the cards (D-034): a count (1–5) and a **More clips** button that makes more clips from the saved download without repeating the existing ones; disabled with the reason when the download was deleted or the AI model is not configured, hidden while the video works. With more clips, the grid holds more than 5 cards.
 - **Checkpoint list** (sits directly below the video header and above the clip cards):
   - A compact, muted (low-contrast gray text, small size) vertical list of the steps for this video, in order:
     1. Download video

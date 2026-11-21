@@ -19,8 +19,10 @@ from app.db.models import BatchRow, ClipRow, JobRow, VideoRow, utc_now
 # Job priorities: edit/preview work goes before the remaining background clips (docs/08).
 PRIORITY_BACKGROUND = 0
 PRIORITY_USER = 10
+# Jobs whose ref is a video: the pipeline, and "more clips" from its download (D-034).
+VIDEO_JOB_KINDS = ("video_pipeline", "video_more_clips")
 # Order of job kinds inside one video: the pipeline first, then its clips.
-KIND_ORDER = {"video_pipeline": 0, "clip_render": 1, "clip_preview": 1}
+KIND_ORDER = {"video_pipeline": 0, "video_more_clips": 0, "clip_render": 1, "clip_preview": 1}
 
 
 def new_id() -> str:
@@ -156,9 +158,19 @@ def active_job_for(session: Session, ref_id: str, kind: str) -> JobRow | None:
     return session.scalars(query).first()
 
 
+def active_video_job(session: Session, video_id: str) -> JobRow | None:
+    """A queued or running pipeline or "more clips" job of this video."""
+    query = select(JobRow).where(
+        JobRow.ref_id == video_id,
+        JobRow.kind.in_(VIDEO_JOB_KINDS),
+        JobRow.status.in_(("queued", "running")),
+    )
+    return session.scalars(query).first()
+
+
 def _sort_key(session: Session, job: JobRow) -> tuple[Any, ...]:
     """Queue order (docs/08): priority, batch creation, video position, clip index."""
-    if job.kind == "video_pipeline":
+    if job.kind in VIDEO_JOB_KINDS:
         video = session.get(VideoRow, job.ref_id)
         clip_idx = -1
     else:
@@ -190,7 +202,7 @@ def queued_clip_positions(session: Session) -> dict[str, int]:
     return {
         job.ref_id: number
         for number, job in enumerate(ordered, start=1)
-        if job.kind != "video_pipeline"
+        if job.kind not in VIDEO_JOB_KINDS
     }
 
 

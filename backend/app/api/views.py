@@ -15,7 +15,7 @@ from app.core.settings_schema import CaptionLanguage, CaptionStyle, CropMode
 from app.db.models import BatchRow, ClipRow, VideoRow
 from app.db.repositories import batches as repo
 from app.jobs.context import JobContext
-from app.jobs.state import checkpoints
+from app.jobs.state import checkpoints, more_clips_blocker
 from app.pipeline.cut import load_cut
 from app.pipeline.download import INFO_FILE_NAME
 from app.sources.base import SOURCE_FILE_NAME
@@ -68,6 +68,9 @@ class Video(BaseModel):
     error: ErrorBody | None = None
     # Which speech-to-text engine ran and why (D-028), e.g. "Speech-to-text: Parakeet".
     note: str | None = None
+    # More clips from the saved download (D-034): possible now, or why not.
+    can_add_clips: bool = False
+    add_clips_blocked: str | None = None
     checkpoints: list[Checkpoint]
     clips: list[ClipSummary]
 
@@ -171,6 +174,7 @@ def video_view(
     ctx: JobContext, video: VideoRow, clips: list[ClipRow], positions: dict[str, int]
 ) -> Video:
     states = checkpoints(video, clips, ctx.video_dir(video.id))
+    blocked = more_clips_blocker(video, ctx.video_dir(video.id))
     return Video(
         id=video.id,
         url=video.url,
@@ -185,6 +189,8 @@ def video_view(
         progress=video.progress,
         error=error_of(video.error_code, video.error_message),
         note=video.note,
+        can_add_clips=blocked is None,
+        add_clips_blocked=blocked,
         checkpoints=[
             Checkpoint(key=s.key, label=s.label, state=s.state, detail=s.detail, engine=s.engine)  # type: ignore[arg-type]
             for s in states

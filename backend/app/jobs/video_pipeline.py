@@ -9,12 +9,14 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_EXCEPTION, Future, ThreadPoolExecutor, wait
+from functools import partial
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.config import CLIP_MIN_GAP_S
 from app.core.errors import AppError, ErrorCode
 from app.core.hardware import MemoryInfo, pick_whisper_model
 from app.core.metrics import stage_timer
@@ -26,14 +28,22 @@ from app.db.repositories.settings import load_settings
 from app.jobs.context import JobContext
 from app.llm.client import LlmClient
 from app.llm.transliterate import transliterate_words
-from app.pipeline.audio import AUDIO_FILE_NAME, run_audio
-from app.pipeline.candidates import run_candidates
+from app.pipeline.audio import AUDIO_FILE_NAME, ensure_audio_wav, run_audio
+from app.pipeline.candidates import find_candidates, run_candidates
 from app.pipeline.chat import run_chat
+from app.pipeline.download import load_cached as load_download
 from app.pipeline.download import max_download_height, run_download
 from app.pipeline.hinglish import to_hinglish
 from app.pipeline.motion import run_motion
-from app.pipeline.select import VideoFacts, all_words, run_select, words_between
-from app.pipeline.signals import SignalFile, run_chat_signal
+from app.pipeline.select import (
+    SelectionClip,
+    VideoFacts,
+    all_words,
+    run_select,
+    select_more,
+    words_between,
+)
+from app.pipeline.signals import SignalFile, load_signal, run_chat_signal
 from app.pipeline.stt_engine import choose_engine
 from app.pipeline.transcribe import (
     CaptionLanguage,
@@ -77,6 +87,12 @@ PARAKEET_FALLBACK_CODES = frozenset(
 
 
 WHISPER_DEVICE_NAMES = {"cuda": "GPU", "cpu": "CPU"}
+
+# More clips (D-034): the video's note ends with the last round's result after this prefix.
+MORE_NOTE_PREFIX = "More clips:"
+SOURCE_GONE_MESSAGE = (
+    "The downloaded video was deleted (storage cleanup), so more clips need a new batch."
+)
 
 
 def _whisper_note(model: str, reason: str | None) -> str:
@@ -195,26 +211,115 @@ class VideoPipeline:
         )  # fmt: skip
 
         self._stage("clips")
-        words = all_words(transcript)
+        self._finish_with_clips(selection.clips, all_words(transcript), style, client, None)
+
+    def run_more(self, count: int) -> None:
+        """Up to `count` more clips for a video whose download is still on disk (D-034).
+
+        Download, chat and signals are reused; candidates are found again with the clips
+        already made blocked out (plus the minimum gap); only the parts of the new
+        candidates' spans that were never transcribed are transcribed; the LLM is told which
+        moments already have clips. New clips get the next indexes and are rendered like the
+        first ones. Finding nothing new is not a failure: the video's note says so.
+
+        Raises:
+            AppError: VALIDATION_ERROR when the download is gone; LLM and transcribe errors.
+        """
+        with self.ctx.session_factory() as session:
+            video = repo.get_video(session, self.video_id)
+            if video is None:
+                return
+            batch = repo.get_batch(session, video.batch_id)
+            style: dict[str, Any] = json.loads(batch.style_json) if batch else {}
+            settings = load_settings(session)
+            taken = [(clip.start_s, clip.end_s) for clip in repo.clips_of_video(session, video.id)]
+            title, channel = video.title or "", video.channel
+            has_chat = bool(video.has_chat)
+        memory = self.ctx.memory()
+        video_dir = self.ctx.video_dir(self.video_id)
+        info = load_download(video_dir, self.ctx.config.ffmpeg_path)
+        if info is None:
+            raise AppError(ErrorCode.VALIDATION_ERROR, SOURCE_GONE_MESSAGE)
+        duration = info.probed_duration_s
+
+        self._stage("candidates")
+        # Cached signals load instantly; missing ones are computed again.
+        signals = self._audio_and_motion(duration, info.width, info.height, memory)
+        chat = load_signal(video_dir, "chat", duration) if has_chat else None
+        if chat is not None:
+            signals["chat"] = chat
+        exclude = [(start - CLIP_MIN_GAP_S, end + CLIP_MIN_GAP_S) for start, end in taken]
+        candidates = find_candidates(signals, duration, exclude=exclude)
+        logger.info("more clips video=%s taken=%s candidates=%s", self.video_id, len(taken),
+                    len(candidates))  # fmt: skip
+
+        chosen: list[SelectionClip] = []
+        words: list[Word] = []
+        client: LlmClient | None = None
+        if candidates:
+            self._stage("transcribe")
+            language = str(style.get("caption_language", "en"))
+            # The WAV may have been removed by a cleanup while the video stayed; rebuild it.
+            ensure_audio_wav(video_dir, duration, ffmpeg_path=self.ctx.config.ffmpeg_path,
+                             memory=memory, cancel=self.cancel)  # fmt: skip
+            spans = plan_spans(
+                [(c.start, c.end) for c in candidates], duration, thorough=settings.thorough_mode
+            )
+            transcript = self._transcribe(settings, language, spans, memory, extend=True)
+            self._stage("select")
+            client = self._llm_client()
+            chosen = select_more(
+                VideoFacts(title, channel, duration), candidates, transcript, taken,
+                count=count, extended=style.get("clip_length_mode") == "extended",
+                client=client,
+            )  # fmt: skip
+            words = all_words(transcript)
+        self._stage("clips")
+        found = (
+            f"{len(chosen)} more clip{'s' if len(chosen) != 1 else ''} added."
+            if chosen
+            else "No new moments were found that do not overlap the clips you have."
+        )
+        self._finish_with_clips(chosen, words, style, client, f"{MORE_NOTE_PREFIX} {found}")
+
+    def _finish_with_clips(
+        self,
+        chosen: Sequence[SelectionClip],
+        words: Sequence[Word],
+        style: dict[str, Any],
+        client: LlmClient | None,
+        more_note: str | None,
+    ) -> None:
+        """Create clips (after the video's existing ones) with their caption words, queue
+        their renders, and mark the video done. The first run creates clips only once, so a
+        resumed job never doubles them. `more_note` (D-034) replaces the previous one."""
+        language = str(style.get("caption_language", "en"))
         with self.ctx.session_factory() as session:
             video_row = repo.get_video(session, self.video_id)
             if video_row is None:
                 return
-            if not repo.clips_of_video(session, self.video_id):
-                for index, chosen in enumerate(selection.clips):
+            existing = repo.clips_of_video(session, self.video_id)
+            if more_note is not None or not existing:
+                first = max((clip.idx for clip in existing), default=-1) + 1
+                for offset, clip in enumerate(chosen):
                     clip_words = [
-                        Word(text=w.text, start=round(max(0.0, w.start - chosen.start), 2),
-                             end=round(max(0.0, w.end - chosen.start), 2))
-                        for w in words_between(words, chosen.start, chosen.end)
+                        Word(text=w.text, start=round(max(0.0, w.start - clip.start), 2),
+                             end=round(max(0.0, w.end - clip.start), 2))
+                        for w in words_between(words, clip.start, clip.end)
                     ]  # fmt: skip
-                    if language == "hinglish":
+                    if language == "hinglish" and client is not None:
                         clip_words = to_hinglish(
-                            clip_words, lambda texts: transliterate_words(client, texts)
+                            clip_words, partial(transliterate_words, client)
                         ).words
-                    self._create_clip(session, video_row, index, chosen, clip_words, style)
+                    self._create_clip(session, video_row, first + offset, clip, clip_words, style)
+            if more_note is not None:
+                base = (video_row.note or "").split(MORE_NOTE_PREFIX)[0].strip()
+                video_row.note = f"{base} {more_note}".strip()
             video_row.status = "done"
             video_row.stage = "clips"
             video_row.progress = 1.0
+            video_row.error_code = None
+            video_row.error_message = None
             session.commit()
             batch_id = video_row.batch_id
         self.ctx.publish(batch_id, "video", id=self.video_id, status="done", stage="clips",
@@ -296,7 +401,13 @@ class VideoPipeline:
         repo.add_job(session, "clip_render", clip.id, repo.PRIORITY_BACKGROUND)
 
     def _transcribe(
-        self, settings: Settings, language: str, spans: list[Span], memory: MemoryInfo
+        self,
+        settings: Settings,
+        language: str,
+        spans: list[Span],
+        memory: MemoryInfo,
+        *,
+        extend: bool = False,
     ) -> TranscriptFile:
         """Transcribe with the engine `choose_engine` picks (D-028): Parakeet for English,
         Whisper for Hinglish. A Parakeet failure (package or model missing, download or
@@ -322,7 +433,7 @@ class VideoPipeline:
                             video_dir, wav, spans, caption_language=caption,
                             runner_factory=factory, cancel=self.cancel,
                             on_progress=lambda f: self._fraction("transcribe", f),
-                            engine="parakeet",
+                            engine="parakeet", extend=extend,
                         )  # fmt: skip
                     self._update(note=PARAKEET_NOTE)
                     return transcript
@@ -334,10 +445,15 @@ class VideoPipeline:
                         self.video_id, exc.code, exc.message,
                     )  # fmt: skip
                     reason = f"Parakeet failed ({exc.message}), so Whisper was used."
-        return self._transcribe_whisper(settings, caption, spans, reason)
+        return self._transcribe_whisper(settings, caption, spans, reason, extend)
 
     def _transcribe_whisper(
-        self, settings: Settings, caption: CaptionLanguage, spans: list[Span], reason: str | None
+        self,
+        settings: Settings,
+        caption: CaptionLanguage,
+        spans: list[Span],
+        reason: str | None,
+        extend: bool = False,
     ) -> TranscriptFile:
         video_dir = self.ctx.video_dir(self.video_id)
         model = self._whisper_model(settings)
@@ -362,7 +478,7 @@ class VideoPipeline:
             transcript = run_transcribe(
                 video_dir, video_dir / AUDIO_FILE_NAME, spans, caption_language=caption,
                 runner_factory=factory, cancel=self.cancel, on_progress=progress,
-                engine="whisper",
+                engine="whisper", extend=extend,
             )  # fmt: skip
         return transcript
 

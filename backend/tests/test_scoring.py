@@ -177,6 +177,19 @@ def test_find_candidates_skips_the_intro_and_prefers_agreeing_signals() -> None:
     assert peaks[:2] == [2000.0, 1000.0]
 
 
+def test_find_candidates_excludes_clips_already_made() -> None:
+    chat = [0.0] * 3600
+    audio = [0.0] * 3600
+    for at in (1000, 2000):
+        _spike(chat, at, 10.0)
+        _spike(audio, at, 10.0)
+    signals = {"chat": SignalFile(values=chat), "audio": SignalFile(values=audio)}
+    items = find_candidates(signals, 3600.0, exclude=[(950.0, 1100.0)])
+    peaks = [item.peak_t for item in items]
+    assert peaks[0] == 2000.0
+    assert all(not 950 <= peak <= 1100 for peak in peaks)
+
+
 def test_find_candidates_at_most_twelve() -> None:
     rng = np.random.default_rng(1)
     values = rng.random(3600).tolist()

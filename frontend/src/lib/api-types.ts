@@ -212,6 +212,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/videos/{video_id}/more-clips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * More Clips
+         * @description Queue up to `count` more clips from the video's saved download (D-034): no new
+         *     download or signals; only untranscribed parts of new candidates are transcribed; new
+         *     clips never overlap the existing ones. Returns the batch.
+         *
+         *     Errors: NOT_FOUND, LLM_NOT_CONFIGURED, CONFLICT (the video is still being processed, or
+         *     its download was deleted), VALIDATION_ERROR (count outside 1-5).
+         */
+        post: operations["more_clips_api_videos__video_id__more_clips_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/batches": {
         parameters: {
             query?: never;
@@ -847,6 +872,11 @@ export interface components {
             /** Models */
             models: components["schemas"]["ModelEntry"][];
         };
+        /** MoreClipsRequest */
+        MoreClipsRequest: {
+            /** Count */
+            count: number;
+        };
         /** ProviderInfo */
         ProviderInfo: {
             /**
@@ -1066,6 +1096,13 @@ export interface components {
             error?: components["schemas"]["ErrorBody"] | null;
             /** Note */
             note?: string | null;
+            /**
+             * Can Add Clips
+             * @default false
+             */
+            can_add_clips: boolean;
+            /** Add Clips Blocked */
+            add_clips_blocked?: string | null;
             /** Checkpoints */
             checkpoints: components["schemas"]["Checkpoint"][];
             /** Clips */
@@ -1473,6 +1510,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InspectResponse"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    more_clips_api_videos__video_id__more_clips_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                video_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoreClipsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Batch"];
                 };
             };
             /** @description Error */
