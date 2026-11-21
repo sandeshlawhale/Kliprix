@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Info } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -19,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { keys, useSettings, useStorage, useUpdateSettings } from "@/hooks/queries";
 import { cleanupStorage, errorMessage, type CleanupScope, type Settings } from "@/lib/api";
 import { bytes } from "@/lib/format";
@@ -40,6 +42,41 @@ const CLEANUPS: { scope: CleanupScope; label: string; text: string }[] = [
     text: "Deletes cut and crop files. Clips re-cut from the source when edited; clips whose source was deleted can no longer be re-rendered.",
   },
 ];
+
+const CLEAR_ALL: (typeof CLEANUPS)[number] = {
+  scope: "all",
+  label: "Clear all Kliprix storage",
+  text: "Deletes everything Kliprix stored on this computer: batch history, downloads, exported clips, previews, work files and downloaded models (they download again when needed). Your settings stay. This cannot be undone. It is refused while work is running.",
+};
+
+const FOLDER_INFO: Record<string, string> = {
+  downloads:
+    "Source videos and audio downloaded from the links you added. Needed to re-cut or trim clips beyond their editing handles.",
+  exports:
+    "Your finished vertical shorts (MP4 files), ready to upload. Deleting these removes your final clips.",
+  previews:
+    "Low-resolution preview videos shown while you edit clips. They are re-created when needed.",
+  work: "Temporary cut and crop files used while rendering clips. Safe to delete; clips re-cut from the source when edited.",
+  models:
+    "AI models downloaded for transcription and face detection. They are downloaded again the next time they are needed.",
+};
+
+function InfoTip({ text }: { text: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={text}
+          className="text-muted-foreground hover:text-foreground ml-1.5 inline-flex align-middle"
+        >
+          <Info className="size-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{text}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 export function StorageSection() {
   const storage = useStorage();
@@ -78,7 +115,10 @@ export function StorageSection() {
           <dl className="grid grid-cols-[12rem_1fr] gap-y-1 text-sm">
             {Object.entries(storage.data.folders).map(([name, size]) => (
               <div key={name} className="contents">
-                <dt className="text-muted-foreground capitalize">{name}</dt>
+                <dt className="text-muted-foreground capitalize">
+                  {name}
+                  {FOLDER_INFO[name] && <InfoTip text={FOLDER_INFO[name]} />}
+                </dt>
                 <dd className="font-mono">{bytes(size)}</dd>
               </div>
             ))}
@@ -140,6 +180,9 @@ export function StorageSection() {
             {item.label}
           </Button>
         ))}
+        <Button variant="destructive" size="sm" onClick={() => setPending(CLEAR_ALL)}>
+          {CLEAR_ALL.label}
+        </Button>
       </div>
       <AlertDialog open={pending !== null} onOpenChange={(open) => !open && setPending(null)}>
         <AlertDialogContent>

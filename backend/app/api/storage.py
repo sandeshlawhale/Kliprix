@@ -15,7 +15,7 @@ from app.api.batches import CtxDep
 from app.api.deps import DbDep
 from app.config import BYTES_PER_GB
 from app.core.errors import ERROR_RESPONSES, AppError, ErrorCode
-from app.db.models import ClipRow, VideoRow
+from app.db.models import BatchRow, ClipRow, VideoRow
 from app.db.repositories import batches as repo
 from app.db.repositories.settings import load_settings
 from app.jobs.context import JobContext
@@ -45,7 +45,7 @@ class StorageInfo(BaseModel):
 class CleanupRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    scope: Literal["source_videos", "previews", "work", "batch"]
+    scope: Literal["source_videos", "previews", "work", "batch", "all"]
     batch_id: str | None = None
 
 
@@ -120,6 +120,29 @@ def _clean_work(ctx: JobContext, clips: list[ClipRow]) -> int:
     )
 
 
+def _clear_all(db: DbDep, ctx: JobContext) -> int:
+    """Everything Kliprix stored: batch history, downloads, exports, previews, thumbnails,
+    work files and downloaded models. Settings and logs stay. Refused while work runs."""
+    if any(v.status in ACTIVE for v in db.query(VideoRow)) or any(
+        c.status in ACTIVE for c in db.query(ClipRow)
+    ):
+        raise AppError(
+            ErrorCode.VALIDATION_ERROR, "Wait for running or queued work to finish, or cancel it."
+        )
+    freed = 0
+    for batch in list(db.query(BatchRow)):
+        repo.delete_batch(db, batch.id)
+    for name in (*FOLDERS, "thumbnails"):
+        folder = ctx.data_dir / name
+        freed += folder_size(folder)
+        for child in folder.iterdir() if folder.is_dir() else ():
+            if child.is_dir():
+                shutil.rmtree(child, ignore_errors=True)
+            else:
+                child.unlink(missing_ok=True)
+    return freed
+
+
 @router.post("/cleanup")
 def cleanup(body: CleanupRequest, db: DbDep, ctx: CtxDep) -> CleanupResult:
     """Free space. `source_videos`: downloaded videos of finished batches; `previews`;
@@ -131,7 +154,9 @@ def cleanup(body: CleanupRequest, db: DbDep, ctx: CtxDep) -> CleanupResult:
     """
     if body.batch_id and repo.get_batch(db, body.batch_id) is None:
         raise AppError(ErrorCode.NOT_FOUND, "This batch does not exist.")
-    if body.scope == "source_videos" and body.batch_id:
+    if body.scope == "all":
+        freed = _clear_all(db, ctx)
+    elif body.scope == "source_videos" and body.batch_id:
         freed = _clean_sources(db, ctx, repo.videos_of(db, body.batch_id))
     elif body.scope == "batch":
         if not body.batch_id:

@@ -18,6 +18,16 @@ def test_storage_usage_and_warning(client: TestClient, config: AppConfig) -> Non
     assert client.get("/api/storage").json()["warn"] is True
 
 
+def test_clear_all_removes_every_folder(client: TestClient, config: AppConfig) -> None:
+    for name, size in (("exports", 1000), ("models", 500), ("downloads", 200)):
+        (config.data_dir / name / "sub").mkdir(parents=True, exist_ok=True)
+        (config.data_dir / name / "sub" / "f.bin").write_bytes(b"x" * size)
+    result = client.post("/api/storage/cleanup", json={"scope": "all"}).json()
+    assert result == {"freed_bytes": 1700}
+    assert client.get("/api/storage").json()["total_bytes"] == 0
+    assert (config.data_dir / "exports").is_dir()
+
+
 def test_cleanup_validation(client: TestClient) -> None:
     missing = client.post("/api/storage/cleanup", json={"scope": "batch"})
     assert missing.json()["error"]["code"] == "VALIDATION_ERROR"

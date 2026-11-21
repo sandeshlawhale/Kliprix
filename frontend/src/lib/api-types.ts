@@ -553,7 +553,7 @@ export interface components {
              * Scope
              * @enum {string}
              */
-            scope: "source_videos" | "previews" | "work" | "batch";
+            scope: "source_videos" | "previews" | "work" | "batch" | "all";
             /** Batch Id */
             batch_id?: string | null;
         };
