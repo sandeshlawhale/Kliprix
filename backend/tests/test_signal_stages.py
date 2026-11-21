@@ -17,7 +17,14 @@ from app.core.proc import (
     StreamingCommand,
 )
 from app.pipeline.audio import AUDIO_FILE_NAME, run_audio, wav_duration_s
-from app.pipeline.motion import analysis_height, run_motion
+from app.pipeline.motion import (
+    analysis_height,
+    keyframe_gap_s,
+    keyframe_mode_gap,
+    motion_series,
+    run_motion,
+    spread_repeats,
+)
 from app.pipeline.signals import load_signal
 
 FFMPEG = shutil.which("ffmpeg")
@@ -123,6 +130,56 @@ def test_streaming_command_stdin_pipe() -> None:
 def test_streaming_command_missing_program(tmp_path: Path) -> None:
     with pytest.raises(CommandNotFoundError):
         StreamingCommand([str(tmp_path / "nope.exe")], 5)
+
+
+def test_spread_repeats_shares_a_keyframe_change_over_its_run() -> None:
+    # Keyframes at 0, 3 and 5 s: the fps filter repeats them, so changes arrive at 3 and 5.
+    assert spread_repeats([0.0, 0.0, 0.0, 6.0, 0.0, 4.0], 10) == [0.0, 2.0, 2.0, 2.0, 2.0, 2.0]
+    # A run longer than max_run keeps zeros before it; index 0 is never part of a run.
+    assert spread_repeats([5.0, 0.0, 0.0, 0.0, 9.0], 3) == [5.0, 0.0, 3.0, 3.0, 3.0]
+    # Trailing zeros (no later keyframe) and real values stay as they are.
+    assert spread_repeats([0.0, 1.0, 2.0, 0.0], 10) == [0.0, 1.0, 2.0, 0.0]
+
+
+@pytest.fixture(scope="module")
+def keyframed_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """12 s video with a keyframe every 2 s: still for 6 s, then a moving test pattern."""
+    assert FFMPEG is not None
+    folder = tmp_path_factory.mktemp("keyframed")
+    subprocess.run(  # noqa: S603 - fixed test command
+        [
+            FFMPEG, "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "color=c=gray:s=320x180:r=30:d=6",
+            "-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=6",
+            "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0[v]", "-map", "[v]",
+            "-c:v", "libx264", "-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
+            "-pix_fmt", "yuv420p", str(folder / "source.mp4"),
+        ],
+        check=True,
+    )  # fmt: skip
+    return folder
+
+
+@needs_ffmpeg
+def test_keyframe_gap_is_read_from_packets(keyframed_dir: Path) -> None:
+    assert keyframe_gap_s(keyframed_dir / "source.mp4", None) == pytest.approx(2.0)
+
+
+@needs_ffmpeg
+def test_keyframe_motion_sees_movement(keyframed_dir: Path) -> None:
+    values = motion_series(
+        keyframed_dir, DURATION, 320, 180, ffmpeg_path=None, memory=MEMORY, keyframe_gap=2.0
+    )
+    assert len(values) == DURATION
+    # The change at the 6 s keyframe is shared with second 5 only (one keyframe gap).
+    assert max(values[1:5]) == 0.0
+    # The last keyframe (10 s) has no length, so the fps filter drops it; the tail is padded.
+    assert min(values[5:9]) > 0.0
+
+
+@needs_ffmpeg
+def test_short_videos_keep_the_full_decode(keyframed_dir: Path) -> None:
+    assert keyframe_mode_gap(keyframed_dir / "source.mp4", DURATION, None) is None
 
 
 @needs_ffmpeg

@@ -1,6 +1,7 @@
-"""The `video_pipeline` job: inspect → download → chat → audio → motion → candidates →
-transcribe → select → clips (docs/04). Each stage is skipped when its output is cached, so a
-restarted job resumes where it stopped. Progress comes from the work actually done.
+"""The `video_pipeline` job: inspect → download → chat → audio + motion (in parallel,
+D-033) → candidates → transcribe → select → clips (docs/04). Each stage is skipped when its
+output is cached, so a restarted job resumes where it stopped. Progress comes from the work
+actually done.
 """
 
 from __future__ import annotations
@@ -8,6 +9,8 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from collections.abc import Callable
+from concurrent.futures import FIRST_EXCEPTION, Future, ThreadPoolExecutor, wait
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -15,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError, ErrorCode
 from app.core.hardware import MemoryInfo, pick_whisper_model
 from app.core.metrics import stage_timer
+from app.core.proc import CANCEL_POLL_S, CommandCancelledError
 from app.core.settings_schema import Settings
 from app.db.models import VideoRow
 from app.db.repositories import batches as repo
@@ -112,8 +116,13 @@ class VideoPipeline:
 
     def _fraction(self, stage: str, fraction: float) -> None:
         index = _STAGES.index(stage)
-        start = PROGRESS_AT[_STAGES[index - 1]] if index > 0 else 0.0
-        value = round(start + (PROGRESS_AT[stage] - start) * max(0.0, min(1.0, fraction)), 4)
+        self._fraction_between(_STAGES[index - 1] if index > 0 else None, stage, fraction)
+
+    def _fraction_between(self, after: str | None, until: str, fraction: float) -> None:
+        """Progress `fraction` of the way from the end of stage `after` (None: 0) to the end
+        of stage `until`."""
+        start = PROGRESS_AT[after] if after is not None else 0.0
+        value = round(start + (PROGRESS_AT[until] - start) * max(0.0, min(1.0, fraction)), 4)
         # Frame-level callbacks are frequent; write (and publish) only visible changes.
         if abs(value - self._last_progress) < PROGRESS_STEP and fraction < 1.0:
             return
@@ -160,20 +169,8 @@ class VideoPipeline:
         )
         self._update(has_chat=int(chat is not None))
 
-        signals: dict[str, SignalFile] = {}
         self._stage("audio")
-        with stage_timer("audio", video=self.video_id):
-            signals["audio"] = run_audio(
-                video_dir, duration, ffmpeg_path=ffmpeg, memory=memory, cancel=self.cancel,
-                on_progress=lambda f: self._fraction("audio", f),
-            )  # fmt: skip
-        self._stage("motion")
-        with stage_timer("motion", video=self.video_id):
-            signals["motion"] = run_motion(
-                video_dir, duration, info.width, info.height,
-                ffmpeg_path=ffmpeg, memory=memory, cancel=self.cancel,
-                on_progress=lambda f: self._fraction("motion", f),
-            )  # fmt: skip
+        signals = self._audio_and_motion(duration, info.width, info.height, memory)
         if chat is not None:
             signals["chat"] = run_chat_signal(video_dir, chat.items, duration)
 
@@ -222,6 +219,57 @@ class VideoPipeline:
             batch_id = video_row.batch_id
         self.ctx.publish(batch_id, "video", id=self.video_id, status="done", stage="clips",
                          progress=1.0)  # fmt: skip
+
+    def _audio_and_motion(
+        self, duration: float, width: int, height: int, memory: MemoryInfo
+    ) -> dict[str, SignalFile]:
+        """Audio and motion at the same time (D-033): both only read `source.mp4`, so the
+        step takes as long as the slower one. The bar spans both stages and moves with the
+        mean of their fractions. A failure in one stops the other and is raised; a cancel
+        stops both."""
+        video_dir = self.ctx.video_dir(self.video_id)
+        ffmpeg = self.ctx.config.ffmpeg_path
+        stop = threading.Event()
+        lock = threading.Lock()
+        fractions = {"audio": 0.0, "motion": 0.0}
+
+        def report(name: str) -> Callable[[float], None]:
+            def update(fraction: float) -> None:
+                with lock:
+                    fractions[name] = fraction
+                    self._fraction_between(
+                        "chat", "motion", sum(fractions.values()) / len(fractions)
+                    )
+
+            return update
+
+        def audio() -> SignalFile:
+            with stage_timer("audio", video=self.video_id):
+                return run_audio(
+                    video_dir, duration, ffmpeg_path=ffmpeg, memory=memory, cancel=stop,
+                    on_progress=report("audio"),
+                )  # fmt: skip
+
+        def motion() -> SignalFile:
+            with stage_timer("motion", video=self.video_id):
+                return run_motion(
+                    video_dir, duration, width, height, ffmpeg_path=ffmpeg, memory=memory,
+                    cancel=stop, on_progress=report("motion"),
+                )  # fmt: skip
+
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="signals") as pool:
+            futures = {"audio": pool.submit(audio), "motion": pool.submit(motion)}
+            pending: set[Future[SignalFile]] = set(futures.values())
+            while pending:
+                done, pending = wait(pending, timeout=CANCEL_POLL_S, return_when=FIRST_EXCEPTION)
+                if self.cancel.is_set() or any(f.exception() is not None for f in done):
+                    stop.set()
+        errors = [e for f in futures.values() if (e := f.exception()) is not None]
+        # The sibling of a failed stage stops with a cancel error; raise the real failure.
+        real = [e for e in errors if not isinstance(e, CommandCancelledError)]
+        if real or errors:
+            raise (real or errors)[0]
+        return {name: future.result() for name, future in futures.items()}
 
     def _create_clip(
         self,

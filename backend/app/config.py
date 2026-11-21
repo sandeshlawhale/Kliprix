@@ -143,6 +143,13 @@ AUDIO_FLUX_HOP = 512
 # Motion: frames sampled per second and the analysis width in pixels (grayscale).
 MOTION_FPS = 1
 MOTION_WIDTH = 160
+# Videos at least this long decode only keyframes for motion (D-033): 14x faster on 10 min of
+# a 1080p60 stream (2.9 s vs 41.6 s). Shorter videos keep the exact 1 fps pass.
+MOTION_KEYFRAME_MIN_DURATION_S = 10 * 60
+# Keyframe mode needs keyframes at most this far apart (median over the first
+# MOTION_KEYFRAME_PROBE_S seconds, read from packets without decoding); else a full decode.
+MOTION_KEYFRAME_MAX_GAP_S = 10.0
+MOTION_KEYFRAME_PROBE_S = 120
 # ffmpeg timeouts for the signal stages: a fixed allowance plus this much per second of video.
 SIGNAL_TIMEOUT_BASE_S = 120.0
 SIGNAL_TIMEOUT_PER_VIDEO_S = 2.0
@@ -161,6 +168,18 @@ CANDIDATE_COUNT = 12
 CANDIDATE_MIN_DISTANCE_S = 60
 CANDIDATE_BEFORE_S = 25
 CANDIDATE_AFTER_S = 35
+# Edges (D-033): no peak and no window in the first 3% of the video (at most 3 min) or the last
+# 1.5% (at most 2 min). Proportional, so a 10-min video loses 18 s and a long stream its
+# "starting soon" screen and goodbyes.
+CANDIDATE_EDGE_LEAD_SHARE = 0.03
+CANDIDATE_EDGE_LEAD_MAX_S = 180.0
+CANDIDATE_EDGE_TAIL_SHARE = 0.015
+CANDIDATE_EDGE_TAIL_MAX_S = 120.0
+# Agreement (D-033): each second's score is multiplied by a factor from its second-strongest
+# normalized signal: 1 at AGREEMENT_LEVEL or above, down to AGREEMENT_FLOOR when one signal
+# fires alone (e.g. a chat flood over a silent, still screen).
+AGREEMENT_LEVEL = 0.3
+AGREEMENT_FLOOR = 0.5
 
 # Transcription (docs/04 stage 7, D-012). Videos up to this length are transcribed whole.
 FULL_TRANSCRIBE_MAX_S = 20 * 60
@@ -218,6 +237,22 @@ CLIP_TARGET_MIN_S = 30.0
 CLIP_STANDARD_MAX_S = 60.0
 CLIP_EXTENDED_MAX_S = 90.0
 CLIP_MIN_GAP_S = 30.0
+# Sentence edges (D-033): a sentence also ends at a pause this long (Hinglish transcripts have
+# little punctuation; on the owner's 4-hour stream 90% of pauses between words are < 0.64 s).
+SENTENCE_PAUSE_S = 0.5
+# Clip edges move to the nearest sentence start / end within this many seconds.
+SENTENCE_SNAP_S = 6.0
+# Room kept before the first word and after the last word, never into a neighbouring word.
+CLIP_LEAD_PAD_S = 0.15
+CLIP_TAIL_PAD_S = 0.25
+# Speech check (D-033), after transcription: words per second in each candidate window. Full
+# credit at SPEECH_FULL_WPS; a silent window keeps SPEECH_FLOOR of its score. Skipped when the
+# windows together have under SPEECH_VIDEO_MIN_WPS (music, gameplay without commentary).
+# Clips filled without the LLM need at least SPEECH_FALLBACK_MIN_WPS.
+SPEECH_FULL_WPS = 1.0
+SPEECH_FLOOR = 0.3
+SPEECH_VIDEO_MIN_WPS = 0.5
+SPEECH_FALLBACK_MIN_WPS = 0.3
 # Clip times must stay within the candidate region widened by this much.
 CLIP_REGION_MARGIN_S = 30.0
 
