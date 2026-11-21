@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from collections.abc import Callable, Sequence
 from typing import Any, TypeVar
@@ -48,6 +49,34 @@ def _load_litellm() -> Any:
 
     litellm.suppress_debug_info = True
     return litellm
+
+
+_preload_started = threading.Lock()
+
+
+def preload_litellm() -> threading.Thread | None:
+    """Import LiteLLM on a background thread so the first LLM call does not pay for it.
+
+    A cold `import litellm` measured 21.9 s on the owner's PC, which made the first
+    "Test connection" take ~20 s although the provider answered in about a second. Python's
+    import lock makes a request that arrives mid-import wait for this thread, not import
+    twice. Returns None when the preload already started.
+    """
+    if not _preload_started.acquire(blocking=False):
+        return None
+
+    def run() -> None:
+        started = time.monotonic()
+        try:
+            _load_litellm()
+        except Exception:  # the real call reports the problem with a proper error code
+            logger.exception("litellm preload failed")
+            return
+        logger.info("litellm preloaded in %.1f s", time.monotonic() - started)
+
+    thread = threading.Thread(target=run, name="litellm-preload", daemon=True)
+    thread.start()
+    return thread
 
 
 def default_completion(**kwargs: Any) -> Any:

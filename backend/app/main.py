@@ -37,7 +37,7 @@ from app.db.engine import make_engine, make_session_factory
 from app.db.migrate import upgrade_to_head
 from app.jobs.context import JobContext, ParakeetFactory
 from app.jobs.runner import JobRunner
-from app.llm.client import default_completion
+from app.llm.client import default_completion, preload_litellm
 from app.llm.models import fetch_json
 from app.llm.session import LlmSessionStore
 from app.pipeline.transcribe import RunnerFactory, WhisperRunner
@@ -85,6 +85,9 @@ def _parakeet_factory(config: AppConfig) -> ParakeetFactory:
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     runner: JobRunner = app.state.job_runner
     runner.start()
+    # Only with the real provider call; tests swap in a fake and skip the slow import.
+    if app.state.llm_completion is default_completion:
+        preload_litellm()
     try:
         yield
     finally:

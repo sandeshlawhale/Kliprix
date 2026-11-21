@@ -233,3 +233,18 @@ def test_transliterate_words_gives_up_after_reminder() -> None:
 def test_transliterate_words_none_on_llm_error() -> None:
     script = Script(auth_error())
     assert transliterate_words(client(script), ["a"]) is None
+
+
+def test_preload_litellm_runs_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    import threading
+
+    from app.llm import client as client_module
+
+    calls: list[int] = []
+    monkeypatch.setattr(client_module, "_load_litellm", lambda: calls.append(1))
+    monkeypatch.setattr(client_module, "_preload_started", threading.Lock())
+    first = client_module.preload_litellm()
+    assert first is not None
+    first.join(5)
+    assert client_module.preload_litellm() is None
+    assert calls == [1]
