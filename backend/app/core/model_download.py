@@ -7,6 +7,8 @@ looks like a finished model.
 from __future__ import annotations
 
 import logging
+import shutil
+import tarfile
 import threading
 import urllib.error
 import urllib.request
@@ -104,3 +106,54 @@ def ensure_file(
         partial.unlink(missing_ok=True)
     logger.info("model ready label=%s path=%s", label, target)
     return target
+
+
+def ensure_archive(
+    url: str,
+    root: Path,
+    folder_name: str,
+    required: tuple[str, ...],
+    *,
+    label: str,
+    disk_needed_gb: float,
+    cancel: threading.Event | None = None,
+    opener: Opener | None = None,
+) -> Path:
+    """`root/folder_name`, downloading and unpacking the `.tar.bz2` at `url` first when one of
+    the `required` files is missing. The archive holds that folder at its top level; it is
+    unpacked into a staging folder and moved into place only when complete.
+
+    Raises:
+        AppError MODEL_DOWNLOAD_FAILED: no connection, an incomplete download, a bad archive,
+            or missing files after unpacking.
+        AppError DISK_FULL: less than `disk_needed_gb` free.
+        CommandCancelledError: `cancel` was set during the download.
+    """
+    folder = root / folder_name
+    if all((folder / name).is_file() for name in required):
+        return folder
+    archive = root / f"{folder_name}.tar.bz2"
+    ensure_file(
+        url, archive, label=label, disk_needed_gb=disk_needed_gb, cancel=cancel, opener=opener
+    )
+    staging = root / f"{folder_name}.unpacking"
+    try:
+        shutil.rmtree(staging, ignore_errors=True)
+        staging.mkdir()
+        with tarfile.open(archive, "r:bz2") as tar:
+            # "data" refuses absolute paths, links outside the folder, and device files.
+            tar.extractall(staging, filter="data")
+        unpacked = staging / folder_name
+        if not all((unpacked / name).is_file() for name in required):
+            raise tarfile.TarError(f"archive has no complete {folder_name} folder")
+        shutil.rmtree(folder, ignore_errors=True)
+        unpacked.replace(folder)
+    except (OSError, tarfile.TarError) as exc:
+        logger.error("model unpack failed label=%s: %s", label, exc)
+        raise AppError(
+            ErrorCode.MODEL_DOWNLOAD_FAILED, f"The downloaded {label} could not be unpacked."
+        ) from exc
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+        archive.unlink(missing_ok=True)
+    return folder

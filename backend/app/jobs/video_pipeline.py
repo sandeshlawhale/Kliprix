@@ -11,12 +11,14 @@ import logging
 import threading
 from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_EXCEPTION, Future, ThreadPoolExecutor, wait
+from dataclasses import dataclass
 from functools import partial
-from typing import Any
+from typing import Any, TypeVar
 
+import numpy as np
 from sqlalchemy.orm import Session
 
-from app.config import CLIP_MIN_GAP_S
+from app.config import CHAT_LAG_S, CLIP_MIN_GAP_S
 from app.core.errors import AppError, ErrorCode
 from app.core.hardware import MemoryInfo, pick_whisper_model
 from app.core.metrics import stage_timer
@@ -30,6 +32,7 @@ from app.llm.client import LlmClient
 from app.llm.transliterate import transliterate_words
 from app.pipeline.audio import AUDIO_FILE_NAME, ensure_audio_wav, run_audio
 from app.pipeline.candidates import find_candidates, run_candidates
+from app.pipeline.chat import load_cached as load_chat
 from app.pipeline.chat import run_chat
 from app.pipeline.download import load_cached as load_download
 from app.pipeline.download import max_download_height, run_download
@@ -44,7 +47,14 @@ from app.pipeline.select import (
     select_more,
     words_between,
 )
-from app.pipeline.signals import SignalFile, load_signal, run_chat_signal
+from app.pipeline.signals import (
+    SignalFile,
+    estimate_lag,
+    load_signal,
+    reaction_counts,
+    run_chat_signal,
+)
+from app.pipeline.sound import SoundEvents, run_sound
 from app.pipeline.stt_engine import choose_engine
 from app.pipeline.transcribe import (
     CaptionLanguage,
@@ -55,6 +65,7 @@ from app.pipeline.transcribe import (
     plan_spans,
     run_transcribe,
 )
+from app.sources.base import ChatMessage
 from app.sources.registry import resolve
 
 logger = logging.getLogger(__name__)
@@ -87,7 +98,10 @@ PARAKEET_FALLBACK_CODES = frozenset(
 )
 
 
-# The screen type (D-040) is optional; without it menus are not filtered out.
+# Sound events (D-041) and screen type (D-040) are optional; without them the video still runs.
+SOUND_FAILED_NOTE = (
+    "Sound event check skipped (its model could not run), so only loudness was used."
+)
 SCREEN_FAILED_NOTE = "Screen type check skipped (its model could not run), so menus may be clipped."
 
 WHISPER_DEVICE_NAMES = {"cuda": "GPU", "cpu": "CPU"}
@@ -97,6 +111,32 @@ MORE_NOTE_PREFIX = "More clips:"
 SOURCE_GONE_MESSAGE = (
     "The downloaded video was deleted (storage cleanup), so more clips need a new batch."
 )
+
+
+_T = TypeVar("_T")
+
+
+@dataclass(frozen=True)
+class Analysis:
+    """What the parallel signal step produced."""
+
+    signals: dict[str, SignalFile]
+    screen: ScreenFile | None
+    events: SoundEvents | None
+
+
+def chat_lag(
+    messages: Sequence[ChatMessage], signals: dict[str, SignalFile], duration: float
+) -> int:
+    """The stream's chat delay (D-042): measured from chat reactions against the sound events
+    when they line up clearly, else the default `CHAT_LAG_S`."""
+    sound = signals.get("sound")
+    if sound is None:
+        return CHAT_LAG_S
+    length = len(sound.values)
+    measured = estimate_lag(reaction_counts(messages, length), np.asarray(sound.values))
+    logger.info("chat lag measured=%s duration=%.0f", measured, duration)
+    return measured if measured is not None else CHAT_LAG_S
 
 
 def _whisper_note(model: str, reason: str | None) -> str:
@@ -190,12 +230,15 @@ class VideoPipeline:
         self._update(has_chat=int(chat is not None))
 
         self._stage("audio")
-        signals, screen = self._audio_and_motion(duration, info.width, info.height, memory)
+        analysis = self._audio_and_motion(duration, info.width, info.height, memory)
+        signals = analysis.signals
+        lag = CHAT_LAG_S
         if chat is not None:
-            signals["chat"] = run_chat_signal(video_dir, chat.items, duration)
+            lag = chat_lag(chat.items, signals, duration)
+            signals["chat"] = run_chat_signal(video_dir, chat.items, duration, lag)
 
         self._stage("candidates")
-        candidates = run_candidates(video_dir, signals, duration, screen)
+        candidates = run_candidates(video_dir, signals, duration, analysis.screen, lag)
 
         self._stage("transcribe")
         language = str(style.get("caption_language", "en"))
@@ -249,12 +292,19 @@ class VideoPipeline:
 
         self._stage("candidates")
         # Cached signals load instantly; missing ones are computed again.
-        signals, screen = self._audio_and_motion(duration, info.width, info.height, memory)
+        analysis = self._audio_and_motion(duration, info.width, info.height, memory)
+        signals = analysis.signals
         chat = load_signal(video_dir, "chat", duration) if has_chat else None
+        lag = CHAT_LAG_S
         if chat is not None:
             signals["chat"] = chat
+            replay = load_chat(video_dir)
+            if replay is not None:
+                lag = chat_lag(replay.items, signals, duration)
         exclude = [(start - CLIP_MIN_GAP_S, end + CLIP_MIN_GAP_S) for start, end in taken]
-        candidates = find_candidates(signals, duration, exclude=exclude, screen=screen)
+        candidates = find_candidates(
+            signals, duration, exclude=exclude, screen=analysis.screen, chat_lag=lag
+        )
         logger.info("more clips video=%s taken=%s candidates=%s", self.video_id, len(taken),
                     len(candidates))  # fmt: skip
 
@@ -332,17 +382,19 @@ class VideoPipeline:
 
     def _audio_and_motion(
         self, duration: float, width: int, height: int, memory: MemoryInfo
-    ) -> tuple[dict[str, SignalFile], ScreenFile | None]:
-        """Audio, motion and screen type at the same time (D-033, D-040): all only read
-        `source.mp4`, so the step takes as long as the slowest. The bar moves with the mean of
-        their fractions. A failure in audio or motion stops the others and is raised; a cancel
-        stops all. The screen type is optional: when it fails (e.g. its model cannot be
-        downloaded) the video goes on without it and its note says so."""
+    ) -> Analysis:
+        """Audio (then sound events, which read its WAV), motion and screen type at the same
+        time (D-033, D-040, D-041): all only read `source.mp4`, so the step takes as long as
+        the slowest. The bar moves with the mean of their fractions. A failure in audio or
+        motion stops the others and is raised; a cancel stops all. Sound events and screen
+        type are optional: when one fails (e.g. its model cannot be downloaded) the video goes
+        on without it and its note says so."""
         video_dir = self.ctx.video_dir(self.video_id)
         ffmpeg = self.ctx.config.ffmpeg_path
+        models = self.ctx.data_dir / "models"
         stop = threading.Event()
         lock = threading.Lock()
-        fractions = {"audio": 0.0, "motion": 0.0, "screen": 0.0}
+        fractions = {"audio": 0.0, "sound": 0.0, "motion": 0.0, "screen": 0.0}
 
         def report(name: str) -> Callable[[float], None]:
             def update(fraction: float) -> None:
@@ -354,12 +406,36 @@ class VideoPipeline:
 
             return update
 
-        def audio() -> SignalFile:
+        def optional(name: str, note: str, run: Callable[[], _T]) -> _T | None:
+            """Run an optional stage; any failure except a cancel is logged and noted."""
+            with stage_timer(name, video=self.video_id):
+                try:
+                    result: _T | None = run()
+                except CommandCancelledError:
+                    raise
+                # onnxruntime and sherpa-onnx raise plain Exception subclasses; the stage is
+                # optional, so any failure is logged and noted on the video, never fatal.
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("%s failed video=%s: %s", name, self.video_id, exc)
+                    self._add_note(note)
+                    result = None
+            report(name)(1.0)
+            return result
+
+        def audio() -> tuple[SignalFile, tuple[SignalFile, SoundEvents] | None]:
             with stage_timer("audio", video=self.video_id):
-                return run_audio(
+                loudness = run_audio(
                     video_dir, duration, ffmpeg_path=ffmpeg, memory=memory, cancel=stop,
                     on_progress=report("audio"),
                 )  # fmt: skip
+            sound = optional(
+                "sound", SOUND_FAILED_NOTE,
+                lambda: run_sound(
+                    video_dir, video_dir / AUDIO_FILE_NAME, duration, models, cancel=stop,
+                    on_progress=report("sound"),
+                ),
+            )  # fmt: skip
+            return loudness, sound
 
         def motion() -> SignalFile:
             with stage_timer("motion", video=self.video_id):
@@ -369,40 +445,35 @@ class VideoPipeline:
                 )  # fmt: skip
 
         def screen() -> ScreenFile | None:
-            with stage_timer("screen", video=self.video_id):
-                try:
-                    result = run_screen(
-                        video_dir, duration, self.ctx.data_dir / "models", ffmpeg_path=ffmpeg,
-                        memory=memory, cancel=stop, on_progress=report("screen"),
-                    )  # fmt: skip
-                    report("screen")(1.0)
-                    return result
-                except CommandCancelledError:
-                    raise
-                # onnxruntime raises plain Exception subclasses; the stage is optional, so any
-                # failure is logged and noted on the video, never fatal.
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("screen type failed video=%s: %s", self.video_id, exc)
-                    self._add_note(SCREEN_FAILED_NOTE)
-                    report("screen")(1.0)
-                    return None
+            return optional(
+                "screen", SCREEN_FAILED_NOTE,
+                lambda: run_screen(
+                    video_dir, duration, models, ffmpeg_path=ffmpeg, memory=memory,
+                    cancel=stop, on_progress=report("screen"),
+                ),
+            )  # fmt: skip
 
         with ThreadPoolExecutor(max_workers=3, thread_name_prefix="signals") as pool:
-            futures = {"audio": pool.submit(audio), "motion": pool.submit(motion)}
+            audio_future = pool.submit(audio)
+            motion_future = pool.submit(motion)
             screen_future = pool.submit(screen)
-            pending: set[Future[Any]] = {*futures.values(), screen_future}
+            every: list[Future[Any]] = [audio_future, motion_future, screen_future]
+            pending = set(every)
             while pending:
                 done, pending = wait(pending, timeout=CANCEL_POLL_S, return_when=FIRST_EXCEPTION)
                 if self.cancel.is_set() or any(f.exception() is not None for f in done):
                     stop.set()
-        every: list[Future[Any]] = [*futures.values(), screen_future]
         errors = [e for f in every if (e := f.exception()) is not None]
         # The siblings of a failed stage stop with a cancel error; raise the real failure.
         real = [e for e in errors if not isinstance(e, CommandCancelledError)]
         if real or errors:
             raise (real or errors)[0]
-        signals = {name: future.result() for name, future in futures.items()}
-        return signals, screen_future.result()
+        loudness, sound = audio_future.result()
+        signals = {"audio": loudness, "motion": motion_future.result()}
+        events = None
+        if sound is not None:
+            signals["sound"], events = sound
+        return Analysis(signals, screen_future.result(), events)
 
     def _add_note(self, text: str) -> None:
         with self.ctx.session_factory() as session:

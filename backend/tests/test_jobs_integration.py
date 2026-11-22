@@ -115,9 +115,10 @@ class FakeWhisper:
 
 
 def fake_completion(**kwargs: Any) -> Any:
-    # One clip with LLM metadata; the backend fills the rest from candidates.
+    # One clip with LLM metadata; the backend fills the rest from candidates. No candidate id,
+    # so the pick does not depend on which window the signal weights rank first.
     text = (
-        '{"clips":[{"candidate_id":0,"start":30,"end":70,"title":"Fake LLM pick",'
+        '{"clips":[{"candidate_id":null,"start":30,"end":70,"title":"Fake LLM pick",'
         '"youtube_title":"Fake LLM pick #shorts","youtube_description":"desc",'
         '"hashtags":["#test","#fake","#shorts"],"linkedin_post":"post","reason":"why",'
         '"score":0.9}]}'

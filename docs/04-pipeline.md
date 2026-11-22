@@ -32,13 +32,15 @@ Only exists for past live streams / premieres. Try; if absent set `has_chat=fals
 All signals are resampled to a **1-second grid**.
 - **audio:** RMS loudness + spectral flux. Compute in chunks (never load a full 2-hour WAV into RAM at once).
 - **motion:** mean absolute frame difference at 1 fps, 160 px wide grayscale, streamed from ffmpeg.
+- **sound events (D-041):** `audio.wav` in 2 s windows through CED-mini audio tagging (AudioSet's 527 classes; sherpa-onnx, int8, 47 MB downloaded at first use). Classes are grouped (gunfire, explosion, shouting, laughter, cheering, crash, vehicle; speech and music as facts only); the `sound` signal is the weighted sum of the action groups per second, and `signals/sound_events.json` keeps each window's group values (≥ 0.1) for the LLM and the chat delay. Runs right after the audio signal in the same thread; optional like the screen type.
 - **screen type (D-040):** one frame every 5 s (10 s over 30 min; keyframes only on long videos) through OpenAI CLIP ViT-B/32 (int8 ONNX, downloaded at first use, 89 MB), compared zero-shot with fixed labels grouped as gameplay, menu (main menu, lobby, character/agent select, loading, scoreboard, store, inventory), waiting (black screen), talking, other. Saved as `signals/screen.json` (per frame, the share of each group). Runs at the same time as audio and motion; optional: if it fails, the video goes on without it and its note says so.
-- **chat:** messages per second; plus weight for laugh/hype tokens (`lol`, `lmao`, `😂`, `pog`, `wtf`, `clip it`, `gg`). Shift chat series **earlier by 10 s** (chat reacts after the event; constant `CHAT_LAG_S`).
+- **chat:** messages per second; a reaction message (D-042 groups: laugh, hype, shock, fail; regexes in `CHAT_GROUP_PATTERNS`, very common greetings like "bro"/"bhai" left out) counts double. The series is shifted earlier by the chat delay: measured per stream by correlating reaction messages with the `sound` signal (lags 3-30 s, middle 80% of the stream), used only when the curve has a clear peak (≥ 0.1 and ≥ 0.05 above its median); otherwise the default 10 s (`CHAT_LAG_S`).
+- **chat-led windows (D-042):** when chat is the strongest normalized signal at a peak, the window looks back: chat reacts at peak + delay (`reaction_t`), the likely cause is the strongest sound event (else loudness) in the 30 s before it (`cause_t`, when ≥ 0.2), and the window runs from 15 s before the cause (40 s before the peak without one) to 10 s after the reaction, at most 90 s.
 
 ### 6. Candidates (scoring)
 1. Smooth each signal with a 5 s moving average.
 2. Normalize with a robust z-score (median / MAD), clip to [0, 6], then scale to 0–1.
-3. Weighted sum. Default weights: chat 0.40, audio 0.35, motion 0.25. If a signal is missing, drop it and renormalize the rest. Weights live in `config`, not hard-coded in logic.
+3. Weighted sum. Default weights (D-041): chat 0.35, sound 0.35, audio 0.15, motion 0.15. If a signal is missing, drop it and renormalize the rest. Weights live in `config`, not hard-coded in logic.
 4. Pick local maxima with minimum distance 60 s, take the top **12**.
 5. Each candidate: `{peak_t, start, end, score, signals:{chat,audio,motion}}` where start = peak − 25 s, end = peak + 35 s (clamped to video bounds).
 

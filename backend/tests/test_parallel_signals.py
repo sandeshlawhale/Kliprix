@@ -15,6 +15,7 @@ from app.jobs import video_pipeline
 from app.jobs.video_pipeline import PROGRESS_AT, VideoPipeline
 from app.pipeline.screen import ScreenFile
 from app.pipeline.signals import SignalFile
+from app.pipeline.sound import SoundEvents
 
 MEMORY = MemoryInfo(total_gb=8.0, available_gb=4.0)
 # Long enough that a stage waiting for its sibling never times out in a passing test.
@@ -64,8 +65,10 @@ def test_both_results_and_progress_across_both_stages(
     monkeypatch.setattr(video_pipeline, "run_audio", _quick(1.0))
     monkeypatch.setattr(video_pipeline, "run_motion", _quick(2.0))
     pipeline, seen = _pipeline(tmp_path)
-    signals, screen = pipeline._audio_and_motion(3.0, 320, 180, MEMORY)
-    assert screen is None
+    analysis = pipeline._audio_and_motion(3.0, 320, 180, MEMORY)
+    signals = analysis.signals
+    assert analysis.screen is None
+    assert analysis.events is None
     assert signals["audio"].values == [1.0] * 3
     assert signals["motion"].values == [2.0] * 3
     assert seen == sorted(seen)
@@ -116,9 +119,9 @@ def test_screen_failure_is_noted_not_fatal(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setattr(video_pipeline, "run_motion", _quick(2.0))
     monkeypatch.setattr(video_pipeline, "run_screen", broken)
     pipeline, seen = _pipeline(tmp_path)
-    signals, screen = pipeline._audio_and_motion(3.0, 320, 180, MEMORY)
-    assert screen is None
-    assert set(signals) == {"audio", "motion"}
+    analysis = pipeline._audio_and_motion(3.0, 320, 180, MEMORY)
+    assert analysis.screen is None
+    assert set(analysis.signals) == {"audio", "motion"}
     assert notes == [video_pipeline.SCREEN_FAILED_NOTE]
     assert seen[-1] == PROGRESS_AT["motion"]
 
@@ -134,5 +137,34 @@ def test_screen_result_is_returned(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(video_pipeline, "run_motion", _quick(2.0))
     monkeypatch.setattr(video_pipeline, "run_screen", screen)
     pipeline, _ = _pipeline(tmp_path)
-    _, got = pipeline._audio_and_motion(3.0, 320, 180, MEMORY)
-    assert got == result
+    assert pipeline._audio_and_motion(3.0, 320, 180, MEMORY).screen == result
+
+
+def test_sound_events_join_the_signals(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    events = SoundEvents(window_s=2, windows=[{"gunfire": 0.9}, {}])
+
+    def sound(*_args: Any, on_progress: Any, **_kwargs: Any) -> Any:
+        on_progress(1.0)
+        return SignalFile(values=[0.9, 0.9, 0.0]), events
+
+    monkeypatch.setattr(video_pipeline, "run_audio", _quick(1.0))
+    monkeypatch.setattr(video_pipeline, "run_motion", _quick(2.0))
+    monkeypatch.setattr(video_pipeline, "run_sound", sound)
+    pipeline, seen = _pipeline(tmp_path)
+    analysis = pipeline._audio_and_motion(3.0, 320, 180, MEMORY)
+    assert analysis.signals["sound"].values == [0.9, 0.9, 0.0]
+    assert analysis.events == events
+    assert seen[-1] == PROGRESS_AT["motion"]
+
+
+def test_sound_failure_is_noted_not_fatal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def broken(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("model error")
+
+    monkeypatch.setattr(video_pipeline, "run_audio", _quick(1.0))
+    monkeypatch.setattr(video_pipeline, "run_motion", _quick(2.0))
+    monkeypatch.setattr(video_pipeline, "run_sound", broken)
+    pipeline, _ = _pipeline(tmp_path)
+    analysis = pipeline._audio_and_motion(3.0, 320, 180, MEMORY)
+    assert "sound" not in analysis.signals
+    assert notes == [video_pipeline.SOUND_FAILED_NOTE]

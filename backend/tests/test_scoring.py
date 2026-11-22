@@ -3,7 +3,8 @@
 import numpy as np
 import pytest
 
-from app.pipeline.candidates import find_candidates
+from app.config import CHAT_FALLBACK_BEFORE_S, CHAT_LEAD_S, CHAT_TAIL_S
+from app.pipeline.candidates import chat_window, find_candidates
 from app.pipeline.scoring import (
     agreement,
     combine,
@@ -14,7 +15,14 @@ from app.pipeline.scoring import (
     pick_peaks,
     robust_z,
 )
-from app.pipeline.signals import SignalFile, chat_series, message_weight
+from app.pipeline.signals import (
+    SignalFile,
+    chat_series,
+    estimate_lag,
+    message_groups,
+    message_weight,
+    reaction_counts,
+)
 from app.sources.base import ChatMessage
 
 
@@ -112,6 +120,83 @@ def test_chat_series_counts_hype_and_shifts_earlier() -> None:
 def test_message_weight_tokens() -> None:
     assert message_weight("clip it now") == 2.0
     assert message_weight("nice") == 1.0
+
+
+def test_message_groups() -> None:
+    assert message_groups("LMAOOO") == ["laugh"]
+    assert message_groups("W ACE") == ["hype"]
+    assert message_groups("bro what??") == ["shock"]
+    assert message_groups("L noob") == ["fail"]
+    # Common words are not reactions: "bhai", "bro", "low", "ward", "glass".
+    assert message_groups("bhai hello bro") == []
+    assert message_groups("low ward glass") == []
+
+
+def test_chat_series_uses_the_given_lag() -> None:
+    messages = [ChatMessage(t=30.0, text="hello")]
+    assert chat_series(messages, 40.0, lag=22)[8] == 1.0
+
+
+def _bursts(length: int, at: list[int]) -> np.ndarray:
+    values = np.zeros(length)
+    for second in at:
+        values[second : second + 3] = 1.0
+    return values
+
+
+def test_lag_is_measured_when_chat_clearly_follows_the_sound() -> None:
+    rng = np.random.default_rng(3)
+    at = sorted(rng.choice(np.arange(400, 3200), size=40, replace=False).tolist())
+    events = _bursts(3600, at)
+    reactions = _bursts(3600, [second + 17 for second in at]) * 5
+    assert estimate_lag(reactions, events) == 17
+
+
+def test_lag_is_none_when_chat_does_not_follow_the_sound() -> None:
+    rng = np.random.default_rng(4)
+    events = _bursts(3600, rng.choice(np.arange(400, 3200), size=40).tolist())
+    reactions = rng.random(3600)
+    assert estimate_lag(reactions, events) is None
+    assert estimate_lag(np.zeros(100), np.zeros(100)) is None
+
+
+def test_reaction_counts_are_not_shifted() -> None:
+    messages = [ChatMessage(t=5.5, text="lol"), ChatMessage(t=5.9, text="hi")]
+    counts = reaction_counts(messages, 10)
+    assert counts[5] == 1.0
+    assert counts.sum() == 1.0
+
+
+def test_chat_led_window_looks_back_to_the_cause() -> None:
+    events = np.zeros(600)
+    events[280:284] = 0.9  # a gunfight 20 s before chat reacts
+    reaction, cause, start, end = chat_window(290, 10, events)
+    assert reaction == 300.0
+    assert cause == 280.0
+    assert start == 280.0 - CHAT_LEAD_S
+    assert end == 300.0 + CHAT_TAIL_S
+    # No clear cause: a fixed look-back from the peak.
+    _, none, start, _ = chat_window(290, 10, np.zeros(600))
+    assert none is None
+    assert start == 290.0 - CHAT_FALLBACK_BEFORE_S
+
+
+def test_find_candidates_marks_chat_led_peaks() -> None:
+    duration = 3600
+    chat = [0.0] * duration
+    sound = [0.0] * duration
+    _spike(chat, 1000, 10.0)  # chat leads; the sound event 20 s before the reaction
+    _spike(sound, 985, 3.0)
+    _spike(sound, 2000, 10.0)  # sound leads
+    signals = {"chat": SignalFile(values=chat), "sound": SignalFile(values=sound)}
+    items = find_candidates(signals, float(duration))
+    led = next(item for item in items if abs(item.peak_t - 1000) <= 10)
+    assert led.reaction_t == led.peak_t + 10
+    # The onset of the sound burst (981-989, widened by smoothing).
+    assert led.cause_t is not None and 975 <= led.cause_t <= 989
+    assert led.start < led.cause_t < led.end
+    sound_led = next(item for item in items if item.peak_t == 2000.0)
+    assert sound_led.reaction_t is None
 
 
 def test_find_candidates_windows_and_bounds() -> None:

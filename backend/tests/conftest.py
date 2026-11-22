@@ -12,9 +12,10 @@ FRONTEND_ORIGIN = "http://localhost:3000"
 
 @pytest.fixture(autouse=True)
 def _no_model_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The optional model stages (screen type D-040) download real models at first use; tests
-    run the pipeline without them unless a test sets them up itself."""
+    """The optional model stages (screen type D-040, sound events D-041) download real models
+    at first use; tests run the pipeline without them unless a test sets them up itself."""
     monkeypatch.setattr("app.jobs.video_pipeline.run_screen", lambda *_a, **_k: None)
+    monkeypatch.setattr("app.jobs.video_pipeline.run_sound", lambda *_a, **_k: None)
 
 
 @pytest.fixture

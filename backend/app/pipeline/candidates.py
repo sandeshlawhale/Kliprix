@@ -20,10 +20,17 @@ from app.config import (
     CANDIDATE_EDGE_TAIL_MAX_S,
     CANDIDATE_EDGE_TAIL_SHARE,
     CANDIDATE_MIN_DISTANCE_S,
+    CHAT_CAUSE_MIN,
     CHAT_EDGE_LEAD_MAX_S,
     CHAT_EDGE_LEAD_SHARE,
     CHAT_EDGE_TAIL_MAX_S,
     CHAT_EDGE_TAIL_SHARE,
+    CHAT_FALLBACK_BEFORE_S,
+    CHAT_LAG_S,
+    CHAT_LEAD_S,
+    CHAT_LOOKBACK_S,
+    CHAT_TAIL_S,
+    CLIP_EXTENDED_MAX_S,
     COVERAGE_LONG_COUNT,
     COVERAGE_SHORT_MAX,
     FULL_TRANSCRIBE_MAX_S,
@@ -52,6 +59,8 @@ class SignalScores(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     chat: float | None = None
+    # Sound events (D-041): gunfire, explosions, shouting, laughter, cheering, ...
+    sound: float | None = None
     audio: float | None = None
     motion: float | None = None
     # Set at selection from the transcript (D-033); never in candidates.json.
@@ -71,6 +80,10 @@ class Candidate(BaseModel):
     source: Literal["signals", "coverage"] = "signals"
     # Mean share of each screen type in the window (D-040), e.g. {"gameplay": 0.8, ...}.
     screen: dict[str, float] | None = None
+    # Chat-led window (D-042): chat is the strongest signal at the peak. `reaction_t` is when
+    # chat reacts (peak + delay); `cause_t` the likely cause found before it, if any.
+    reaction_t: float | None = None
+    cause_t: float | None = None
 
 
 class CandidatesFile(BaseModel):
@@ -86,6 +99,7 @@ def find_candidates(
     weights: Mapping[str, float] = SIGNAL_WEIGHTS,
     exclude: Sequence[tuple[float, float]] = (),
     screen: ScreenFile | None = None,
+    chat_lag: int = CHAT_LAG_S,
 ) -> list[Candidate]:
     """Top `CANDIDATE_COUNT` signal windows, best first, then a few coverage windows spread
     over the rest of the video (D-035) so the LLM can judge content the signals missed.
@@ -98,6 +112,7 @@ def find_candidates(
     No peak lies inside an `exclude` range (clips already made, D-034).
     With `screen` (D-040), seconds showing menus, lobbies, loading or black screens lose most
     of their score and get no coverage window.
+    A peak where chat leads (D-042) gets a window that looks back: see `chat_window`.
     """
     length = min(len(signal.values) for signal in signals.values())
     smoothed = {
@@ -129,8 +144,15 @@ def find_candidates(
             # Chat near the stream's edges is greetings and goodbyes: not shown (D-035).
             if name != "chat" or chat_on[peak]
         }
-        start = max(first, float(peak - CANDIDATE_BEFORE_S))
-        end = min(last, float(peak + CANDIDATE_AFTER_S))
+        start = float(peak - CANDIDATE_BEFORE_S)
+        end = float(peak + CANDIDATE_AFTER_S)
+        reaction: float | None = None
+        cause: float | None = None
+        if source == "signals" and _chat_leads(normalized, peak, chat_on):
+            events = normalized.get("sound", normalized.get("audio"))
+            reaction, cause, start, end = chat_window(peak, chat_lag, events)
+        start = max(first, start)
+        end = min(last, end)
         return Candidate(
             peak_t=float(peak),
             start=start,
@@ -139,6 +161,8 @@ def find_candidates(
             signals=SignalScores(**per_signal),
             source=source,
             screen=window_shares(screen, start, end) or None if screen is not None else None,
+            reaction_t=reaction,
+            cause_t=cause,
         )
 
     peaks = pick_peaks(score, CANDIDATE_COUNT, CANDIDATE_MIN_DISTANCE_S, tiebreak)
@@ -147,6 +171,38 @@ def find_candidates(
     for spot in coverage_spots(covered, peaks, wanted, CANDIDATE_MIN_DISTANCE_S):
         items.append(make(spot, "coverage"))
     return items
+
+
+def _chat_leads(
+    normalized: Mapping[str, FloatArray], peak: int, chat_on: npt.NDArray[np.bool_]
+) -> bool:
+    chat = normalized.get("chat")
+    if chat is None or not chat_on[peak] or chat[peak] <= 0:
+        return False
+    return all(chat[peak] >= values[peak] for name, values in normalized.items() if name != "chat")
+
+
+def chat_window(
+    peak: int, lag: int, events: FloatArray | None
+) -> tuple[float, float | None, float, float]:
+    """(reaction_t, cause_t, start, end) for a chat-led peak (D-042). Chat reacts at
+    peak + lag; the cause is the strongest event (sound, else loudness) in the
+    CHAT_LOOKBACK_S before the reaction, when it reaches CHAT_CAUSE_MIN. The window starts
+    CHAT_LEAD_S before the cause (CHAT_FALLBACK_BEFORE_S before the peak without one) and ends
+    CHAT_TAIL_S after the reaction, at most CLIP_EXTENDED_MAX_S long."""
+    reaction = float(peak + lag)
+    cause: float | None = None
+    if events is not None:
+        low = max(0, int(reaction) - CHAT_LOOKBACK_S)
+        high = min(len(events), int(reaction) - 1)
+        if high > low:
+            best = low + int(np.argmax(events[low:high]))
+            if events[best] >= CHAT_CAUSE_MIN:
+                cause = float(best)
+    start = (cause - CHAT_LEAD_S) if cause is not None else float(peak - CHAT_FALLBACK_BEFORE_S)
+    end = reaction + CHAT_TAIL_S
+    start = max(start, end - CLIP_EXTENDED_MAX_S)
+    return reaction, cause, max(0.0, start), end
 
 
 def _scores(
@@ -221,11 +277,14 @@ def run_candidates(
     signals: Mapping[str, SignalFile],
     duration_s: float,
     screen: ScreenFile | None = None,
+    chat_lag: int = CHAT_LAG_S,
 ) -> CandidatesFile:
     """Write `candidates.json` (skipped when a valid copy exists)."""
     cached = load_cached(video_dir)
     if cached is not None:
         return cached
-    result = CandidatesFile(items=find_candidates(signals, duration_s, screen=screen))
+    result = CandidatesFile(
+        items=find_candidates(signals, duration_s, screen=screen, chat_lag=chat_lag)
+    )
     write_json_atomic(video_dir / CANDIDATES_FILE_NAME, result)
     return result

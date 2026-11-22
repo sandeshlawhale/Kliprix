@@ -153,17 +153,42 @@ MOTION_KEYFRAME_PROBE_S = 120
 # ffmpeg timeouts for the signal stages: a fixed allowance plus this much per second of video.
 SIGNAL_TIMEOUT_BASE_S = 120.0
 SIGNAL_TIMEOUT_PER_VIDEO_S = 2.0
-# Chat reacts after the event, so the chat series is shifted earlier by this many seconds.
+# Chat reacts after the event, so the chat series is shifted earlier by this many seconds. D-042:
+# the default; a stream's own delay replaces it when chat reactions and the streamer's sound
+# events line up clearly (correlation peak >= MIN_CORR and >= MIN_GAIN above the curve's median).
 CHAT_LAG_S = 10
-# Extra weight a chat message gets when it contains a laugh/hype token.
+CHAT_LAG_MIN_S = 3
+CHAT_LAG_MAX_S = 30
+CHAT_LAG_MIN_CORR = 0.1
+CHAT_LAG_MIN_GAIN = 0.05
+# Extra weight a chat message gets when it is a reaction (any group below).
 CHAT_HYPE_WEIGHT = 1.0
-CHAT_HYPE_TOKENS = ("lol", "lmao", "😂", "pog", "wtf", "clip it", "gg")
+# Reaction groups (D-042), matched on lowercased text. Very common greetings ("bro", "bhai")
+# are left out on purpose: on the owner's Hinglish stream "bhai" is in 13% of all messages.
+CHAT_GROUP_PATTERNS: dict[str, str] = {
+    "laugh": r"\b(lo+l+|lmao+|lmfao+|haha\w*|hehe\w*|kekw|xd+|rofl|jaja\w*)\b|😂|🤣|💀",
+    "hype": r"\b(pog\w*|w+|gg+|ace|insane|clip( ?it| ?that)?|goat|sheesh|clutch|let'?s ?go+|"
+    r"crazy|massive)\b|🔥|💯|🐐",
+    "shock": r"\b(wtf|omg|wha+t+|no+o|how|wait|yo+)\b|\?{2,}|😱|😳|😮|🤯",
+    "fail": r"\b(l+|ff|trash|noob|bot|ez|rip|f)\b|😭|🤡",
+}
+# A chat-led candidate (D-042): the reaction peak is at peak + lag; its cause is looked for in
+# the CHAT_LOOKBACK_S before it (strongest sound event, else loudness) and the window starts
+# CHAT_LEAD_S before the cause and ends CHAT_TAIL_S after the reaction.
+CHAT_LOOKBACK_S = 30
+CHAT_LEAD_S = 15
+CHAT_TAIL_S = 10
+# Without a clear cause (event value below this), the window is peak - CHAT_FALLBACK_BEFORE_S.
+CHAT_CAUSE_MIN = 0.2
+CHAT_FALLBACK_BEFORE_S = 40
 # Scoring: moving-average window, robust z-score clip range, default signal weights.
 SMOOTH_WINDOW_S = 5
 ROBUST_Z_MAX = 6.0
 # Median absolute deviation to standard deviation for normally distributed data.
 MAD_TO_SIGMA = 1.4826
-SIGNAL_WEIGHTS: dict[str, float] = {"chat": 0.40, "audio": 0.35, "motion": 0.25}
+# D-041: sound events carry most of the audio weight; loudness keeps a little (a streamer's voice
+# rising above their own level), motion less (it cannot tell a menu animation from a fight).
+SIGNAL_WEIGHTS: dict[str, float] = {"chat": 0.35, "sound": 0.35, "audio": 0.15, "motion": 0.15}
 CANDIDATE_COUNT = 12
 CANDIDATE_MIN_DISTANCE_S = 60
 CANDIDATE_BEFORE_S = 25
@@ -262,6 +287,38 @@ SCREEN_SMOOTH_S = 30
 # A fallback clip (no LLM) is never made from a window that is at least this dull.
 SCREEN_FALLBACK_MAX_DULL = 0.45
 SCREEN_MAX_THREADS = 2
+
+# Sound events (D-041): CED-mini audio tagging (AudioSet, 527 classes; Apache-2.0) through
+# sherpa-onnx, int8, 47 MB archive downloaded at first use.
+SOUND_MODEL_NAME = "sherpa-onnx-ced-mini-audio-tagging-2024-04-19"
+SOUND_MODEL_URL = (
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/audio-tagging-models/"
+    f"{SOUND_MODEL_NAME}.tar.bz2"
+)
+SOUND_MODEL_DISK_GB = 0.3
+# Each window of audio is tagged once; 11-12 ms per window on this PC (4 h: about 90 s).
+SOUND_WINDOW_S = 2
+SOUND_MAX_THREADS = 2
+# AudioSet classes in each event group; a group's value is its strongest class.
+SOUND_GROUPS: dict[str, tuple[str, ...]] = {
+    "gunfire": ("Gunshot, gunfire", "Machine gun", "Fusillade", "Artillery fire", "Cap gun"),
+    "explosion": ("Explosion", "Boom", "Burst, pop"),
+    "shouting": ("Shout", "Yell", "Screaming", "Battle cry", "Whoop", "Bellow",
+                 "Children shouting"),
+    "laughter": ("Laughter", "Giggle", "Snicker", "Belly laugh", "Chuckle, chortle"),
+    "cheering": ("Cheering", "Applause", "Crowd", "Clapping"),
+    "crash": ("Smash, crash", "Shatter", "Glass", "Breaking"),
+    "vehicle": ("Skidding", "Tire squeal", "Siren", "Car alarm", "Vehicle horn, car horn, honking"),
+    "speech": ("Speech",),
+    "music": ("Music",),
+}  # fmt: skip
+# How much each group adds to the sound signal (speech and music are facts for the LLM only).
+SOUND_EXCITEMENT: dict[str, float] = {
+    "gunfire": 1.0, "explosion": 1.0, "shouting": 1.0, "laughter": 1.0,
+    "cheering": 0.8, "crash": 0.8, "vehicle": 0.4,
+}  # fmt: skip
+# Group values below this are not saved (keeps sound_events.json small).
+SOUND_SAVE_MIN = 0.1
 
 # LLM (docs/10). Timeout per call, temperatures, backoff waits on 429/5xx before giving up.
 LLM_TIMEOUT_S = 90.0
