@@ -101,3 +101,43 @@ def test_face_crop_stream_and_edit_inside_handles(source: Path, tmp_path: Path) 
         models_dir=tmp_path / "models", ffmpeg_path=None, memory=MEMORY,
     )  # fmt: skip
     assert probe_streams(out, None).video_s == pytest.approx(12.0, abs=0.05)
+
+
+def _dominant_hz(path: Path, start: float, end: float) -> float:
+    """The loudest frequency of the rendered audio between start and end (seconds)."""
+    import numpy as np
+
+    assert FFMPEG is not None
+    raw = subprocess.run(  # noqa: S603 - fixed test command
+        [
+            FFMPEG, "-hide_banner", "-loglevel", "error", "-ss", str(start), "-t",
+            str(end - start), "-i", str(path), "-ac", "1", "-ar", "8000", "-f", "s16le", "-",
+        ],
+        check=True, capture_output=True,
+    ).stdout  # fmt: skip
+    samples = np.frombuffer(raw, dtype=np.int16).astype(np.float64)
+    spectrum = np.abs(np.fft.rfft(samples))
+    return float(np.fft.rfftfreq(len(samples), 1 / 8000)[int(np.argmax(spectrum))])
+
+
+@needs_ffmpeg
+def test_bad_words_are_bleeped(source: Path, tmp_path: Path) -> None:
+    words = [
+        Word(text="okay", start=0.0, end=1.0),
+        Word(text="fuck", start=2.0, end=3.0),
+        Word(text="bhai", start=3.5, end=4.0),
+    ]
+    clip = ClipSpec(
+        start_s=6.0, end_s=12.0, title="Bleep test", show_title=True,
+        style="pop", crop="full", blur=30, words=words,
+    )  # fmt: skip
+    out = tmp_path / "bleep.mp4"
+    render_clip(
+        SourceVideo(source, LENGTH, SRC_W, SRC_H), tmp_path / "work", clip, out, "preview",
+        models_dir=tmp_path / "models", ffmpeg_path=None, memory=MEMORY,
+    )  # fmt: skip
+    assert _dominant_hz(out, 2.2, 2.8) == pytest.approx(1000, abs=20)
+    assert _dominant_hz(out, 4.2, 5.5) == pytest.approx(440, abs=20)
+    streams = probe_streams(out, None)
+    assert streams.audio_s is not None
+    assert abs(streams.video_s - streams.audio_s) < 0.1

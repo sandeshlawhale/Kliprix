@@ -34,13 +34,17 @@ from app.core.proc import CommandError, run_command
 from app.pipeline.transcribe import Word
 from app.render import layout_constants as lc
 from app.render.ass import CaptionStyle, build_ass
-from app.render.censor import censor_text, censor_words
+from app.render.censor import bleep_spans, censor_text, censor_words
 from app.render.fonts import WORK_FONTS_DIR_NAME, install_fonts
 from app.render.layout import Layout, blur_radius
 
 logger = logging.getLogger(__name__)
 
 ASS_FILE_NAME = "captions.ass"
+# Beep over bad words (D-048): a 1 kHz tone, quieter than full scale.
+BEEP_HZ = 1000
+BEEP_VOLUME = 0.25
+AUDIO_RATE = 48000
 Quality = Literal["final", "preview"]
 
 
@@ -89,6 +93,20 @@ def filter_graph(job: RenderJob, quality: Quality) -> str:
     return ";".join([background, foreground, compose])
 
 
+def bleep_graph(spans: list[tuple[float, float]], duration_s: float) -> str:
+    """Audio filters that mute input 0's audio during `spans` and lay a beep over them,
+    output label [a]. Times are seconds from the clip start (input 0 is seeked, so t
+    starts at 0)."""
+    on = "+".join(f"between(t,{start:.3f},{end:.3f})" for start, end in spans)
+    muted = f"[0:a:0]aresample={AUDIO_RATE},volume=0:enable='{on}'[mute]"
+    beep = (
+        f"sine=frequency={BEEP_HZ}:sample_rate={AUDIO_RATE}:duration={duration_s:.3f},"
+        f"volume={BEEP_VOLUME},volume=0:enable='not({on})'[beep]"
+    )
+    mix = "[mute][beep]amix=inputs=2:duration=first:normalize=0[a]"
+    return ";".join([muted, beep, mix])
+
+
 def render(
     job: RenderJob,
     out: Path,
@@ -115,6 +133,15 @@ def render(
         )
     install_fonts(job.work_dir)
     write_ass(job)
+    spans = bleep_spans(job.words, job.duration_s)
+    if spans and probe_streams(job.work_dir / "cut.mp4", ffmpeg_path).audio_s is None:
+        spans = []
+    graph = filter_graph(job, quality)
+    audio_map = "0:a:0?"
+    if spans:
+        graph += ";" + bleep_graph(spans, job.duration_s)
+        audio_map = "[a]"
+        logger.info("bleeping %d bad-word spans", len(spans))
     crf, preset = (
         (lc.FINAL_CRF, lc.FINAL_PRESET)
         if quality == "final"
@@ -126,8 +153,8 @@ def render(
         ffmpeg, "-hide_banner", "-nostdin", "-y", "-loglevel", "error",
         *ffmpeg_thread_args(memory),
         *seek, "-i", "cut.mp4", *seek, "-i", job.fg_file,
-        "-filter_complex", filter_graph(job, quality),
-        "-map", "[v]", "-map", "0:a:0?",
+        "-filter_complex", graph,
+        "-map", "[v]", "-map", audio_map,
         "-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-pix_fmt", "yuv420p",
         "-r", str(lc.FPS), "-c:a", "aac", "-b:a", lc.AUDIO_BITRATE,
         "-movflags", "+faststart", "-t", f"{job.duration_s:.3f}", str(temp.resolve()),
