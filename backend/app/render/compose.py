@@ -34,6 +34,7 @@ from app.core.proc import CommandError, run_command
 from app.pipeline.transcribe import Word
 from app.render import layout_constants as lc
 from app.render.ass import CaptionStyle, build_ass
+from app.render.censor import censor_text, censor_words
 from app.render.fonts import WORK_FONTS_DIR_NAME, install_fonts
 from app.render.layout import Layout, blur_radius
 
@@ -60,7 +61,8 @@ class RenderJob:
 
 def write_ass(job: RenderJob) -> Path:
     path = job.work_dir / ASS_FILE_NAME
-    text = build_ass(job.words, job.style, job.title, job.layout, job.duration_s)
+    title = censor_text(job.title) if job.title else job.title
+    text = build_ass(censor_words(job.words), job.style, title, job.layout, job.duration_s)
     temp = path.with_suffix(".part")
     temp.write_text(text, encoding="utf-8")
     temp.replace(path)
