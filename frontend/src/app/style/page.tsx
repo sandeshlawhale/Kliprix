@@ -24,7 +24,7 @@ export default function StylePage() {
   const saved = settings.data?.style_defaults;
   const style = draft ?? saved;
 
-  if (settings.isPending) return <Skeleton className="h-96 w-full max-w-3xl" />;
+  if (settings.isPending) return <Skeleton className="h-96 w-full" />;
   if (settings.isError || !style)
     return (
       <p role="alert" className="text-destructive">
@@ -48,7 +48,7 @@ export default function StylePage() {
     );
 
   return (
-    <div className="flex max-w-3xl flex-col gap-8">
+    <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between gap-3">
           <Button variant="ghost" size="sm" asChild className="-ml-2.5">

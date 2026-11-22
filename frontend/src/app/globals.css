@@ -137,6 +137,8 @@
   }
   html {
     @apply font-sans;
+    /* Same content position on short and long pages (no shift when the scrollbar appears). */
+    scrollbar-gutter: stable;
   }
   ::selection {
     background: color-mix(in oklch, var(--brand) 28%, transparent);
