@@ -51,4 +51,30 @@ class TitleAnswer(BaseModel):
     clips: list[TitleText]
 
 
+class ReviewClip(BaseModel):
+    """Round 2 (D-046): one draft kept (with fixed times and text) or dropped."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: int
+    keep: bool = True
+    problem: str = ""
+    start: float | None = None
+    end: float | None = None
+    category: str = ""
+    title: str = ""
+    youtube_title: str = ""
+    youtube_description: str = ""
+    hashtags: list[str] = Field(default_factory=list)
+    linkedin_post: str = ""
+    reason: str = ""
+    score: float = 0.5
+
+
+class ReviewAnswer(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    clips: list[ReviewClip]
+
+
 TransliterationAnswer: TypeAdapter[list[str]] = TypeAdapter(list[str])

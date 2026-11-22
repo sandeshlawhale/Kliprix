@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.config import AppConfig
 from app.main import create_app
+from app.pipeline.review import VideoReaders
 
 FRONTEND_ORIGIN = "http://localhost:3000"
 
@@ -18,6 +19,10 @@ def _no_model_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.jobs.video_pipeline.run_screen", lambda *_a, **_k: None)
     monkeypatch.setattr("app.jobs.video_pipeline.run_sound", lambda *_a, **_k: None)
     monkeypatch.setattr("app.jobs.video_pipeline.read_frames", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        "app.jobs.video_pipeline.video_readers",
+        lambda *_a, **_k: VideoReaders(screens=None, text=None, frame=None),
+    )
 
 
 @pytest.fixture

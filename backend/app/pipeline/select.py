@@ -12,7 +12,8 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -33,6 +34,10 @@ from app.config import (
     CONTEXT_FIX_SENTENCES,
     DANGLING_STARTS,
     LLM_SELECT_TEMPERATURE,
+    REVIEW_DRAFT_FACTOR,
+    REVIEW_DRAFT_MAX,
+    REVIEW_MIN_S,
+    REVIEW_WORKERS,
     SCREEN_FALLBACK_MAX_DULL,
     SENTENCE_SNAP_S,
     SPEECH_FALLBACK_MIN_WPS,
@@ -40,20 +45,30 @@ from app.config import (
     SPEECH_FULL_WPS,
     SPEECH_VIDEO_MIN_WPS,
 )
-from app.core.errors import AppError
+from app.core.errors import AppError, ErrorCode
 from app.core.files import write_json_atomic
 from app.llm.client import LlmClient
 from app.llm.prompts import (
     PromptCandidate,
     TitleClip,
     clock,
+    review_system,
+    review_user,
     select_system,
     select_user,
     title_system,
     title_user,
 )
-from app.llm.schemas import LlmClip, SelectionAnswer, TitleAnswer
+from app.llm.schemas import (
+    LlmClip,
+    ReviewAnswer,
+    ReviewClip,
+    SelectionAnswer,
+    TitleAnswer,
+)
 from app.pipeline.candidates import Candidate
+from app.pipeline.review import ClipAnalysis
+from app.pipeline.review import describe as describe_analysis
 from app.pipeline.screen import ScreenFile, describe, dull_share, window_shares
 from app.pipeline.screen_text import ScreenText, texts_between
 from app.pipeline.sentences import (
@@ -693,8 +708,10 @@ def run_select(
     extended: bool,
     client: LlmClient,
     evidence: Evidence | None = None,
+    reviewer: Reviewer | None = None,
 ) -> SelectionFile:
-    """Write `selection.json` (skipped when a valid copy exists).
+    """Write `selection.json` (skipped when a valid copy exists). With a `reviewer` (D-046)
+    round 1 drafts more clips and round 2 keeps, fixes or drops them after a close look.
 
     Raises:
         AppError: LLM_AUTH_FAILED, LLM_RATE_LIMITED, or LLM_BAD_RESPONSE from the call.
@@ -705,14 +722,17 @@ def run_select(
     # Candidate ids in the prompt and in the answer refer to this re-ranked list.
     candidates = rank_by_speech(candidates, all_words(transcript))
     seen = evidence or Evidence()
-    system = select_system(count, extended)
+    drafts = draft_count(count, reviewer)
+    system = select_system(drafts, extended)
     user = select_user(
-        facts.title, facts.channel, facts.duration_s, count,
+        facts.title, facts.channel, facts.duration_s, drafts,
         prompt_candidates(candidates, transcript, seen), video_facts=video_facts(seen),
     )  # fmt: skip
     answer = client.complete_json(system, user, SelectionAnswer, LLM_SELECT_TEMPERATURE)
-    selection = build_selection(answer, candidates, facts, transcript, count, extended)
-    selection = SelectionFile(clips=write_titles(selection.clips, facts, transcript, seen, client))
+    drafted = build_selection(answer, candidates, facts, transcript, drafts, extended).clips
+    selection = SelectionFile(
+        clips=finish(drafted, count, facts, transcript, seen, client, reviewer)
+    )
     write_json_atomic(video_dir / SELECTION_FILE_NAME, selection)
     return selection
 
@@ -727,6 +747,7 @@ def select_more(
     extended: bool,
     client: LlmClient,
     evidence: Evidence | None = None,
+    reviewer: Reviewer | None = None,
 ) -> list[SelectionClip]:
     """More clips for a video that has some (D-034): the same selection as `run_select`, but
     the prompt lists the clips already made, no new clip may overlap or come within the gap
@@ -739,12 +760,176 @@ def select_more(
         return []
     candidates = rank_by_speech(candidates, all_words(transcript))
     seen = evidence or Evidence()
-    system = select_system(count, extended)
+    drafts = draft_count(count, reviewer)
+    system = select_system(drafts, extended)
     user = select_user(
-        facts.title, facts.channel, facts.duration_s, count,
+        facts.title, facts.channel, facts.duration_s, drafts,
         prompt_candidates(candidates, transcript, seen), taken=taken,
         video_facts=video_facts(seen),
     )  # fmt: skip
     answer = client.complete_json(system, user, SelectionAnswer, LLM_SELECT_TEMPERATURE)
-    chosen = build_selection(answer, candidates, facts, transcript, count, extended, taken)
-    return write_titles(chosen.clips, facts, transcript, seen, client)
+    drafted = build_selection(answer, candidates, facts, transcript, drafts, extended, taken).clips
+    return finish(drafted, count, facts, transcript, seen, client, reviewer, taken)
+
+
+# ---------- round 2: the review (D-046) ----------
+
+# (draft id, start, end) -> the close analysis of that draft.
+Reviewer = Callable[[int, float, float], ClipAnalysis]
+
+
+def draft_count(count: int, reviewer: Reviewer | None) -> int:
+    """Round 1 drafts REVIEW_DRAFT_FACTOR x the clips wanted when a review follows."""
+    if reviewer is None:
+        return count
+    return max(count, min(REVIEW_DRAFT_MAX, count * REVIEW_DRAFT_FACTOR))
+
+
+def finish(
+    drafts: Sequence[SelectionClip],
+    count: int,
+    facts: VideoFacts,
+    transcript: TranscriptFile | None,
+    evidence: Evidence,
+    client: LlmClient,
+    reviewer: Reviewer | None,
+    taken: Sequence[Window] = (),
+) -> list[SelectionClip]:
+    """The final clips: reviewed when there is a reviewer, then the title step for any clip
+    still without LLM text."""
+    if reviewer is None or not drafts:
+        chosen = list(drafts[:count])
+    else:
+        chosen = review_clips(drafts, count, facts, transcript, client, reviewer, taken)
+    return write_titles(chosen, facts, transcript, evidence, client)
+
+
+def review_clips(
+    drafts: Sequence[SelectionClip],
+    count: int,
+    facts: VideoFacts,
+    transcript: TranscriptFile | None,
+    client: LlmClient,
+    reviewer: Reviewer,
+    taken: Sequence[Window] = (),
+) -> list[SelectionClip]:
+    """Round 2 (D-046): analyse every draft closely, send the timelines (and frames, when the
+    model takes images) to the LLM, and apply its verdicts: kept clips with fixed times and
+    text, best first; dropped ones are gone. Drafts it did not mention fill up to `count`.
+    If the call fails, the first `count` drafts are used as they are (logged)."""
+    # Drafts are analysed REVIEW_WORKERS at a time: most of the time is ffmpeg seeks and OCR.
+    with ThreadPoolExecutor(max_workers=REVIEW_WORKERS, thread_name_prefix="review") as pool:
+        analyses = list(
+            pool.map(lambda pair: reviewer(pair[0], pair[1].start, pair[1].end), enumerate(drafts))
+        )
+    timelines = [(describe_analysis(a), [label for label, _ in a.frames]) for a in analyses]
+    images = [image for a in analyses for _, image in a.frames]
+    system = review_system(count, REVIEW_MIN_S)
+    user = review_user(facts.title, facts.channel, count, timelines)
+    answer: ReviewAnswer | None = None
+    for attached in [images, []] if images else [[]]:
+        try:
+            answer = client.complete_json(
+                system, user if attached else _without_images(user), ReviewAnswer,
+                LLM_SELECT_TEMPERATURE, images=attached,
+            )  # fmt: skip
+            break
+        except AppError as exc:
+            logger.warning("review call failed (images=%s): %s", len(attached), exc.code)
+            # A model without image input answers badly; try once more with text only.
+            if exc.code != ErrorCode.LLM_BAD_RESPONSE or not attached:
+                break
+    if answer is None:
+        return list(drafts[:count])
+    words = all_words(transcript)
+    kept: list[SelectionClip] = []
+    handled: set[int] = set()
+    ordered = sorted(enumerate(answer.clips), key=lambda p: (not p[1].keep, -p[1].score, p[0]))
+    for _, verdict in ordered:
+        if not 0 <= verdict.id < len(drafts) or verdict.id in handled:
+            continue
+        handled.add(verdict.id)
+        if not verdict.keep:
+            logger.info("review dropped draft %s: %s", verdict.id, verdict.problem[:120])
+            continue
+        if len(kept) >= count:
+            continue
+        clip = apply_verdict(verdict, drafts[verdict.id], analyses[verdict.id], facts, words)
+        if clip is None or conflicts(clip.start, clip.end, kept, taken):
+            logger.info("review kept draft %s but its times do not fit", verdict.id)
+            continue
+        kept.append(clip)
+    for index, draft in enumerate(drafts):
+        if len(kept) >= count:
+            break
+        if index not in handled and not conflicts(draft.start, draft.end, kept, taken):
+            kept.append(draft)
+    logger.info("review drafts=%s kept=%s images=%s", len(drafts), len(kept), len(images))
+    return kept
+
+
+def _without_images(user: str) -> str:
+    return "\n".join(line for line in user.splitlines() if not line.startswith("Images: "))
+
+
+def cut_at_scene_end(start: float, end: float, analysis: ClipAnalysis) -> tuple[float, float]:
+    """A clip never runs across a round or scene end (D-046): at an end inside it, keep the
+    side with more action (the earlier side on a tie)."""
+    for t, _ in analysis.scene_ends:
+        if not start + 3 < t < end - 3:
+            continue
+        before = sum(1 for a in analysis.actions if start <= a < t)
+        after = sum(1 for a in analysis.actions if t <= a < end)
+        if after > before:
+            start = t
+        else:
+            end = t
+    return start, end
+
+
+def apply_verdict(
+    verdict: ReviewClip,
+    draft: SelectionClip,
+    analysis: ClipAnalysis,
+    facts: VideoFacts,
+    words: Sequence[Word],
+) -> SelectionClip | None:
+    """The draft with the reviewer's times (kept inside the analysed zone, whole sentences,
+    never across a scene end) and text. None when too short to keep."""
+    start = draft.start if verdict.start is None else verdict.start
+    end = draft.end if verdict.end is None else verdict.end
+    start, end = max(analysis.zone_start, start), min(analysis.zone_end, end)
+    if end - start < REVIEW_MIN_S:
+        return None
+    start, end = cut_at_scene_end(start, end, analysis)
+    max_len = CLIP_EXTENDED_MAX_S if end - start > CLIP_STANDARD_MAX_S else CLIP_STANDARD_MAX_S
+    window = fit_window(start, end, facts.duration_s, max_len, words)
+    if window is not None:
+        # Sentence snapping may move an edge a few seconds: back inside the scene.
+        start, end = cut_at_scene_end(window[0], window[1], analysis)
+    if end - start < REVIEW_MIN_S:
+        return None
+    title = clean_title(verdict.title)
+    category = strip_emoji(verdict.category).strip().strip(".:").capitalize()[:20]
+    reason = verdict.reason.strip()
+    reason = f"{category}: {reason}" if category and reason else reason or draft.reason
+    return SelectionClip(
+        start=round(start, TIME_DECIMALS),
+        end=round(end, TIME_DECIMALS),
+        title=title or draft.title,
+        youtube_title=truncate_words(
+            verdict.youtube_title.strip() or title or draft.youtube_title, YOUTUBE_TITLE_MAX_CHARS
+        ),
+        youtube_description=truncate_words(
+            verdict.youtube_description.strip() or draft.youtube_description,
+            DESCRIPTION_MAX_CHARS,
+        ),
+        hashtags=clean_hashtags(verdict.hashtags) if verdict.hashtags else draft.hashtags,
+        linkedin_post=truncate_words(
+            verdict.linkedin_post.strip() or draft.linkedin_post, LINKEDIN_MAX_CHARS
+        ),
+        reason=truncate_words(reason, REASON_MAX_CHARS),
+        score=min(1.0, max(0.0, verdict.score)),
+        needs_extended=end - start > CLIP_STANDARD_MAX_S,
+        from_llm=bool(title) or draft.from_llm,
+    )

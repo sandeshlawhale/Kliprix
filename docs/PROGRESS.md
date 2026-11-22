@@ -25,6 +25,9 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 ## In progress (exact next step)
 Nothing in progress. **Next step: the owner runs the checks below.** Start the app with `scripts\start.bat` (Windows) or `./scripts/start.sh`, configure a real key in Configure API, and paste 3 links. Fix anything found, then tag `m3`…`m10` once each milestone's check passes (the agent did not tag them because the owner checks are open). Then consider proposal P-001 (video retry endpoint) in `14-decisions-log.md`.
 
+## Two-round selection (D-046, 2026-11-22), on `dev`
+After a real Valorant run gave a "1v4" clip without a kill and clips crossing rounds: round 1 drafts 10, each draft gets a close look 20 s around it (screen, sounds, text, speech, scene ends, 5 frames), round 2 asks the LLM to keep/fix/drop and pick 5; clips never cross a scene end. 143 s for 10 drafts on the 25-min video, peak 1.0 GB. **Owner check:** restart the app, run "Jett to Rank 1 begins…" again in a new batch → clips contain their kill/payoff, start near the action, stay in one round, titles only claim what is shown; the batch takes about 2.5 min longer in "Pick clips". **Not checked:** a real round-2 LLM answer (no key here), the image request on providers other than Gemini.
+
 ## Smarter clip picking (D-040…D-045, 2026-11-22), on `dev`
 Owner: a Valorant link gave clips of the home screen and agent select; gameplay without chat/speech was picked at random; titles were the first words of the transcript; podcast clips lacked context. Built (each with its decision row, tests, and a real run on the owner's downloads in `data/downloads/`):
 - **D-040 screen type** (CLIP ViT-B/32 int8, 89 MB at first use): menus/lobbies/agent select/loading lose their score. Valorant stream: lobby runs 0.48-0.78 "dull", gameplay 0.14-0.45; old top picks 1:03, 3:24, 4:29 (lobby/agent select) are gone.

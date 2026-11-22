@@ -298,6 +298,46 @@ OCR_MIN_CONFIDENCE = 0.8
 OCR_OVERLAY_SHARE = 0.5
 OCR_TEXTS_MAX = 12
 
+# Two-round selection (D-046): round 1 drafts REVIEW_DRAFT_FACTOR x the clips wanted (at most
+# REVIEW_DRAFT_MAX); each draft is analysed closely from REVIEW_ZONE_S before its start to
+# REVIEW_ZONE_S after its end (screen type and sounds every REVIEW_STEP_S, on-screen text
+# every REVIEW_OCR_STEP_S, at most REVIEW_OCR_MAX frames, scene ends, transcript, a few
+# frames); round 2 sends those descriptions (and the frames) back to the LLM, which keeps,
+# fixes or drops each draft and picks the best.
+REVIEW_DRAFT_FACTOR = 2
+REVIEW_DRAFT_MAX = 10
+REVIEW_ZONE_S = 20.0
+REVIEW_STEP_S = 2
+REVIEW_OCR_STEP_S = 4
+REVIEW_OCR_MAX = 12
+# Frames sent to the LLM per draft: offsets as shares of the clip (start, a third, two thirds,
+# end) plus one REVIEW_AFTER_FRAME_S after the end; small JPEGs.
+REVIEW_FRAME_SHARES = (0.0, 0.33, 0.67, 1.0)
+REVIEW_AFTER_FRAME_S = 8.0
+REVIEW_FRAME_WIDTH = 384
+REVIEW_JPEG_QUALITY = 6
+# A sound group at or above this is an action at that moment.
+REVIEW_SOUND_MIN = 0.3
+# Frames at least this dull (menu + waiting share) for REVIEW_DULL_ROWS rows in a row are a
+# menu, death screen or round scoreboard: a scene end. The in-round scoreboard (TAB, "KDA",
+# "LOADOUT") is not one: it showed mid-round on the owner's video, so those words are not
+# round markers; a single dull frame is not one either. Calibrated on the owner's Valorant
+# video: 0.52-0.76 at the death screen and round scoreboard, at most 0.44 during play.
+REVIEW_DULL_MIN = 0.5
+REVIEW_DULL_ROWS = 2
+# On-screen words and spoken phrases that end a round or a scene (lowercase regexes).
+SCENE_END_TEXT = (
+    # OCR often drops spaces ("ROUND22", "MATCHPOINT", "PRESSTO BUY"), so they are optional.
+    r"buy ?phase|press ?to ?buy|match ?point|round ?(won|lost|over)|\bround ?\d+\b|victory|"
+    r"defeat|killed ?by|you died|spike ?(detonated|defused)|game over|wasted|busted|"
+    r"mission (passed|failed)|respawn"
+)
+SCENE_END_SPEECH = r"\b(new game|next game|next round|new round|round \d+|game \d+)\b"
+# The review keeps clips between these lengths after its fixes.
+REVIEW_MIN_S = 10.0
+# Drafts analysed at the same time (each runs its own ffmpeg seeks and OCR).
+REVIEW_WORKERS = 3
+
 # Sound events (D-041): CED-mini audio tagging (AudioSet, 527 classes; Apache-2.0) through
 # sherpa-onnx, int8, 47 MB archive downloaded at first use.
 SOUND_MODEL_NAME = "sherpa-onnx-ced-mini-audio-tagging-2024-04-19"

@@ -8,6 +8,7 @@ per call and never logged.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -104,6 +105,20 @@ def extract_json(text: str) -> Any:
     raise ValueError("the reply is not valid JSON")
 
 
+def user_content(text: str, images: Sequence[bytes]) -> str | list[dict[str, Any]]:
+    """The user message: plain text, or text then images as data URLs (the OpenAI format,
+    which LiteLLM passes to Gemini, Anthropic, OpenAI and compatible servers)."""
+    if not images:
+        return text
+    parts: list[dict[str, Any]] = [{"type": "text", "text": text}]
+    for image in images:
+        encoded = base64.b64encode(image).decode("ascii")
+        parts.append(
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}}
+        )
+    return parts
+
+
 class LlmClient:
     """Calls the session's model. `completion` and `sleep` are replaceable in tests only."""
 
@@ -122,7 +137,7 @@ class LlmClient:
         self._backoff_s = tuple(backoff_s)
 
     def _call(
-        self, messages: list[dict[str, str]], temperature: float, max_tokens: int | None = None
+        self, messages: list[dict[str, Any]], temperature: float, max_tokens: int | None = None
     ) -> str:
         """One completion with retries on rate limits and server errors; returns the text."""
         kwargs: dict[str, Any] = {
@@ -167,10 +182,15 @@ class LlmClient:
         user: str,
         schema: type[T] | TypeAdapter[T],
         temperature: float,
+        images: Sequence[bytes] = (),
     ) -> T:
-        """Ask for JSON and validate it; one repair retry, then LLM_BAD_RESPONSE."""
+        """Ask for JSON and validate it; one repair retry, then LLM_BAD_RESPONSE. `images`
+        (JPEG bytes, D-046) follow the user text in the same message, in order."""
         adapter: TypeAdapter[T] = schema if isinstance(schema, TypeAdapter) else TypeAdapter(schema)
-        messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_content(user, images)},
+        ]
         reply = self._call(messages, temperature)
         try:
             return adapter.validate_python(extract_json(reply))

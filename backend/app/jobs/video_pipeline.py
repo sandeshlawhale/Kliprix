@@ -38,10 +38,12 @@ from app.pipeline.download import load_cached as load_download
 from app.pipeline.download import max_download_height, run_download
 from app.pipeline.hinglish import to_hinglish
 from app.pipeline.motion import run_motion
+from app.pipeline.review import ClipAnalysis, analyse, video_readers
 from app.pipeline.screen import ScreenFile, run_screen
 from app.pipeline.screen_text import ScreenText, frame_times, read_frames
 from app.pipeline.select import (
     Evidence,
+    Reviewer,
     SelectionClip,
     VideoFacts,
     all_words,
@@ -263,6 +265,7 @@ class VideoPipeline:
                 analysis.screen, analysis.events, chat.items if chat else (),
                 self._screen_text(candidates.items, duration),
             ),
+            reviewer=self._reviewer(duration, analysis.events, transcript),
         )  # fmt: skip
 
         self._stage("clips")
@@ -338,6 +341,7 @@ class VideoPipeline:
                     analysis.screen, analysis.events, replay.items if replay else (),
                     self._screen_text(candidates, duration),
                 ),
+                reviewer=self._reviewer(duration, analysis.events, transcript),
             )  # fmt: skip
             words = all_words(transcript)
         self._stage("clips")
@@ -503,6 +507,29 @@ class VideoPipeline:
                 logger.warning("screen text failed video=%s: %s", self.video_id, exc)
                 self._add_note(SCREEN_TEXT_FAILED_NOTE)
                 return None
+
+    def _reviewer(
+        self, duration: float, events: SoundEvents | None, transcript: TranscriptFile | None
+    ) -> Reviewer | None:
+        """The close analysis of each draft for round 2 (D-046). Each reader inside it is
+        optional; when none can start, there is no second round (logged)."""
+        try:
+            readers = video_readers(
+                self.ctx.video_dir(self.video_id), self.ctx.data_dir / "models",
+                self.ctx.config.ffmpeg_path, self.cancel,
+            )  # fmt: skip
+        except AppError as exc:
+            logger.warning("review off video=%s: %s", self.video_id, exc.code)
+            return None
+        words = all_words(transcript)
+
+        def review(clip_id: int, start: float, end: float) -> ClipAnalysis:
+            with stage_timer("review_clip", video=self.video_id):
+                return analyse(
+                    clip_id, start, end, duration, events=events, words=words, readers=readers
+                )
+
+        return review
 
     def _add_note(self, text: str) -> None:
         with self.ctx.session_factory() as session:

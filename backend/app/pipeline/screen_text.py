@@ -186,8 +186,10 @@ def read_frames(
     ffmpeg_path: str | None,
     reader: Reader | None = None,
     cancel: threading.Event | None = None,
+    grab: Callable[[float], np.ndarray[Any, np.dtype[np.uint8]] | None] | None = None,
 ) -> ScreenText:
-    """Read the frames at `times`, reusing those already in the cache, and save the cache."""
+    """Read the frames at `times`, reusing those already in the cache, and save the cache.
+    `grab` replaces the frame grab (the review shares its frames, D-046)."""
     cached = load_text(video_dir)
     frames = dict(cached.frames) if cached is not None else {}
     missing = [t for t in times if f"{t:g}" not in frames]
@@ -196,7 +198,7 @@ def read_frames(
         for t in missing:
             if cancel is not None and cancel.is_set():
                 raise CommandCancelledError("on-screen text was cancelled")
-            image = grab_frame(video_dir, t, ffmpeg_path)
+            image = grab(t) if grab is not None else grab_frame(video_dir, t, ffmpeg_path)
             texts = [] if image is None else read(image)
             frames[f"{t:g}"] = [
                 text.strip() for text, score in texts
