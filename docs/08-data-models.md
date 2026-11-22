@@ -36,6 +36,7 @@ clips(id PK, video_id FK, batch_id FK, idx INT, status, stage, progress REAL,
       hashtags_json, linkedin_post, reason, score REAL,
       caption_style, caption_language, crop_mode, blur INT,
       words_json,                      -- [{text,start,end}] relative to clip start
+      blur_boxes_json,                 -- [{start,end,x,y,w,h}] manual blur boxes (D-048, migration 0004)
       edited INT, thumbnail_path, preview_path, export_path,
       error_code, error_message, created_at, updated_at)
   status: queued | running | done | failed | cancelled

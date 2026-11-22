@@ -5,7 +5,7 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 ## Current state
 - **Current milestone:** all milestones built (M3→M10 in one run, D-027). **Waiting for the owner's checks** below; no milestone after M0–M2 is tagged yet.
 - **Status:** M0–M2 verified and tagged (`m0`, `m1`, `m2`). M3–M10 built and checked by the agent as far as possible without the owner (real runs on this machine, see "M3–M9 output" and "M10 output"); owner-only checks are listed below.
-- **Last session:** 2026-11-22, Claude Code (Claude Opus 5.5): D-040...D-047 smarter clip picking and two-round selection; three real runs on the owner's Valorant video (see "Real runs of the two-round selection"), on `dev`
+- **Last session:** 2026-11-22, Claude Code (Claude Opus 5.5): D-048 censoring (stars, beeps, manual blur boxes), on `dev`; the GTA re-run waits for the owner (see "Censoring")
 - **Last commit:** see `git log -1`
 - **Branches (owner, 2026-11-21):** all development happens on `dev`; `main` gets a merge only after the owner confirms the work runs. Never commit straight to `main`.
 
@@ -24,6 +24,16 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 
 ## In progress (exact next step)
 Nothing in progress. **Next step: the owner runs the checks below.** Start the app with `scripts\start.bat` (Windows) or `./scripts/start.sh`, configure a real key in Configure API, and paste 3 links. Fix anything found, then tag `m3`…`m10` once each milestone's check passes (the agent did not tag them because the owner checks are open). Then consider proposal P-001 (video retry endpoint) in `14-decisions-log.md`.
+
+## Censoring (D-048, 2026-11-22), on `dev`
+Owner (GTA streams): stars in bad words, beep the audio, blur bad scenes; try automatic detection first, manual if it does not work.
+- **Words** (`backend/app/render/censor.py`): English + Hinglish (Roman, Devanagari) list; captions and the on-video title show the middle half as `*` ("f**k", "ch****a"). Stored words and the editor keep the real text. "chod", "saala", "kutta", "damn" are left out on purpose (ordinary words too).
+- **Audio**: listed words and words Whisper already wrote with `*` ("F***", "Bh**", seen in the old GTA clip) are muted and covered by a 1 kHz beep (word time +-0.05 s). Real check: the old GTA cutscene clip re-rendered with 9 beeps.
+- **Automatic picture detection: does not work on GTA** (measured on the CarryisLive stream, bed cutscene at 10165-10178 s): NudeNet 3.4.2 found nothing on 120 frames, tiled full-res frames, or cropped+upscaled bed shots (latex/lingerie, no exposed nudity); CLIP zero-shot scored the scene 0.12-0.44 while bikinis/bar/hug frames elsewhere reached 0.78 (31 of 480 sampled frames above 0.3). NudeNet was uninstalled; nothing automatic was added.
+- **Manual blur boxes**: clip page → Edit → "Blur boxes": play to the moment, "Add blur box at N s", drag/resize it on the video, set From/To (or "= now"), Apply, Preview. Checked in the browser on a copy of the data: box saved (`blur_boxes` 0-14 s over the bed), preview blurs the bed for 0-14 s only, captions sharp on top. Limit: after Apply the old preview is deleted (existing rule), so boxes can be moved again only after the next preview.
+- Checks: pytest all passed, ruff/format/mypy clean; frontend lint, typecheck, Vitest 14 passed. `npm run format:check` lists 23 untouched files (line endings, existing).
+- **Incident**: a verification backend meant for a copy of the data started on the real `data/` for about 3 minutes (its `DATA_DIR` was not passed by the launcher): it applied migration 0004 to the real database (adds an empty column) and picked up the running IShowSpeed video job next to the owner's app (job attempts 1 -> 2). It was stopped; the owner's app kept running.
+- **Not done / next:** (1) the owner restarts the app (`scripts\start.bat`, it runs migration 0004), configures the key, then the old 4 GTA clips are deleted and 5 new ones made with More clips (new two-round selection + censoring). (2) Bad words in the game's own subtitles ("Shit." is burned into the picture) are not blurred yet: proposed follow-up, OCR the clip frames and blur subtitle lines with a listed word.
 
 ## Real runs of the two-round selection (D-046, D-047, 2026-11-22), on `dev`
 Owner's key, gemini-3.5-flash-lite, "Jett to Rank 1 begins..." (25 min, 1080p60), style Hinglish (so Whisper large-v3-turbo GPU, language hi).

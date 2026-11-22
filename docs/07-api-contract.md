@@ -41,9 +41,9 @@ Messages are human-readable and never contain keys, tokens, or full file-system 
 ## Clips
 - `GET /api/clips/{id}` → `Clip = ClipSummary + { video_id, batch_id, metadata: Metadata, edit: EditState, words: [Word], source_bounds: {min_start_s, max_end_s} }`
   - `Metadata = { title, youtube_title, youtube_description, hashtags: string[], linkedin_post, reason }`
-  - `EditState = { caption_style: "pop"|"karaoke"|"boxed", caption_language: "en"|"hinglish", crop_mode: "auto"|"face"|"full", blur: 0-60, start_s, end_s }`
+  - `EditState = { caption_style: "pop"|"karaoke"|"boxed", caption_language: "en"|"hinglish", crop_mode: "auto"|"face"|"full", blur: 0-60, start_s, end_s, blur_boxes: BlurBox[] }`; `BlurBox = { start, end, x, y, w, h }`: clip seconds and shares (0-1) of the 1080x1920 canvas, at most 20 (D-048)
   - `Word = { text, start, end }` (relative to clip start)
-- `PATCH /api/clips/{id}` body: any subset of `{ metadata fields, edit fields, words }` → `Clip`. Text metadata edits do not mark the clip edited. Video-affecting fields set `edited=true` and clear `has_preview`/`has_export`. Validates: title ≤ 40 chars, trim inside `source_bounds`, resulting length 5–90 s (warning field `length_warning` if outside 25–90).
+- `PATCH /api/clips/{id}` body: any subset of `{ metadata fields, edit fields, words, blur_boxes }` → `Clip`. Text metadata edits do not mark the clip edited. Video-affecting fields set `edited=true` and clear `has_preview`/`has_export`. Validates: title ≤ 40 chars, trim inside `source_bounds`, resulting length 5–90 s (warning field `length_warning` if outside 25–90).
 - `POST /api/clips/{id}/preview` → `202` (queues a preview render)
 - `POST /api/clips/{id}/render` → `202` (queues the full-quality export)
 - `POST /api/clips/{id}/retry` → `202`
