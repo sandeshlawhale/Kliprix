@@ -356,8 +356,21 @@ SPEECH_FULL_WPS = 1.0
 SPEECH_FLOOR = 0.3
 SPEECH_VIDEO_MIN_WPS = 0.5
 SPEECH_FALLBACK_MIN_WPS = 0.3
-# Clip times must stay within the candidate region widened by this much.
+# Clip times must stay within the candidate region widened by this much after it, and by
+# CLIP_CONTEXT_BEFORE_S before it (D-044: room to start at the question or the setup);
+# the prompt shows the transcript over the same range.
 CLIP_REGION_MARGIN_S = 30.0
+CLIP_CONTEXT_BEFORE_S = 90.0
+# A clip whose first sentence starts with one of these words continues something said
+# before (D-044); its start moves back by up to CONTEXT_FIX_SENTENCES sentences that
+# begin within CONTEXT_FIX_REACH_S, as long as the clip stays within its maximum length.
+DANGLING_STARTS = (
+    "so", "and", "but", "because", "cause", "exactly", "yeah", "yes", "yep", "right",
+    "which", "then", "also", "or", "that's", "thats", "anyway", "plus", "toh", "aur",
+    "lekin", "par", "kyunki", "haan", "matlab", "isliye",
+)  # fmt: skip
+CONTEXT_FIX_SENTENCES = 2
+CONTEXT_FIX_REACH_S = 25.0
 
 # Rendering (docs/05, 11): ffmpeg timeout = base + this many seconds per second of clip;
 # minimum free disk space before a render starts.

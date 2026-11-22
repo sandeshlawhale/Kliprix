@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 from app.config import LLM_LINE_MAX_CHARS, LLM_PROMPT_MAX_CHARS
 
-SELECT_PROMPT_VERSION = 4
+SELECT_PROMPT_VERSION = 5
 TITLE_PROMPT_VERSION = 1
 TRANSLITERATE_PROMPT_VERSION = 1
 
@@ -55,6 +55,12 @@ reactions, plays (a clutch, a multi-kill, a big win or a big fail), and hot take
 must make sense without the rest of the video: it needs a hook in its first seconds and a \
 payoff before it ends.
 
+Context: the viewer sees only the clip. If its first sentence answers a question, continues \
+a story, or points at something not shown (it starts with "so", "and", "exactly", \
+"that's why", "he said", "yeah", "toh", ...), start earlier, at the question or the \
+setup; the transcript shows up to 90 seconds before each region for this. For talk, a \
+complete 50-second clip beats a confusing 20-second one.
+
 Skip greetings, intros, "starting soon" screens, menus, lobbies, character select and \
 loading screens, waiting, sponsor reads, small talk without a point, and candidates where \
 nothing happens (no speech and no action in the facts). Do not repeat a moment and do not \
@@ -80,8 +86,8 @@ characters, two sentences at most: hook, then context. "hashtags" 3 to 6 items, 
 starting with # and without spaces. "linkedin_post" at most 600 characters, short \
 professional framing in 2 to 4 lines, no hashtag spam. "reason" one sentence on why this \
 moment works, naming the evidence. "start" and "end" are seconds from the start of the video \
-and must stay within the candidate's region plus or minus 30 seconds; start at the beginning \
-of a sentence and end at the end of one. Write all text in {language}."""
+and must stay between 90 seconds before the candidate's region and 30 seconds after it; \
+start at the beginning of a sentence and end at the end of one. Write all text in {language}."""
 
 # How titles and descriptions sound (D-043), shared by the selection and the title prompts.
 TEXT_STYLE = """\
@@ -142,7 +148,7 @@ class PromptCandidate:
     end: float
     score: float
     signals: dict[str, float]
-    # Transcript lines in [start - 30, end + 30] as (time in seconds, text).
+    # Transcript lines in [start - 90, end + 30] as (time in seconds, text).
     lines: list[tuple[float, str]]
     # What the other stages found (D-043): "On screen: ...", "Sounds: ...", "Chat ...".
     facts: list[str] = field(default_factory=list)

@@ -20,6 +20,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.config import (
+    CLIP_CONTEXT_BEFORE_S,
     CLIP_EXTENDED_MAX_S,
     CLIP_LEAD_PAD_S,
     CLIP_MIN_GAP_S,
@@ -28,6 +29,9 @@ from app.config import (
     CLIP_STANDARD_MAX_S,
     CLIP_TAIL_PAD_S,
     CLIP_TARGET_MIN_S,
+    CONTEXT_FIX_REACH_S,
+    CONTEXT_FIX_SENTENCES,
+    DANGLING_STARTS,
     LLM_SELECT_TEMPERATURE,
     SCREEN_FALLBACK_MAX_DULL,
     SENTENCE_SNAP_S,
@@ -89,6 +93,8 @@ CHAT_SAMPLE_AFTER_S = 8.0
 CHAT_SAMPLE_COUNT = 10
 # Zero-width joiner and emoji variation selector, left over when emoji are removed.
 _JOINERS = (chr(0x200D), chr(0xFE0F))
+# Stripped from a word before it is compared with DANGLING_STARTS.
+_WORD_EDGES = ".,!?;:\"'()[]…-—"
 
 
 class SelectionClip(BaseModel):
@@ -263,6 +269,34 @@ def pad_window(
     return padded_start, padded_end
 
 
+def _first_word(words: Sequence[Word], at: float) -> str:
+    following = [word for word in words if word.start >= at - 1e-6]
+    if not following:
+        return ""
+    first = min(following, key=lambda word: word.start)
+    return first.text.strip().lower().strip(_WORD_EDGES)
+
+
+def with_context(
+    start: float, end: float, max_len: float, words: Sequence[Word]
+) -> tuple[float, float]:
+    """Move the start back to the setup when the clip opens mid-thought (D-044): while the
+    first word is a continuation ("so", "and", "exactly", "toh", ...), start at the previous
+    sentence if it begins within CONTEXT_FIX_REACH_S and the clip stays within `max_len`;
+    at most CONTEXT_FIX_SENTENCES times. The end never moves."""
+    if not words:
+        return start, end
+    starts = sentence_edges(words).starts
+    for _ in range(CONTEXT_FIX_SENTENCES):
+        if _first_word(words, start) not in DANGLING_STARTS:
+            break
+        earlier = last_between(starts, start - CONTEXT_FIX_REACH_S, start - 0.01)
+        if earlier is None or end - earlier > max_len:
+            break
+        start = earlier
+    return round(start, TIME_DECIMALS), end
+
+
 def conflicts(
     start: float, end: float, accepted: Sequence[SelectionClip], taken: Sequence[Window] = ()
 ) -> bool:
@@ -308,7 +342,7 @@ def repair_clip(
     candidate_id = raw.candidate_id
     if candidate_id is not None and 0 <= candidate_id < len(candidates):
         candidate = candidates[candidate_id]
-        low = max(0.0, candidate.start - CLIP_REGION_MARGIN_S)
+        low = max(0.0, candidate.start - CLIP_CONTEXT_BEFORE_S)
         high = min(facts.duration_s, candidate.end + CLIP_REGION_MARGIN_S)
         start, end = max(start, low), min(end, high)
     allow_long = extended and raw.needs_extended
@@ -316,7 +350,7 @@ def repair_clip(
     window = fit_window(start, end, facts.duration_s, max_len, words)
     if window is None:
         return None
-    start, end = window
+    start, end = with_context(window[0], window[1], max_len, words)
     title = clean_title(raw.title) or fallback_title(start)
     return SelectionClip(
         start=start,
@@ -392,7 +426,7 @@ def fallback_clip(
     )
     if window is None:
         return None
-    start, end = window
+    start, end = with_context(window[0], window[1], CLIP_STANDARD_MAX_S, words)
     spoken = words_between(words, start, end)
     title = fallback_title(start)
     snippet = truncate_words(" ".join(word.text for word in spoken), DESCRIPTION_MAX_CHARS)
@@ -420,13 +454,13 @@ def prompt_candidates(
     transcript: TranscriptFile | None,
     evidence: Evidence | None = None,
 ) -> list[PromptCandidate]:
-    """Candidates with their transcript lines in [start - 30, end + 30] and what the other
-    stages found there (D-043) for the prompt."""
+    """Candidates with their transcript lines in [start - 90, end + 30] (D-044) and what the
+    other stages found there (D-043) for the prompt."""
     segments = transcript.segments if transcript is not None else []
     seen = evidence or Evidence()
     result = []
     for index, candidate in enumerate(candidates):
-        low = candidate.start - CLIP_REGION_MARGIN_S
+        low = candidate.start - CLIP_CONTEXT_BEFORE_S
         high = candidate.end + CLIP_REGION_MARGIN_S
         lines = [(s.start, s.text) for s in segments if s.end > low and s.start < high and s.text]
         signals = {

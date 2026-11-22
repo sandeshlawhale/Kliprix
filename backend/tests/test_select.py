@@ -12,6 +12,7 @@ from app.pipeline.select import (
     Evidence,
     SelectionClip,
     VideoFacts,
+    all_words,
     build_selection,
     clean_hashtags,
     clean_title,
@@ -19,9 +20,11 @@ from app.pipeline.select import (
     load_cached,
     prompt_candidates,
     rank_by_speech,
+    repair_clip,
     run_select,
     select_more,
     truncate_words,
+    with_context,
 )
 from app.pipeline.sound import SoundEvents
 from app.pipeline.transcribe import Segment, TranscriptFile, Word
@@ -371,3 +374,37 @@ def test_run_select_writes_and_caches(tmp_path: Path) -> None:
     )  # fmt: skip
     assert again == result
     assert fake.calls == 1
+
+
+def _sentences(*items: tuple[float, str]) -> list[Word]:
+    """Words of timed sentences: each item is (start, "Some words here."), 0.5 s per word."""
+    words: list[Word] = []
+    for start, text in items:
+        for index, token in enumerate(text.split()):
+            t = start + index * 0.5
+            words.append(Word(text=token, start=t, end=t + 0.4))
+    return words
+
+
+def test_with_context_moves_a_dangling_start_to_the_setup() -> None:
+    words = _sentences(
+        (100.0, "What do you think about remote work?"),
+        (110.0, "So honestly I think it is great."),
+        (118.0, "Exactly, and here is why it works."),
+    )
+    # Starts at "Exactly": back over "So", to the question.
+    assert with_context(118.0, 140.0, 60.0, words) == (100.0, 140.0)
+    # A clean start stays.
+    assert with_context(100.0, 140.0, 60.0, words) == (100.0, 140.0)
+    # The maximum length wins.
+    assert with_context(118.0, 140.0, 25.0, words) == (118.0, 140.0)
+    # Hinglish continuation words count too.
+    hinglish = _sentences((10.0, "Kya hua tha wahan?"), (16.0, "Toh maine bola nahi."))
+    assert with_context(16.0, 40.0, 60.0, hinglish) == (10.0, 40.0)
+
+
+def test_llm_clips_may_start_up_to_90_s_before_the_region() -> None:
+    raw = llm(candidate_id=1, start=230.0, end=330.0)
+    clip = repair_clip(raw, CANDIDATES, FACTS, all_words(transcript()), False)
+    assert clip is not None
+    assert clip.start < 300.0 - 30.0
