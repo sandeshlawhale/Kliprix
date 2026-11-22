@@ -129,6 +129,8 @@ class ClipRow(Base):
     crop_mode: Mapped[str] = mapped_column(String)
     blur: Mapped[int] = mapped_column(Integer)
     words_json: Mapped[str | None] = mapped_column(Text)
+    # Manual blur boxes (D-048): JSON list of BlurBox.
+    blur_boxes_json: Mapped[str | None] = mapped_column(Text)
     edited: Mapped[int] = mapped_column(Integer, default=0)
     thumbnail_path: Mapped[str | None] = mapped_column(String)
     preview_path: Mapped[str | None] = mapped_column(String)

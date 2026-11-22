@@ -26,12 +26,13 @@ from app.core.errors import ERROR_RESPONSES, AppError, ErrorCode
 from app.core.settings_schema import CaptionLanguage, CaptionStyle, CropMode
 from app.db.models import ClipRow
 from app.db.repositories import batches as repo
-from app.jobs.clip_jobs import clip_words
+from app.jobs.clip_jobs import clip_blur_boxes, clip_words
 from app.jobs.context import JobContext
 from app.pipeline.clip_render import CROP_INFO_FILE_NAME, CropInfo
 from app.pipeline.select import TITLE_MAX_CHARS, all_words, words_between
 from app.pipeline.transcribe import Word
 from app.pipeline.transcribe import load_cached as load_transcript
+from app.render.censor import MAX_BLUR_BOXES, BlurBox
 
 router = APIRouter(prefix="/api/clips", tags=["clips"], responses=ERROR_RESPONSES)
 
@@ -69,6 +70,7 @@ class ClipPatch(BaseModel):
     start_s: float | None = Field(default=None, ge=0)
     end_s: float | None = Field(default=None, ge=0)
     words: list[WordIn] | None = None
+    blur_boxes: list[BlurBox] | None = Field(default=None, max_length=MAX_BLUR_BOXES)
 
 
 class Accepted(BaseModel):
@@ -122,6 +124,7 @@ def clip_view(ctx: JobContext, db: DbDep, clip: ClipRow) -> Clip:
             blur=clip.blur,
             start_s=clip.start_s,
             end_s=clip.end_s,
+            blur_boxes=clip_blur_boxes(clip),
         ),
         words=[WordOut(**w.model_dump()) for w in clip_words(clip)],
         source_bounds=source_bounds(ctx, clip, video),
@@ -173,7 +176,7 @@ def patch_clip(clip_id: str, body: ClipPatch, db: DbDep, ctx: CtxDep) -> Clip:
     changes: dict[str, Any] = body.model_dump(exclude_unset=True)
     if any(value is None for value in changes.values()):
         raise AppError(ErrorCode.VALIDATION_ERROR, "Fields cannot be set to null.")
-    video_changed = any(key in changes for key in (*VIDEO_FIELDS, "words")) or (
+    video_changed = any(key in changes for key in (*VIDEO_FIELDS, "words", "blur_boxes")) or (
         "title" in changes and changes["title"] != (clip.title or "")
     )
     if video_changed and clip.status == "running":
@@ -204,6 +207,12 @@ def patch_clip(clip_id: str, body: ClipPatch, db: DbDep, ctx: CtxDep) -> Clip:
         if any(w.end < w.start or w.start > length + 0.01 for w in words):
             raise AppError(ErrorCode.VALIDATION_ERROR, "Word times must lie inside the clip.")
         clip.words_json = json.dumps([w.model_dump() for w in words])
+    if "blur_boxes" in changes:
+        length = new_end - new_start
+        boxes = [BlurBox(**b) for b in changes.pop("blur_boxes")]
+        if any(b.start > length + 0.01 for b in boxes):
+            raise AppError(ErrorCode.VALIDATION_ERROR, "Blur boxes must start inside the clip.")
+        clip.blur_boxes_json = json.dumps([b.model_dump() for b in boxes])
     if "hashtags" in changes:
         clip.hashtags_json = json.dumps(changes.pop("hashtags"))
     for key, value in changes.items():

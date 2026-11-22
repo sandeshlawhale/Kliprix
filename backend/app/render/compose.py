@@ -34,7 +34,7 @@ from app.core.proc import CommandError, run_command
 from app.pipeline.transcribe import Word
 from app.render import layout_constants as lc
 from app.render.ass import CaptionStyle, build_ass
-from app.render.censor import bleep_spans, censor_text, censor_words
+from app.render.censor import BlurBox, bleep_spans, censor_text, censor_words
 from app.render.fonts import WORK_FONTS_DIR_NAME, install_fonts
 from app.render.layout import Layout, blur_radius
 
@@ -45,6 +45,8 @@ ASS_FILE_NAME = "captions.ass"
 BEEP_HZ = 1000
 BEEP_VOLUME = 0.25
 AUDIO_RATE = 48000
+# Manual blur boxes (D-048): the box is shrunk by this factor and scaled back up.
+BOX_BLUR_SHRINK = 32
 Quality = Literal["final", "preview"]
 
 
@@ -61,6 +63,7 @@ class RenderJob:
     style: CaptionStyle
     words: Sequence[Word]  # relative to the clip start
     title: str | None
+    blur_boxes: Sequence[BlurBox] = ()
 
 
 def write_ass(job: RenderJob) -> Path:
@@ -89,8 +92,44 @@ def filter_graph(job: RenderJob, quality: Quality) -> str:
     tail = f"ass={ASS_FILE_NAME}:fontsdir={WORK_FONTS_DIR_NAME}"
     if quality == "preview":
         tail += f",scale={lc.PREVIEW_W}:{lc.PREVIEW_H}"
-    compose = f"[bg][fg]overlay=(W-w)/2:{job.layout.fg_top},fps={lc.FPS},format=yuv420p,{tail}[v]"
-    return ";".join([background, foreground, compose])
+    boxes = box_blur_chain(job.blur_boxes, "[base]", "[boxed]")
+    if not boxes:
+        compose = (
+            f"[bg][fg]overlay=(W-w)/2:{job.layout.fg_top},fps={lc.FPS},format=yuv420p,{tail}[v]"
+        )
+        return ";".join([background, foreground, compose])
+    compose = f"[bg][fg]overlay=(W-w)/2:{job.layout.fg_top},fps={lc.FPS},format=yuv420p[base]"
+    return ";".join([background, foreground, compose, *boxes, f"[boxed]{tail}[v]"])
+
+
+def _even(value: float) -> int:
+    return max(2, round(value / 2) * 2)
+
+
+def box_blur_chain(boxes: Sequence[BlurBox], first: str, last: str) -> list[str]:
+    """Filters that blur each box of the canvas during its time (captions and title are drawn
+    after, so they stay readable). Empty when there are no boxes."""
+    steps: list[str] = []
+    current = first
+    for number, box in enumerate(boxes):
+        x, y = _even(box.x * lc.CANVAS_W), _even(box.y * lc.CANVAS_H)
+        w = min(_even(box.w * lc.CANVAS_W), lc.CANVAS_W - x)
+        h = min(_even(box.h * lc.CANVAS_H), lc.CANVAS_H - y)
+        if w < 2 or h < 2:
+            continue
+        small_w, small_h = max(2, w // BOX_BLUR_SHRINK), max(2, h // BOX_BLUR_SHRINK)
+        out = last if number == len(boxes) - 1 else f"[box{number}]"
+        steps.append(
+            f"{current}split[keep{number}][take{number}];"
+            f"[take{number}]crop={w}:{h}:{x}:{y},scale={small_w}:{small_h}:flags=area,"
+            f"scale={w}:{h}:flags=bilinear,boxblur=4:1[blur{number}];"
+            f"[keep{number}][blur{number}]overlay={x}:{y}:"
+            f"enable='between(t,{box.start:.3f},{box.end:.3f})'{out}"
+        )
+        current = out
+    if steps and current != last:
+        steps.append(f"{current}null{last}")
+    return steps
 
 
 def bleep_graph(spans: list[tuple[float, float]], duration_s: float) -> str:

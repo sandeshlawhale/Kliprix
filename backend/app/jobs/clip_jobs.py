@@ -19,6 +19,7 @@ from app.pipeline.audio import AUDIO_FILE_NAME
 from app.pipeline.clip_render import ClipSpec, SourceVideo, make_thumbnail, render_clip
 from app.pipeline.download import load_cached as load_download
 from app.pipeline.transcribe import Word
+from app.render.censor import BlurBox
 from app.sources.base import SOURCE_FILE_NAME
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,10 @@ logger = logging.getLogger(__name__)
 
 def clip_words(clip: ClipRow) -> list[Word]:
     return [Word.model_validate(item) for item in json.loads(clip.words_json or "[]")]
+
+
+def clip_blur_boxes(clip: ClipRow) -> list[BlurBox]:
+    return [BlurBox.model_validate(item) for item in json.loads(clip.blur_boxes_json or "[]")]
 
 
 def export_path(ctx: JobContext, clip: ClipRow, video_title: str | None) -> Path:
@@ -70,7 +75,7 @@ class ClipJob:
                 start_s=clip.start_s, end_s=clip.end_s, title=clip.title or "",
                 show_title=bool(style.get("show_title", True)),
                 style=clip.caption_style, crop=clip.crop_mode, blur=clip.blur,  # type: ignore[arg-type]
-                words=clip_words(clip),
+                words=clip_words(clip), blur_boxes=clip_blur_boxes(clip),
             )  # fmt: skip
             out = (
                 self.ctx.data_dir / "previews" / f"{clip.id}.mp4"

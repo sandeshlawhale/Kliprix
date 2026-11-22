@@ -18,6 +18,7 @@ from app.jobs.context import JobContext
 from app.jobs.state import checkpoints, more_clips_blocker
 from app.pipeline.cut import load_cut
 from app.pipeline.download import INFO_FILE_NAME
+from app.render.censor import BlurBox
 from app.sources.base import SOURCE_FILE_NAME
 
 CheckpointKey = Literal["download", "chat", "signals", "candidates", "transcribe", "select", "edit"]
@@ -110,6 +111,8 @@ class EditState(BaseModel):
     blur: int = Field(ge=0, le=60)
     start_s: float
     end_s: float
+    # Manual blur boxes (D-048), clip seconds and shares of the 1080x1920 canvas.
+    blur_boxes: list[BlurBox] = []
 
 
 class WordOut(BaseModel):

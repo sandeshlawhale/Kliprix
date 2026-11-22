@@ -32,6 +32,7 @@ from app.pipeline.face_crop import (
 from app.pipeline.transcribe import Word
 from app.render import layout_constants as lc
 from app.render.ass import CaptionStyle
+from app.render.censor import BlurBox
 from app.render.compose import Quality, RenderJob, make_thumbnail, render
 from app.render.layout import compute_layout
 
@@ -67,6 +68,7 @@ class ClipSpec:
     crop: CropChoice
     blur: int
     words: Sequence[Word]
+    blur_boxes: Sequence[BlurBox] = ()
 
 
 @dataclass(frozen=True)
@@ -222,6 +224,7 @@ def render_clip(
         style=spec.style,
         words=spec.words,
         title=spec.title if spec.show_title else None,
+        blur_boxes=spec.blur_boxes,
     )
     stage("render")
     output = render(job, out, quality, ffmpeg_path=ffmpeg_path, memory=memory, cancel=cancel)

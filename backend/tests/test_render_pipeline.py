@@ -141,3 +141,42 @@ def test_bad_words_are_bleeped(source: Path, tmp_path: Path) -> None:
     streams = probe_streams(out, None)
     assert streams.audio_s is not None
     assert abs(streams.video_s - streams.audio_s) < 0.1
+
+
+def _detail(path: Path, at_s: float, x: int, y: int, w: int, h: int) -> float:
+    """Share of sharp edges (a jump of more than 40 between neighbor pixels) in a region."""
+    import numpy as np
+
+    assert FFMPEG is not None
+    raw = subprocess.run(  # noqa: S603 - fixed test command
+        [
+            FFMPEG, "-hide_banner", "-loglevel", "error", "-ss", str(at_s), "-i", str(path),
+            "-frames:v", "1", "-vf", f"crop={w}:{h}:{x}:{y},format=gray", "-f", "rawvideo", "-",
+        ],
+        check=True, capture_output=True,
+    ).stdout  # fmt: skip
+    image = np.frombuffer(raw, dtype=np.uint8).reshape(h, w).astype(np.float64)
+    return float((np.abs(np.diff(image, axis=1)) > 40).mean())
+
+
+@needs_ffmpeg
+def test_blur_box_blurs_only_its_area_and_time(source: Path, tmp_path: Path) -> None:
+    from app.render.censor import BlurBox
+
+    box = BlurBox(start=1.0, end=3.0, x=0.1, y=0.3, w=0.8, h=0.25)
+    clip = ClipSpec(
+        start_s=6.0, end_s=12.0, title="", show_title=False, style="pop", crop="full",
+        blur=30, words=[], blur_boxes=[box],
+    )  # fmt: skip
+    out = tmp_path / "boxed.mp4"
+    render_clip(
+        SourceVideo(source, LENGTH, SRC_W, SRC_H), tmp_path / "work", clip, out, "final",
+        models_dir=tmp_path / "models", ffmpeg_path=None, memory=MEMORY,
+    )  # fmt: skip
+    region = (200, 700, 600, 300)  # inside the box (canvas 1080x1920) and the foreground
+    inside = _detail(out, 2.0, *region)
+    before = _detail(out, 0.5, *region)
+    after = _detail(out, 4.0, *region)
+    assert before > 0.005 and after > 0.005
+    assert inside < before / 5
+    assert inside < after / 5

@@ -11,6 +11,8 @@ from __future__ import annotations
 import unicodedata
 from collections.abc import Sequence
 
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
 from app.pipeline.transcribe import Word
 
 # Whole words (letters only, lowercase). Hinglish words are listed in the spellings Whisper
@@ -51,6 +53,32 @@ BAD_DEVANAGARI: frozenset[str] = frozenset(
 # Not listed on purpose: "chod" (as often "chhod", leave, in Roman Hindi), "saala" (also
 # brother-in-law), "kutta" (dog), "damn".
 BLEEP_PAD_S = 0.05
+MAX_BLUR_BOXES = 20
+# Smallest box side, as a share of the canvas side.
+MIN_BOX_SIDE = 0.02
+
+
+class BlurBox(BaseModel):
+    """A rectangle of the vertical clip that is blurred from `start` to `end` (clip seconds).
+    `x`, `y`, `w`, `h` are shares (0-1) of the 1080x1920 canvas, so the box covers what the
+    editor shows, in face-crop and full-frame mode alike."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    start: float = Field(ge=0)
+    end: float = Field(ge=0)
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    w: float = Field(ge=MIN_BOX_SIDE, le=1)
+    h: float = Field(ge=MIN_BOX_SIDE, le=1)
+
+    @model_validator(mode="after")
+    def _inside(self) -> BlurBox:
+        if self.end <= self.start:
+            raise ValueError("a blur box must end after it starts")
+        if self.x + self.w > 1.001 or self.y + self.h > 1.001:
+            raise ValueError("a blur box must stay inside the video")
+        return self
 
 
 def _key(text: str) -> str:

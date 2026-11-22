@@ -243,10 +243,18 @@ def test_edit_preview_export_download(client: TestClient) -> None:
     assert outside.json()["error"]["code"] == "VALIDATION_ERROR"
     text_only = client.patch(f"/api/clips/{clip_id}", json={"youtube_title": "New YT title"})
     assert text_only.json()["edited"] is False
+    bad_box = {"start": 2, "end": 1, "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}
+    refused = client.patch(f"/api/clips/{clip_id}", json={"blur_boxes": [bad_box]})
+    assert refused.json()["error"]["code"] == "VALIDATION_ERROR"
+    box = {"start": 0.5, "end": 2.0, "x": 0.25, "y": 0.3, "w": 0.5, "h": 0.2}
     edited = client.patch(
         f"/api/clips/{clip_id}",
-        json={"start_s": clip["start_s"] - 2, "caption_style": "boxed", "blur": 10},
-    ).json()
+        json={
+            "start_s": clip["start_s"] - 2, "caption_style": "boxed", "blur": 10,
+            "blur_boxes": [box],
+        },
+    ).json()  # fmt: skip
+    assert edited["edit"]["blur_boxes"] == [box]
     assert edited["edited"] is True
     assert edited["has_export"] is False
     assert edited["words"][0]["start"] >= 0
@@ -264,6 +272,7 @@ def test_edit_preview_export_download(client: TestClient) -> None:
     # Edits survive a reload.
     again = client.get(f"/api/clips/{clip_id}").json()
     assert again["edit"]["caption_style"] == "boxed"
+    assert again["edit"]["blur_boxes"] == [box]
     assert again["metadata"]["youtube_title"] == "New YT title"
 
 
