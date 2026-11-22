@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
@@ -15,6 +15,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models import BatchRow, ClipRow, JobRow, VideoRow, utc_now
+from app.sources.base import VideoMeta
 
 # Job priorities: edit/preview work goes before the remaining background clips (docs/08).
 PRIORITY_BACKGROUND = 0
@@ -33,9 +34,17 @@ def new_id() -> str:
 
 
 def create_batch(
-    session: Session, urls: Sequence[str], style: dict[str, Any], title: str | None
+    session: Session,
+    urls: Sequence[str],
+    style: dict[str, Any],
+    title: str | None,
+    known: Mapping[str, VideoMeta] | None = None,
 ) -> BatchRow:
-    """A queued batch with one video row and one `video_pipeline` job per URL."""
+    """A queued batch with one video row and one `video_pipeline` job per URL.
+
+    `known` = metadata already read for some URLs (the home page's link check); it fills
+    the title, channel and thumbnail until the pipeline inspects the link itself.
+    """
     batch = BatchRow(id=new_id(), status="queued", title=title, style_json=json.dumps(style))
     session.add(batch)
     session.flush()
@@ -44,6 +53,11 @@ def create_batch(
             id=new_id(), batch_id=batch.id, position=position, url=url,
             status="queued", stage=None, progress=0.0, has_chat=0,
         )  # fmt: skip
+        meta = (known or {}).get(url)
+        if meta is not None:
+            video.platform, video.source_id = meta.platform, meta.source_id
+            video.title, video.channel = meta.title, meta.channel
+            video.duration_s, video.thumbnail_path = meta.duration_s, meta.thumbnail_url
         session.add(video)
         session.flush()
         add_job(session, "video_pipeline", video.id, PRIORITY_BACKGROUND)
@@ -175,11 +189,12 @@ _RUN_GAP_S = 10.0
 def generation_started_at(
     session: Session, video_id: str, clip_ids: Sequence[str]
 ) -> datetime | None:
-    """When the work now running for this video began, or None when nothing runs.
+    """When the work now running for this video began, or None when nothing runs yet.
 
-    The pipeline (or "more clips") job and the clip renders it queued count as one run, so
-    the batch page's timer covers download to the last clip. A later re-render of one clip
-    from the editor starts its own run.
+    Counts from the moment the runner picked the job up (`started_at`), so videos still
+    waiting in the queue show no timer. The pipeline (or "more clips") job and the clip
+    renders it queued count as one run, so the batch page's timer covers download to the
+    last clip. A later re-render of one clip from the editor starts its own run.
     """
     active = ("queued", "running")
     video_jobs = list(
@@ -191,7 +206,7 @@ def generation_started_at(
     )
     latest = video_jobs[0] if video_jobs else None
     if latest is not None and latest.status in active:
-        return latest.created_at
+        return latest.started_at
     clip_jobs = (
         list(
             session.scalars(
@@ -209,8 +224,9 @@ def generation_started_at(
         and latest.finished_at is not None
         and (first - latest.finished_at).total_seconds() <= _RUN_GAP_S
     ):
-        return latest.created_at
-    return first
+        return latest.started_at
+    started = [job.started_at for job in clip_jobs if job.started_at is not None]
+    return min(started) if started else None
 
 
 def _sort_key(session: Session, job: JobRow) -> tuple[Any, ...]:

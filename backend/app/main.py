@@ -42,6 +42,7 @@ from app.llm.models import fetch_json
 from app.llm.session import LlmSessionStore
 from app.pipeline.transcribe import RunnerFactory, WhisperRunner
 from app.pipeline.transcribe_parakeet import ParakeetRunner
+from app.sources.inspect_cache import InspectCache
 from app.sources.registry import build_adapters
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.state.llm_completion = default_completion
     app.state.llm_fetch = fetch_json
     app.state.source_adapters = build_adapters(active)
+    app.state.inspect_cache = InspectCache()
     app.state.session_factory = make_session_factory(make_engine(active.db_url))
     app.state.event_bus = EventBus()
     # The job runner thread and what its jobs need (tests swap in fakes before starting).

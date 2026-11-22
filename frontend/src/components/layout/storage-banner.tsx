@@ -13,7 +13,7 @@ export function StorageBanner() {
   return (
     <div
       role="status"
-      className="text-muted-foreground bg-muted/40 mb-6 flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-xs"
+      className="text-muted-foreground bg-muted/40 flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-xs"
     >
       <HardDrive className="size-3.5 shrink-0" aria-hidden />
       <span>

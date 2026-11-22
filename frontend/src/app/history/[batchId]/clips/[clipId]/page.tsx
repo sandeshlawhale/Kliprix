@@ -46,7 +46,7 @@ export default function ClipPage({ params }: PageProps<"/history/[batchId]/clips
   const data = clip.data;
   return (
     // Fits the window (main has 2.5rem padding top and bottom); only the side panel scrolls.
-    <div className="flex h-[calc(100svh-5rem)] min-h-[520px] flex-col gap-5">
+    <div className="flex h-[calc(100svh-8.5rem)] min-h-[520px] flex-col gap-5">
       <Toolbar
         clip={data}
         batchId={batchId}

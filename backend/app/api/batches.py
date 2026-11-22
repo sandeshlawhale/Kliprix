@@ -26,6 +26,7 @@ from app.db.repositories.settings import load_settings
 from app.jobs.context import JobContext
 from app.jobs.runner import JobRunner
 from app.llm.session import LlmSessionStore
+from app.sources.inspect_cache import InspectCache
 from app.sources.registry import resolve
 
 router = APIRouter(prefix="/api/batches", tags=["batches"], responses=ERROR_RESPONSES)
@@ -101,7 +102,10 @@ def create_batch(
     style: dict[str, Any] = load_settings(db).style_defaults.model_dump()
     if body.style is not None:
         style.update(body.style.model_dump(exclude_unset=True))
-    batch = repo.create_batch(db, urls, style, title=None)
+    # Title and channel from the home page's link check, so queued videos are named (D-038).
+    cache: InspectCache | None = getattr(request.app.state, "inspect_cache", None)
+    known = {url: meta for url in urls if cache and (meta := cache.get(url)) is not None}
+    batch = repo.create_batch(db, urls, style, title=None, known=known)
     db.commit()
     runner.wake()
     return CreatedBatch(id=batch.id)

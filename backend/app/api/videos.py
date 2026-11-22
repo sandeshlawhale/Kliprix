@@ -19,6 +19,7 @@ from app.jobs.state import more_clips_blocker
 from app.jobs.video_pipeline import PROGRESS_AT
 from app.llm.session import LlmSessionStore
 from app.sources.base import SourceAdapter, VideoMeta
+from app.sources.inspect_cache import InspectCache
 from app.sources.registry import resolve
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,9 @@ class InspectResponse(BaseModel):
 
 
 @router.post("/inspect")
-def inspect_videos(body: InspectRequest, adapters: AdaptersDep) -> InspectResponse:
+def inspect_videos(
+    body: InspectRequest, request: Request, adapters: AdaptersDep
+) -> InspectResponse:
     """Metadata for 1-3 links without downloading. Each link succeeds or fails on its own.
 
     Errors: TOO_MANY_VIDEOS for more than 3 links. Per link: INVALID_URL,
@@ -75,6 +78,9 @@ def inspect_videos(body: InspectRequest, adapters: AdaptersDep) -> InspectRespon
             error = ErrorBody(code=exc.code, message=exc.message, details=exc.details)
             results.append(InspectResult(url=raw, ok=False, error=error))
             continue
+        cache: InspectCache | None = getattr(request.app.state, "inspect_cache", None)
+        if cache is not None:
+            cache.put(url, video)
         results.append(InspectResult(url=raw, ok=True, video=video))
     return InspectResponse(results=results)
 

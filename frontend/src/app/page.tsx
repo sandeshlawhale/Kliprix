@@ -87,7 +87,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="flex min-h-[calc(100svh-8rem)] flex-col items-center justify-center">
+    <div className="flex min-h-[calc(100svh-8.5rem)] flex-col items-center justify-center">
       <div className="flex w-full max-w-3xl flex-col items-center gap-10">
         <header className="flex flex-col items-center gap-4 text-center">
           <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">

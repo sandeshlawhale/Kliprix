@@ -7,7 +7,8 @@ Calm, minimal, text-first, like Claude / Claude Code: neutral grays, one accent 
 Desktop-first (min width 1024). Mobile is not a target in v1.
 
 ## Global layout
-Fixed left **sidebar (260 px, always visible)** + main content area (max width 1100 px, centered).
+Fixed left **sidebar (260 px, always visible)** + main content area (max width 1100 px, centered; every page uses this one width, D-038).
+Above every page a top bar of fixed height (D-038): the storage warning pill on the left (empty when there is no warning), and on a batch page the batch status, Cancel (while it runs) and the date and time on the right. The page content always starts at the same height.
 
 ### Sidebar (top to bottom)
 1. App name (text only).
@@ -41,8 +42,8 @@ Fixed left **sidebar (260 px, always visible)** + main content area (max width 1
 States: empty, inspecting, inspect-failed (error under the field), ready, starting.
 
 ## Batch results `/history/[batchId]`
-- Header: batch date, overall status.
-- Per video section, top to bottom: video header (title, source badge), then the **checkpoint list**, then a grid of up to 5 **clip cards**. Below the cards (D-034): a count (1–5) and a **More clips** button that makes more clips from the saved download without repeating the existing ones; disabled with the reason when the download was deleted or the AI model is not configured, hidden while the video works. With more clips, the grid holds more than 5 cards.
+- (D-038) No page heading; the batch status, Cancel and date/time sit in the top bar. Every video section looks the same, with one or three videos.
+- Per video section, top to bottom: a header row with the video title (shown even while the video waits: taken from the home page's link check), platform badge, "Waiting" while queued, chat badge when done, and its own elapsed timer, which starts when this video's work starts; channel and notes under it. At the right end of the same row: **More clips** (D-034) as a count (1–5) select, a button, and an info icon whose tooltip says "Uses the saved download; new clips never repeat the ones you have." (or why it is disabled, e.g. the download was deleted or the AI model is not configured); hidden while the video works. Then the **checkpoint list** (only while this video is being worked on, or when something failed), then the grid of **clip cards**.
 - **Checkpoint list** (sits directly below the video header and above the clip cards):
   - A compact, muted (low-contrast gray text, small size) vertical list of the steps for this video, in order:
     1. Download video

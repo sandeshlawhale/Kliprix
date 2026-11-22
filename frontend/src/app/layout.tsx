@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "@/app/providers";
 import { AppSidebar } from "@/components/layout/app-sidebar";
-import { StorageBanner } from "@/components/layout/storage-banner";
+import { TopBar } from "@/components/layout/top-bar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
 export const metadata: Metadata = {
@@ -23,7 +23,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <AppSidebar />
             <SidebarInset>
               <main className="mx-auto w-full max-w-[1100px] px-8 py-10">
-                <StorageBanner />
+                <TopBar />
                 {children}
               </main>
             </SidebarInset>
