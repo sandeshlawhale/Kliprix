@@ -5,7 +5,7 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 ## Current state
 - **Current milestone:** all milestones built (M3→M10 in one run, D-027). **Waiting for the owner's checks** below; no milestone after M0–M2 is tagged yet.
 - **Status:** M0–M2 verified and tagged (`m0`, `m1`, `m2`). M3–M10 built and checked by the agent as far as possible without the owner (real runs on this machine, see "M3–M9 output" and "M10 output"); owner-only checks are listed below.
-- **Last session:** 2026-11-22, Claude Code (Claude Opus 5.5): D-039 About and How to use pages in the sidebar menu (after D-037/D-038), on `dev`
+- **Last session:** 2026-11-22, Claude Code (Claude Opus 5.5): D-040…D-045 smarter clip picking (screen type, sound events, chat look-back, evidence for the LLM + title step, context rule, on-screen text), on `dev`
 - **Last commit:** see `git log -1`
 - **Branches (owner, 2026-11-21):** all development happens on `dev`; `main` gets a merge only after the owner confirms the work runs. Never commit straight to `main`.
 
@@ -24,6 +24,16 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 
 ## In progress (exact next step)
 Nothing in progress. **Next step: the owner runs the checks below.** Start the app with `scripts\start.bat` (Windows) or `./scripts/start.sh`, configure a real key in Configure API, and paste 3 links. Fix anything found, then tag `m3`…`m10` once each milestone's check passes (the agent did not tag them because the owner checks are open). Then consider proposal P-001 (video retry endpoint) in `14-decisions-log.md`.
+
+## Smarter clip picking (D-040…D-045, 2026-11-22), on `dev`
+Owner: a Valorant link gave clips of the home screen and agent select; gameplay without chat/speech was picked at random; titles were the first words of the transcript; podcast clips lacked context. Built (each with its decision row, tests, and a real run on the owner's downloads in `data/downloads/`):
+- **D-040 screen type** (CLIP ViT-B/32 int8, 89 MB at first use): menus/lobbies/agent select/loading lose their score. Valorant stream: lobby runs 0.48-0.78 "dull", gameplay 0.14-0.45; old top picks 1:03, 3:24, 4:29 (lobby/agent select) are gone.
+- **D-041 sound events** (CED-mini via sherpa-onnx, 47 MB): gunfire/explosion/shouting/laughter/cheering… replace most of the loudness weight. 4-hour stream: 87 s (screen 77 s alongside), peak 0.43 GB.
+- **D-042 chat**: reaction groups (laugh/hype/shock/fail), per-stream delay only when it is clear (GTA stream: flat → default 10 s), look-back windows that start before the likely cause.
+- **D-043 evidence + titles**: prompt v4 lists on screen / sounds / chat per candidate; creator-voice text style; fallback clips get their text from one extra LLM call (only when there are fallbacks), else "Highlight at mm:ss".
+- **D-044 context**: 90 s before each candidate in the prompt and allowed as clip start; starts on "so/and/exactly/toh…" move back to the setup.
+- **D-045 on-screen text** (RapidOCR, in `requirements-nodeps.txt`, installed with `--no-deps` so `cv2` stays opencv-contrib): "KILLED BY REYNA", "BUY PHASE", game subtitles; overlays dropped.
+**Owner check:** restart the app with `scripts\start.bat` (it installs the new packages once; first video downloads the 2 models, ~140 MB), configure the key, paste the Valorant stream, a Minecraft video, the GTA stream and a podcast → no menu/agent-select clips; Valorant clips around fights; titles in a creator voice, not the first words; podcast clips start at the question. **Not checked:** any real LLM output with prompt v4/v5 and the title step (no key on this machine); a 4 GB PC; macOS/Linux wheels of rapidocr/shapely/pyclipper; Docker build.
 
 ## UI rework, LLM-first selection, faster Test (D-035, D-036, 2026-11-21), on `dev`
 UI: bare clip tiles with a progress corner, per-video elapsed timer, title heading with date/time, fixed-height clip page, caption-band style pickers, no blur/crop/language/length controls, sticky sidebar, brand color. Selection: content-first prompt v3 with kinds of moments and importance order, coverage windows, chat ignored near stream edges, clips 15-60 s (90 when needed). Test connection: LiteLLM preloaded at startup (cold import 21.9 s → test 0.2 s after preload). Checked by the agent: backend pytest, ruff, mypy; frontend lint, typecheck, Vitest; pages viewed in a dev server on :3001 against the owner's data. **Owner check:** restart the app (the running one predates this), configure the key, Test connection (should answer in a couple of seconds), re-run the 4-hour stream and judge the clip choice, order and lengths; watch the timer on the batch page. **Not checked:** a real LLM selection run with prompt v3; the timer and blurred working tiles during a real run (needs the restarted backend).

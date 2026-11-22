@@ -26,6 +26,7 @@ regenerate when dependencies change.
 | faster-whisper CTranslate2 conversions of OpenAI Whisper (tiny/base/small/medium/large-v3) | MIT | huggingface.co/Systran |
 | MediaPipe BlazeFace short-range face detector | Apache-2.0 | storage.googleapis.com/mediapipe-models |
 | Silero VAD (inside faster-whisper) | MIT | github.com/snakers4/silero-vad |
+| PaddleOCR PP-OCRv4 detection/recognition + mobile v2 direction models, inside the `rapidocr-onnxruntime` wheel (on-screen text, D-045) | Apache-2.0 | github.com/RapidAI/RapidOCR; github.com/PaddlePaddle/PaddleOCR |
 | CED-mini audio tagging (AudioSet), sherpa-onnx int8 conversion (sound events, D-041) | Apache-2.0 | github.com/RicherMans/CED; github.com/k2-fsa/sherpa-onnx releases `audio-tagging-models` |
 | OpenAI CLIP ViT-B/32 image encoder, int8 ONNX export (screen type, D-040); the label text embeddings in `backend/app/pipeline/screen_labels.json` come from its text encoder | MIT | huggingface.co/Xenova/clip-vit-base-patch32 (revision 6b7c5237) |
 

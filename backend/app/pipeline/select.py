@@ -55,6 +55,7 @@ from app.llm.prompts import (
 from app.llm.schemas import LlmClip, SelectionAnswer, TitleAnswer
 from app.pipeline.candidates import Candidate
 from app.pipeline.screen import ScreenFile, describe, dull_share, window_shares
+from app.pipeline.screen_text import ScreenText, texts_between
 from app.pipeline.sentences import (
     first_between,
     last_between,
@@ -488,6 +489,8 @@ class Evidence:
     screen: ScreenFile | None = None
     events: SoundEvents | None = None
     chat: Sequence[ChatMessage] = ()
+    # Text read on screen around the candidates (D-045).
+    text: ScreenText | None = None
 
 
 def moment_facts(
@@ -503,6 +506,10 @@ def moment_facts(
         moments = timeline(evidence.events, start, end)
         if moments:
             facts.append("Sounds: " + "; ".join(f"{clock(t)} {text}" for t, text in moments))
+    if evidence.text is not None:
+        texts = texts_between(evidence.text, start, end)
+        if texts:
+            facts.append("On-screen text: " + ", ".join(f'"{text}"' for text in texts))
     return facts
 
 

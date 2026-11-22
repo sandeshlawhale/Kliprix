@@ -9,8 +9,8 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app/backend
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements-nodeps.txt ./
+RUN pip install --no-cache-dir -r requirements.txt \n    && pip install --no-cache-dir --no-deps -r requirements-nodeps.txt
 COPY . .
 ENV DATA_DIR=/app/data \
     LOG_LEVEL=INFO \

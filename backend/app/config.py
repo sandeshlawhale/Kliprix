@@ -288,6 +288,16 @@ SCREEN_SMOOTH_S = 30
 SCREEN_FALLBACK_MAX_DULL = 0.45
 SCREEN_MAX_THREADS = 2
 
+# On-screen text (D-045): RapidOCR on 3 frames (offsets from the peak or likely cause) of the
+# first candidates, scaled to this width (0.5-2 s a frame on this PC). Text on at least
+# OVERLAY_SHARE of the frames read is a stream overlay and is dropped.
+OCR_CANDIDATES_MAX = 16
+OCR_OFFSETS_S = (-10.0, 0.0, 10.0)
+OCR_WIDTH = 960
+OCR_MIN_CONFIDENCE = 0.8
+OCR_OVERLAY_SHARE = 0.5
+OCR_TEXTS_MAX = 12
+
 # Sound events (D-041): CED-mini audio tagging (AudioSet, 527 classes; Apache-2.0) through
 # sherpa-onnx, int8, 47 MB archive downloaded at first use.
 SOUND_MODEL_NAME = "sherpa-onnx-ced-mini-audio-tagging-2024-04-19"

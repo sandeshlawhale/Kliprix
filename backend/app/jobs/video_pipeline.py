@@ -31,7 +31,7 @@ from app.jobs.context import JobContext
 from app.llm.client import LlmClient
 from app.llm.transliterate import transliterate_words
 from app.pipeline.audio import AUDIO_FILE_NAME, ensure_audio_wav, run_audio
-from app.pipeline.candidates import find_candidates, run_candidates
+from app.pipeline.candidates import Candidate, find_candidates, run_candidates
 from app.pipeline.chat import load_cached as load_chat
 from app.pipeline.chat import run_chat
 from app.pipeline.download import load_cached as load_download
@@ -39,6 +39,7 @@ from app.pipeline.download import max_download_height, run_download
 from app.pipeline.hinglish import to_hinglish
 from app.pipeline.motion import run_motion
 from app.pipeline.screen import ScreenFile, run_screen
+from app.pipeline.screen_text import ScreenText, frame_times, read_frames
 from app.pipeline.select import (
     Evidence,
     SelectionClip,
@@ -103,6 +104,7 @@ PARAKEET_FALLBACK_CODES = frozenset(
 SOUND_FAILED_NOTE = (
     "Sound event check skipped (its model could not run), so only loudness was used."
 )
+SCREEN_TEXT_FAILED_NOTE = "On-screen text was not read (the text reader could not run)."
 SCREEN_FAILED_NOTE = "Screen type check skipped (its model could not run), so menus may be clipped."
 
 WHISPER_DEVICE_NAMES = {"cuda": "GPU", "cpu": "CPU"}
@@ -257,7 +259,10 @@ class VideoPipeline:
         selection = run_select(
             video_dir, facts, candidates.items, transcript,
             count=count, extended=extended, client=client,
-            evidence=Evidence(analysis.screen, analysis.events, chat.items if chat else ()),
+            evidence=Evidence(
+                analysis.screen, analysis.events, chat.items if chat else (),
+                self._screen_text(candidates.items, duration),
+            ),
         )  # fmt: skip
 
         self._stage("clips")
@@ -330,7 +335,8 @@ class VideoPipeline:
                 VideoFacts(title, channel, duration), candidates, transcript, taken,
                 count=count, extended=True, client=client,
                 evidence=Evidence(
-                    analysis.screen, analysis.events, replay.items if replay else ()
+                    analysis.screen, analysis.events, replay.items if replay else (),
+                    self._screen_text(candidates, duration),
                 ),
             )  # fmt: skip
             words = all_words(transcript)
@@ -479,6 +485,24 @@ class VideoPipeline:
         if sound is not None:
             signals["sound"], events = sound
         return Analysis(signals, screen_future.result(), events)
+
+    def _screen_text(self, candidates: Sequence[Candidate], duration: float) -> ScreenText | None:
+        """Text on screen around the candidates (D-045); optional, so a failure (package
+        missing, OCR error) is logged and noted and selection goes on without it."""
+        video_dir = self.ctx.video_dir(self.video_id)
+        with stage_timer("screen_text", video=self.video_id):
+            try:
+                return read_frames(
+                    video_dir, frame_times(candidates, duration),
+                    ffmpeg_path=self.ctx.config.ffmpeg_path, cancel=self.cancel,
+                )  # fmt: skip
+            except CommandCancelledError:
+                raise
+            # onnxruntime raises plain Exception subclasses; optional stage, never fatal.
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("screen text failed video=%s: %s", self.video_id, exc)
+                self._add_note(SCREEN_TEXT_FAILED_NOTE)
+                return None
 
     def _add_note(self, text: str) -> None:
         with self.ctx.session_factory() as session:

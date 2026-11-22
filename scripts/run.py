@@ -101,11 +101,14 @@ def setup_backend() -> Path:
         run([picked.stdout.strip(), "-m", "venv", str(VENV)])
     python = venv_python()
     requirements = BACKEND / "requirements.txt"
-    wanted = digest([requirements])
+    # Packages whose declared dependencies would break the pinned set (D-045): no deps.
+    nodeps = BACKEND / "requirements-nodeps.txt"
+    wanted = digest([requirements, nodeps])
     if not stamp_matches(REQS_STAMP, wanted):
         say("installing backend dependencies (first start or after an update; this takes a while)")
         run([str(python), "-m", "pip", "install", "--upgrade", "pip"])
         run([str(python), "-m", "pip", "install", "-r", str(requirements)])
+        run([str(python), "-m", "pip", "install", "--no-deps", "-r", str(nodeps)])
         write_stamp(REQS_STAMP, wanted)
     setup_gpu_libraries(python)
     say("applying database migrations")
