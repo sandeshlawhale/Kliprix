@@ -3,10 +3,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, ArrowLeft, Download, FileText, Loader2, Pencil } from "lucide-react";
 import Link from "next/link";
-import { use, useState } from "react";
+import { use, useRef, useState, type ReactNode, type RefObject } from "react";
 import { toast } from "sonner";
 
 import { clipStatusText } from "@/components/batch/clip-card";
+import { BlurBoxOverlay } from "@/components/clip/blur-box-overlay";
 import { EditPanel } from "@/components/clip/edit-panel";
 import { MetadataPanel } from "@/components/clip/metadata-panel";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -24,6 +25,7 @@ import {
   previewClip,
   type Clip,
 } from "@/lib/api";
+import { draftFrom, type EditDraft } from "@/lib/clip-edit";
 
 type View = "metadata" | "edit";
 
@@ -53,20 +55,62 @@ export default function ClipPage({ params }: PageProps<"/history/[batchId]/clips
         view={view}
         onToggleView={() => setView(view === "edit" ? "metadata" : "edit")}
       />
-      <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-8">
-        <Player clip={data} />
-        <section
-          aria-label={view === "edit" ? "Edit" : "Metadata"}
-          className="min-h-0 overflow-y-auto pr-2"
-        >
-          {view === "edit" ? (
-            // Remount the draft when the saved clip changes (after apply or a render).
-            <EditPanel key={data.updated_at} clip={data} />
-          ) : (
-            <MetadataPanel clip={data} />
-          )}
-        </section>
-      </div>
+      {/* Remount the draft when the saved clip changes (after apply or a render). */}
+      <Workspace key={data.updated_at} clip={data} view={view} />
+    </div>
+  );
+}
+
+/** Player and side panel share the edit draft, so blur boxes can be drawn on the video. */
+function Workspace({ clip, view }: { clip: Clip; view: View }) {
+  const [draft, setDraft] = useState<EditDraft>(() => draftFrom(clip));
+  const [selectedBox, setSelectedBox] = useState<number | null>(null);
+  const [time, setTime] = useState(0);
+  const video = useRef<HTMLVideoElement>(null);
+  const editing = view === "edit";
+
+  return (
+    <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-8">
+      <Player
+        clip={clip}
+        video={video}
+        onTime={setTime}
+        overlay={
+          editing ? (
+            <BlurBoxOverlay
+              video={video}
+              boxes={draft.blur_boxes}
+              time={time}
+              selected={selectedBox}
+              onSelect={setSelectedBox}
+              onChange={(index, box) =>
+                setDraft((current) => ({
+                  ...current,
+                  blur_boxes: current.blur_boxes.map((old, i) => (i === index ? box : old)),
+                }))
+              }
+            />
+          ) : null
+        }
+      />
+      <section aria-label={editing ? "Edit" : "Metadata"} className="min-h-0 overflow-y-auto pr-2">
+        {editing ? (
+          <EditPanel
+            clip={clip}
+            draft={draft}
+            setDraft={setDraft}
+            videoTime={() => video.current?.currentTime ?? time}
+            selectedBox={selectedBox}
+            onSelectBox={(index) => {
+              setSelectedBox(index);
+              const box = index === null ? undefined : draft.blur_boxes[index];
+              if (box && video.current) video.current.currentTime = box.start;
+            }}
+          />
+        ) : (
+          <MetadataPanel clip={clip} />
+        )}
+      </section>
     </div>
   );
 }
@@ -150,17 +194,30 @@ function Toolbar({
   );
 }
 
-function Player({ clip }: { clip: Clip }) {
+function Player({
+  clip,
+  video,
+  onTime,
+  overlay,
+}: {
+  clip: Clip;
+  video: RefObject<HTMLVideoElement | null>;
+  onTime: (time: number) => void;
+  overlay: ReactNode;
+}) {
   const busy = clip.status === "queued" || clip.status === "running";
   const kind = clip.has_preview ? "preview" : clip.has_export ? "export" : null;
   const needsPreview = clip.edited && !clip.has_preview && !busy;
 
   return (
     <div className="flex min-h-0 flex-col gap-2">
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
         {kind ? (
           <video
+            ref={video}
             key={`${kind}-${clip.updated_at}`}
+            onTimeUpdate={(event) => onTime(event.currentTarget.currentTime)}
+            onSeeked={(event) => onTime(event.currentTarget.currentTime)}
             src={clipMediaUrl(clip.id, kind, clip.updated_at)}
             controls
             playsInline
@@ -171,6 +228,7 @@ function Player({ clip }: { clip: Clip }) {
             {busy ? "Rendering…" : "No rendered video yet. Make a preview to see your changes."}
           </div>
         )}
+        {kind && overlay}
       </div>
       {clip.status === "running" && (
         <Progress value={clip.progress * 100} aria-label="Render progress" />

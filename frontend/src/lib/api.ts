@@ -25,6 +25,7 @@ export type ClipSummary = Schemas["ClipSummary"];
 export type Clip = Schemas["Clip"];
 export type ClipPatch = Schemas["ClipPatch"];
 export type Word = Schemas["WordOut"];
+export type BlurBox = Schemas["BlurBox"];
 export type DownloaderUpdate = Schemas["DownloaderUpdate"];
 
 /** Error shape for every non-2xx response (docs/07-api-contract.md). */

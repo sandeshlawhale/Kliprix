@@ -1,8 +1,8 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, TriangleAlert } from "lucide-react";
-import { useState } from "react";
+import { Loader2, Plus, Trash2, TriangleAlert } from "lucide-react";
+import type { Dispatch, SetStateAction } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,8 @@ import {
   draftFrom,
   isDirty,
   lengthWarning,
+  MAX_BLUR_BOXES,
+  newBlurBox,
   patchFrom,
   wordLines,
   type EditDraft,
@@ -24,10 +26,24 @@ import {
 import { clock } from "@/lib/format";
 
 /** Video-affecting edits are collected here and saved together with "Apply changes"; the
- * clip is then marked edited and needs a new preview (edits never re-render silently). */
-export function EditPanel({ clip }: { clip: Clip }) {
+ * clip is then marked edited and needs a new preview (edits never re-render silently).
+ * The draft lives in the clip page, so blur boxes can also be moved on the video. */
+export function EditPanel({
+  clip,
+  draft,
+  setDraft,
+  videoTime,
+  selectedBox,
+  onSelectBox,
+}: {
+  clip: Clip;
+  draft: EditDraft;
+  setDraft: Dispatch<SetStateAction<EditDraft>>;
+  videoTime: () => number;
+  selectedBox: number | null;
+  onSelectBox: (index: number | null) => void;
+}) {
   const client = useQueryClient();
-  const [draft, setDraft] = useState<EditDraft>(() => draftFrom(clip));
   const errors = draftErrors(draft, clip);
   const warning = lengthWarning(draft);
   const dirty = isDirty(draft, clip);
@@ -144,6 +160,16 @@ export function EditPanel({ clip }: { clip: Clip }) {
         )}
       </section>
 
+      <BlurBoxes
+        draft={draft}
+        setDraft={setDraft}
+        length={length}
+        videoTime={videoTime}
+        selected={selectedBox}
+        onSelect={onSelectBox}
+        canDraw={clip.has_preview || clip.has_export}
+      />
+
       {errors.length > 0 && (
         <ul className="text-destructive list-disc pl-5 text-sm" role="alert">
           {errors.map((error) => (
@@ -170,6 +196,113 @@ export function EditPanel({ clip }: { clip: Clip }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** Manual blur boxes (D-048): rectangles of the vertical clip blurred for a time range. */
+function BlurBoxes({
+  draft,
+  setDraft,
+  length,
+  videoTime,
+  selected,
+  onSelect,
+  canDraw,
+}: {
+  draft: EditDraft;
+  setDraft: Dispatch<SetStateAction<EditDraft>>;
+  length: number;
+  videoTime: () => number;
+  selected: number | null;
+  onSelect: (index: number | null) => void;
+  canDraw: boolean;
+}) {
+  const boxes = draft.blur_boxes;
+  const update = (index: number, change: Partial<EditDraft["blur_boxes"][number]>) =>
+    setDraft((current) => ({
+      ...current,
+      blur_boxes: current.blur_boxes.map((box, i) => (i === index ? { ...box, ...change } : box)),
+    }));
+  const now = () => Math.round(videoTime() * 100) / 100;
+
+  return (
+    <section className="flex flex-col gap-3">
+      <h3 className="font-medium">Blur boxes</h3>
+      <p className="text-muted-foreground text-sm">
+        Hide part of the video, such as a scene that is not fine for YouTube. Play the video to the
+        moment, add a box, then drag it on the video and pull its corner to resize. Captions and the
+        title stay on top.
+      </p>
+      {!canDraw && (
+        <p className="text-muted-foreground text-sm">Make a preview first to draw boxes on it.</p>
+      )}
+      {boxes.map((box, index) => (
+        <div
+          // Boxes have no stable id; the index is their identity in the draft.
+          key={index}
+          className={
+            "flex flex-wrap items-end gap-3 rounded-md border p-2 " +
+            (index === selected ? "border-brand" : "")
+          }
+        >
+          <Button
+            variant={index === selected ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => onSelect(index)}
+            aria-pressed={index === selected}
+          >
+            Box {index + 1}
+          </Button>
+          <NumberField
+            label="From (s)"
+            id={`box-${index}-start`}
+            value={box.start}
+            onChange={(v) => update(index, { start: v })}
+          />
+          <NumberField
+            label="To (s)"
+            id={`box-${index}-end`}
+            value={box.end}
+            onChange={(v) => update(index, { end: v })}
+          />
+          <div className="flex gap-1 pb-0.5">
+            <Button variant="outline" size="sm" onClick={() => update(index, { start: now() })}>
+              From = now
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => update(index, { end: now() })}>
+              To = now
+            </Button>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Remove blur box ${index + 1}`}
+            onClick={() => {
+              setDraft((current) => ({
+                ...current,
+                blur_boxes: current.blur_boxes.filter((_, i) => i !== index),
+              }));
+              onSelect(null);
+            }}
+          >
+            <Trash2 aria-hidden />
+          </Button>
+        </div>
+      ))}
+      <div>
+        <Button
+          variant="outline"
+          disabled={!canDraw || boxes.length >= MAX_BLUR_BOXES}
+          onClick={() => {
+            const box = newBlurBox(videoTime(), length);
+            setDraft((current) => ({ ...current, blur_boxes: [...current.blur_boxes, box] }));
+            onSelect(boxes.length);
+          }}
+        >
+          <Plus aria-hidden /> Add blur box at {now().toFixed(1)} s
+        </Button>
+      </div>
+    </section>
   );
 }
 

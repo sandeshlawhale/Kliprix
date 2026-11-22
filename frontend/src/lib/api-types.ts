@@ -553,6 +553,26 @@ export interface components {
             /** Clip Count */
             clip_count: number;
         };
+        /**
+         * BlurBox
+         * @description A rectangle of the vertical clip that is blurred from `start` to `end` (clip seconds).
+         *     `x`, `y`, `w`, `h` are shares (0-1) of the 1080x1920 canvas, so the box covers what the
+         *     editor shows, in face-crop and full-frame mode alike.
+         */
+        BlurBox: {
+            /** Start */
+            start: number;
+            /** End */
+            end: number;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** W */
+            w: number;
+            /** H */
+            h: number;
+        };
         /** Checkpoint */
         Checkpoint: {
             /**
@@ -668,6 +688,8 @@ export interface components {
             end_s?: number | null;
             /** Words */
             words?: components["schemas"]["WordIn"][] | null;
+            /** Blur Boxes */
+            blur_boxes?: components["schemas"]["BlurBox"][] | null;
         };
         /** ClipSummary */
         ClipSummary: {
@@ -750,6 +772,11 @@ export interface components {
             start_s: number;
             /** End S */
             end_s: number;
+            /**
+             * Blur Boxes
+             * @default []
+             */
+            blur_boxes: components["schemas"]["BlurBox"][];
         };
         /** ErrorBody */
         ErrorBody: {
