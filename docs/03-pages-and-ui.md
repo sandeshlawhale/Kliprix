@@ -19,6 +19,8 @@ Above every page a top bar of fixed height (D-038): the storage warning pill on 
    - Configure API → `/configure-api`
    - Settings → `/settings`
    - Theme: Light / Dark / System (inline toggle group)
+   - About → `/about` (D-039)
+   - How to use → `/how-to-use` (D-039)
    - Documentation (opens GitHub README in new tab)
    There is no login and no profile page.
 
@@ -31,6 +33,8 @@ Above every page a top bar of fixed height (D-038): the storage warning pill on 
 | `/style` | Edit video style (defaults) |
 | `/configure-api` | LLM provider setup |
 | `/settings` | Settings |
+| `/about` | About Kliprix (static, D-039) |
+| `/how-to-use` | How to use (static, D-039) |
 
 ## Home `/`
 (D-037) Centered on the page, nothing else around it.

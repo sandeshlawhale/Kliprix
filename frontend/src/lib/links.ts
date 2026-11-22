@@ -12,3 +12,6 @@ export function isSupportedLink(raw: string, hosts: string[]): boolean {
   const host = url.hostname.toLowerCase();
   return hosts.some((allowed) => host === allowed || host.endsWith(`.${allowed}`));
 }
+
+/** The project's GitHub repository (Documentation, About page). */
+export const REPO_URL = "https://github.com/sandeshlawhale/Kliprix";

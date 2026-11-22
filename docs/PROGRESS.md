@@ -5,7 +5,7 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 ## Current state
 - **Current milestone:** all milestones built (M3→M10 in one run, D-027). **Waiting for the owner's checks** below; no milestone after M0–M2 is tagged yet.
 - **Status:** M0–M2 verified and tagged (`m0`, `m1`, `m2`). M3–M10 built and checked by the agent as far as possible without the owner (real runs on this machine, see "M3–M9 output" and "M10 output"); owner-only checks are listed below.
-- **Last session:** 2026-11-22, Claude Code (Claude Opus 5.5): D-037 home page link box; D-038 one page width, top bar with storage + batch date, batch page rework (per-video timer from job start, steps only while working, names before processing, More clips beside the title), on `dev`
+- **Last session:** 2026-11-22, Claude Code (Claude Opus 5.5): D-039 About and How to use pages in the sidebar menu (after D-037/D-038), on `dev`
 - **Last commit:** see `git log -1`
 - **Branches (owner, 2026-11-21):** all development happens on `dev`; `main` gets a merge only after the owner confirms the work runs. Never commit straight to `main`.
 

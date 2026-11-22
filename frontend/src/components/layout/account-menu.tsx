@@ -1,6 +1,15 @@
 "use client";
 
-import { BookOpen, KeyRound, Moon, Palette, Settings as SettingsIcon, Sun } from "lucide-react";
+import {
+  BookOpen,
+  CircleHelp,
+  Info,
+  KeyRound,
+  Moon,
+  Palette,
+  Settings as SettingsIcon,
+  Sun,
+} from "lucide-react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
 import { useEffect } from "react";
@@ -17,8 +26,9 @@ import {
 import { SidebarMenuButton } from "@/components/ui/sidebar";
 import { useSettings, useUpdateSettings } from "@/hooks/queries";
 import { errorMessage, type Settings } from "@/lib/api";
+import { REPO_URL } from "@/lib/links";
 
-const DOCS_URL = "https://github.com/sandeshlawhale/Kliprix#readme";
+const DOCS_URL = `${REPO_URL}#readme`;
 type Theme = Settings["theme"];
 
 /** Keeps next-themes in step with the theme saved in backend settings. */
@@ -88,6 +98,16 @@ export function AccountMenu() {
             </Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link href="/about">
+              <Info aria-hidden /> About
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link href="/how-to-use">
+              <CircleHelp aria-hidden /> How to use
+            </Link>
+          </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <a href={DOCS_URL} target="_blank" rel="noreferrer">
               <BookOpen aria-hidden /> Documentation
