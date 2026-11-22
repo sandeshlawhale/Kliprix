@@ -32,12 +32,13 @@ Fixed left **sidebar (260 px, always visible)** + main content area (max width 1
 | `/settings` | Settings |
 
 ## Home `/`
-- Title: "Turn videos into shorts". Subtitle: "Paste up to 3 links."
-- Input + **Add** button (Enter also adds). Validates against supported hosts (YouTube in v1; host list comes from backend `GET /api/system`).
-- Below: video cards (thumbnail, title, channel, duration, chat badge, remove button). Loading skeleton while inspecting.
-- Row: **Edit video style** (secondary button → `/style`) and a read-only summary of current style ("Pop captions · 30–60 s · 5 clips · English").
-- **Start** button (primary), disabled until ≥1 valid video and API configured. If API missing: inline alert with "Configure API" button.
-States: empty, inspecting, inspect-failed (per card error), ready, starting.
+(D-037) Centered on the page, nothing else around it.
+- Tagline (large, two lines): "Long videos in. Shorts worth posting out." Subtitle: "Paste up to 3 links. Kliprix finds the best moments, frames the speaker and captions every word, right on your computer."
+- One full-width box: link field on top ("Paste a video link"). Pasting a link reads it at once; Enter adds a typed link. Validates against supported hosts (from `GET /api/system`).
+- Inside the box, under the field: added videos as compact rows (thumbnail, title, channel, duration, chat replay found or not, remove button); a skeleton row while inspecting.
+- Box footer: count (`1/3`), **Edit style** (secondary → `/style`, current style summary as its tooltip) and **Process** (primary), disabled until ≥1 video and API configured.
+- Under the box, one muted line when the API is missing: "API is not configured. Configure API →".
+States: empty, inspecting, inspect-failed (error under the field), ready, starting.
 
 ## Batch results `/history/[batchId]`
 - Header: batch date, overall status.
