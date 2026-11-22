@@ -30,6 +30,8 @@ from typing import Any
 import numpy as np
 
 from app.config import (
+    KILL_SPEECH,
+    KILL_TEXT,
     OCR_MIN_CONFIDENCE,
     OCR_WIDTH,
     PROBE_TIMEOUT_S,
@@ -115,6 +117,8 @@ class ClipAnalysis:
     actions: list[float]
     # (label, JPEG) for the LLM: "start", "1/3", "2/3", "end", "after end".
     frames: list[tuple[str, bytes]] = field(default_factory=list)
+    # (time, what) of kills said or shown in the zone: "said \"I catch all three\"".
+    kills: list[tuple[float, str]] = field(default_factory=list)
 
     def summary(self) -> list[str]:
         """Plain-language findings the LLM should not miss."""
@@ -135,6 +139,15 @@ class ClipAnalysis:
         crossing = [t for t, _ in self.scene_ends if self.start + 3 < t < self.end - 3]
         for t in crossing:
             notes.append(f"A round or scene ends at {clock(t)}, inside the clip.")
+        kills = [f"{what} at {clock(t)}" for t, what in self.kills if self.start <= t < self.end]
+        if kills:
+            notes.append("Kill evidence inside the clip: " + "; ".join(kills[:4]) + ".")
+        else:
+            notes.append("No kill evidence inside the clip.")
+        outside = [f"{what} at {clock(t)}" for t, what in self.kills
+                   if not self.start <= t < self.end]  # fmt: skip
+        if outside:
+            notes.append("Kill evidence just outside the clip: " + "; ".join(outside[:3]) + ".")
         return notes
 
 
@@ -208,9 +221,9 @@ def scene_ends(rows: Sequence[Row]) -> list[tuple[float, str]]:
             row = Row(t=row.t - (REVIEW_DULL_ROWS - 1) * REVIEW_STEP_S, text=row.text,
                       speech=row.speech)  # fmt: skip
             reason = "menu/death screen/scoreboard"
-        on_screen = next((item for item in row.text if _SCENE_TEXT.search(item.lower())), None)
+        on_screen = _SCENE_TEXT.search(" ".join(row.text).lower())
         if on_screen is not None:
-            reason = f'"{on_screen}" on screen'
+            reason = f'"{on_screen.group(0).upper()}" on screen'
         spoken = _SCENE_SPEECH.search(row.speech.lower())
         if spoken is not None:
             reason = f'said "{spoken.group(0)}"'
@@ -220,6 +233,29 @@ def scene_ends(rows: Sequence[Row]) -> list[tuple[float, str]]:
 
 
 _KILL_TEXT = re.compile(r"kill|eliminat|headshot|ace|clutch|planted|defused|victory|wasted")
+_KILLS_SAID = re.compile(KILL_SPEECH)
+_KILLS_SHOWN = re.compile(KILL_TEXT)
+
+
+def kill_evidence(rows: Sequence[Row]) -> list[tuple[float, str]]:
+    """Kills said ("I catch all three") or shown ("KILLED BY", "ELIMINATED") per row."""
+    found: list[tuple[float, str]] = []
+    for row in rows:
+        said = _KILLS_SAID.search(row.speech.lower())
+        if said is not None:
+            found.append((row.t, f'said "{_phrase(row.speech, said.start(), said.end())}"'))
+            continue
+        shown = next((t for t in row.text if _KILLS_SHOWN.search(t.lower())), None)
+        if shown is not None:
+            found.append((row.t, f'"{shown}" on screen'))
+    return found
+
+
+def _phrase(text: str, start: int, end: int, around: int = 20) -> str:
+    """The matched words with a little context, cut at word edges."""
+    left = text.rfind(" ", 0, max(0, start - around)) + 1
+    right = text.find(" ", min(len(text), end + around))
+    return text[left : right if right != -1 else len(text)].strip()
 
 
 def actions(rows: Sequence[Row]) -> list[float]:
@@ -318,6 +354,7 @@ def analyse(
     return ClipAnalysis(
         id=clip_id, start=start, end=end, zone_start=zone_start, zone_end=zone_end,
         rows=rows, scene_ends=scene_ends(rows), actions=actions(rows), frames=frames,
+        kills=kill_evidence(rows),
     )  # fmt: skip
 
 
@@ -395,17 +432,18 @@ def video_readers(
                 load_zone(times[0], times[-1] - times[0] + REVIEW_OCR_STEP_S)
             if not hasattr(local, "reader"):
                 local.reader = make_reader()
+            # Every keyframe of the zone, each under its own time (round banners last 2-4 s,
+            # so a thinned set missed "BUY PHASE" on the owner's video).
+            keyframes: list[tuple[float, Image]] = getattr(local, "frames", [])
+            if len(keyframes) > REVIEW_OCR_MAX:
+                keep = np.linspace(0, len(keyframes) - 1, num=REVIEW_OCR_MAX).round().astype(int)
+                keyframes = [keyframes[i] for i in sorted(set(keep.tolist()))]
             frames: dict[str, list[str]] = {}
-            read: dict[int, list[tuple[str, float]]] = {}
-            for t in times:
-                image = frame_at(t)
-                # Times that share a keyframe are read once.
-                key = id(image)
-                if key not in read:
-                    read[key] = [] if image is None else local.reader(image)
-                texts = read[key]
-                frames[f"{t:g}"] = [
-                    text.strip() for text, score in texts
+            for t, image in keyframes:
+                if cancel is not None and cancel.is_set():
+                    raise CommandCancelledError("review was cancelled")
+                frames[f"{t:.2f}"] = [
+                    text.strip() for text, score in local.reader(image)
                     if score >= OCR_MIN_CONFIDENCE and keep_text(text)
                 ]  # fmt: skip
             return ScreenText(frames=frames)

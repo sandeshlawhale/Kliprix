@@ -16,7 +16,7 @@ from app.config import LLM_LINE_MAX_CHARS, LLM_PROMPT_MAX_CHARS
 
 SELECT_PROMPT_VERSION = 5
 TITLE_PROMPT_VERSION = 1
-REVIEW_PROMPT_VERSION = 2
+REVIEW_PROMPT_VERSION = 3
 TRANSLITERATE_PROMPT_VERSION = 1
 
 NO_SPEECH = "NO SPEECH DETECTED"
@@ -124,6 +124,10 @@ rounds make no sense to a viewer.
 5. Is the text honest? The title and description may only claim what the timeline or the \
 frames show. Do not claim a 1v4, an ace, a clutch or a number of kills unless the kill feed, \
 the speech or the frames show it.
+6. Is there a real play? Rank clips with kill evidence (a multi-kill, a clutch, "I catch all \
+three") above talk over quiet gameplay, and when a clip has one, its title names that play \
+(for example "I caught all three", not a generic "smoke play"). A clip that is mostly \
+commentary over holding an angle needs a strong spoken point to be kept.
 
 Times: every timeline line starts with [mm:ss | seconds]. "start" and "end" in your \
 answer are those seconds from the start of the whole video (for example 1470), never \

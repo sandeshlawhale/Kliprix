@@ -309,7 +309,7 @@ REVIEW_DRAFT_MAX = 10
 REVIEW_ZONE_S = 20.0
 REVIEW_STEP_S = 2
 REVIEW_OCR_STEP_S = 4
-REVIEW_OCR_MAX = 12
+REVIEW_OCR_MAX = 24
 # Frames sent to the LLM per draft: offsets as shares of the clip (start, a third, two thirds,
 # end) plus one REVIEW_AFTER_FRAME_S after the end; small JPEGs.
 REVIEW_FRAME_SHARES = (0.0, 0.33, 0.67, 1.0)
@@ -332,6 +332,14 @@ SCENE_END_TEXT = (
     r"defeat|killed ?by|you died|spike ?(detonated|defused)|game over|wasted|busted|"
     r"mission (passed|failed)|respawn"
 )
+# Kills in speech and on screen (D-046 kill evidence); the first number words cover
+# "I catch all three", "got two", "3k".
+KILL_SPEECH = (
+    r"\b(kill(s|ed)?|got (him|her|one|two|three|four|five|both)|"
+    r"(catch|caught|killed|got|take|took) (all )?(two|three|four|five|both)|"
+    r"ace|clutch(ed)?|one tap(ped)?|head ?shot|[2-5]k|1v[2-5]|multi ?kill|double|triple)\b"
+)
+KILL_TEXT = r"kill|eliminat|head ?shot|\bace\b|clutch|multi ?kill|double|triple|quadra"
 SCENE_END_SPEECH = r"\b(new game|next game|next round|new round|round \d+|game \d+)\b"
 # The review keeps clips between these lengths after its fixes.
 REVIEW_MIN_S = 10.0

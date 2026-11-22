@@ -36,7 +36,9 @@ from app.config import (
     LLM_SELECT_TEMPERATURE,
     REVIEW_DRAFT_FACTOR,
     REVIEW_DRAFT_MAX,
+    REVIEW_DULL_MIN,
     REVIEW_MIN_S,
+    REVIEW_STEP_S,
     REVIEW_WORKERS,
     SCREEN_FALLBACK_MAX_DULL,
     SENTENCE_SNAP_S,
@@ -110,6 +112,9 @@ AUTO_LEAD_S = 5.0
 AUTO_REACH_S = 10.0
 AUTO_GAP_S = 6.0
 AUTO_TAIL_S = 3.0
+# Moving the start to late action never leaves less than this (a real 60 s talk-over clip
+# was cut to 13 s otherwise).
+AUTO_KEEP_S = 25.0
 # Chat shown to the LLM (D-043): messages from 3 s before to 8 s after the reaction (or the
 # peak), at most 10, reactions first.
 CHAT_SAMPLE_BEFORE_S = 3.0
@@ -879,7 +884,12 @@ def review_clips(
                 verdict.model_copy(update={"start": None, "end": None}),
                 auto_fixed(draft, analysis), analysis, facts, words,
             )  # fmt: skip
-        if clip is None or conflicts(clip.start, clip.end, kept, taken):
+        if clip is None:
+            continue
+        # The code owns the edges (a real review kept the draft times +-1 s on all 5 clips):
+        # the rule fixes run on every kept clip.
+        clip = auto_fixed(clip, analysis)
+        if conflicts(clip.start, clip.end, kept, taken):
             continue
         kept.append(clip)
     rejected = {verdict.id for verdict in answer.clips if not verdict.keep}
@@ -907,14 +917,20 @@ def _without_images(user: str) -> str:
 
 
 def auto_fixed(draft: SelectionClip, analysis: ClipAnalysis) -> SelectionClip:
-    """The draft fixed by rules alone (D-046), for when the reviewer's times cannot be used:
-    start AUTO_LEAD_S before the first action when it comes late, end AUTO_TAIL_S after the
-    action that continues past the end (inside the zone, up to the standard maximum), and
-    never across a scene end. Unchanged when there is nothing to fix."""
-    start, end = draft.start, draft.end
+    """The draft fixed by rules (D-046); the code owns the clip edges. In order: skip a
+    scoreboard/menu at the start; start AUTO_LEAD_S before late action, but never shorter
+    than AUTO_KEEP_S (talk over a held angle keeps its setup); run through action that
+    continues just past the end; never across a scene end. When the full fix is too short,
+    the scene cut alone is used; the draft only when even that is too short."""
+    opening_start = draft.start
+    for row in (r for r in analysis.rows if draft.start - 1e-6 <= r.t < draft.end):
+        if row.dull < REVIEW_DULL_MIN:
+            break
+        opening_start = row.t + REVIEW_STEP_S
+    start, end = opening_start, draft.end
     inside = [t for t in analysis.actions if start <= t < end]
     if inside and inside[0] - start > AUTO_LATE_S:
-        start = max(analysis.zone_start, inside[0] - AUTO_LEAD_S)
+        start = max(start, min(inside[0] - AUTO_LEAD_S, end - AUTO_KEEP_S))
     after = [t for t in analysis.actions if end <= t < analysis.zone_end]
     if after and after[0] - end <= AUTO_REACH_S:
         last = after[0]
@@ -923,8 +939,12 @@ def auto_fixed(draft: SelectionClip, analysis: ClipAnalysis) -> SelectionClip:
                 break
             last = t
         end = min(analysis.zone_end, last + AUTO_TAIL_S, start + CLIP_STANDARD_MAX_S)
-    start, end = cut_at_scene_end(start, end, analysis)
-    if end - start < REVIEW_MIN_S:
+    for low, high in ((start, end), (opening_start, draft.end), (draft.start, draft.end)):
+        cut_start, cut_end = cut_at_scene_end(low, high, analysis)
+        if cut_end - cut_start >= REVIEW_MIN_S:
+            start, end = cut_start, cut_end
+            break
+    else:
         return draft
     if (start, end) == (draft.start, draft.end):
         return draft

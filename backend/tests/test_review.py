@@ -17,6 +17,7 @@ from app.pipeline.review import (
     analyse,
     build_rows,
     describe,
+    kill_evidence,
     ocr_times,
     scene_ends,
 )
@@ -74,6 +75,7 @@ def test_summary_and_timeline_say_what_is_outside_the_clip() -> None:
     assert analysis.summary() == [
         "No action (fight sounds or kill text) inside the clip.",
         "Action continues 3 s after the clip ends.",
+        "No kill evidence inside the clip.",
     ]
     text = describe(analysis)
     assert "Clip 0: now 24:30-24:53 (23 s); analysed 24:10-25:13" in text
@@ -90,7 +92,7 @@ def test_clip_never_crosses_a_scene_end() -> None:
 
 
 def test_ocr_times_are_thinned() -> None:
-    assert len(ocr_times(0.0, 200.0)) == 12
+    assert len(ocr_times(0.0, 200.0)) == 24
     assert ocr_times(10.0, 22.0) == [10.0, 14.0, 18.0]
 
 
@@ -166,7 +168,9 @@ def test_review_keeps_fixes_and_drops() -> None:
     llm = ReviewLlm(verdicts)
     kept = review_clips(drafts, 3, FACTS, None, llm, reviewer)  # type: ignore[arg-type]
     assert [c.title for c in kept] == ["Look at that clutch", "New game chaos", "Draft"]
-    assert (kept[0].start, kept[0].end) == (490.0, 525.0)
+    # The code owns the edges: the action is at 505 s, so the start moves to 500 s (5 s
+    # before it, and 25 s are kept).
+    assert (kept[0].start, kept[0].end) == (500.0, 525.0)
     # Draft 1 crossed "new game" at 315 s with more action before it: cut there.
     assert (kept[1].start, kept[1].end) == (300.0, 315.0) or kept[1].end <= 315.0
     assert kept[2].start == 700.0  # not mentioned: fills the last place as it was
@@ -262,3 +266,43 @@ def test_never_zero_clips_when_the_reviewer_drops_everything() -> None:
     verdicts = [ReviewClip(id=0, keep=False), ReviewClip(id=1, keep=False)]
     kept = review_clips([draft(100), draft(300)], 1, FACTS, None, ReviewLlm(verdicts), reviewer)  # type: ignore[arg-type]
     assert len(kept) == 1
+
+
+def test_split_banner_pieces_end_a_scene() -> None:
+    # OCR read the buy banner as two items on the owner's video.
+    rows = [Row(t=0.0), Row(t=2.0, text=["LAST ROUND BEFORESWAP", "PRESS", "TOBUY"])]
+    assert scene_ends(rows) == [(2.0, '"PRESS TOBUY" on screen')]
+
+
+def test_kill_evidence_from_speech_and_screen() -> None:
+    rows = [
+        Row(t=0.0, speech="I catch all three, but watching it back"),
+        Row(t=2.0, text=["SPIKE CARRIER KILLED"]),
+        Row(t=4.0, speech="skill issue honestly"),
+    ]
+    found = kill_evidence(rows)
+    assert [t for t, _ in found] == [0.0, 2.0]
+    assert "catch all three" in found[0][1]
+
+
+def _rows(dull_until: float, end: float) -> list[Row]:
+    return [Row(t=float(t), dull=0.8 if t < dull_until else 0.1) for t in range(0, int(end), 2)]
+
+
+def test_auto_fix_skips_an_opening_scoreboard() -> None:
+    analysis = ClipAnalysis(
+        id=0, start=100.0, end=150.0, zone_start=80.0, zone_end=170.0,
+        rows=_rows(106.0, 170.0)[40:], scene_ends=[], actions=[110.0, 120.0],
+    )  # fmt: skip
+    fixed = auto_fixed(draft(100.0).model_copy(update={"end": 150.0}), analysis)
+    assert fixed.start == 106.0
+
+
+def test_auto_fix_keeps_25_s_of_talk_before_late_action() -> None:
+    # A 60 s talk-over clip with its only kill at the end was cut to 13 s before.
+    analysis = ClipAnalysis(
+        id=0, start=351.0, end=411.0, zone_start=331.0, zone_end=431.0,
+        rows=[], scene_ends=[], actions=[401.0, 403.0],
+    )  # fmt: skip
+    fixed = auto_fixed(draft(351.0).model_copy(update={"end": 411.0}), analysis)
+    assert (fixed.start, fixed.end) == (386.0, 411.0)
