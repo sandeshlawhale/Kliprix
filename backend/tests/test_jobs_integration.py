@@ -4,6 +4,7 @@ resume after restart, cancel, and the clip edit → preview → export → downl
 The source adapter copies ffmpeg-generated media, Whisper is a fake runner, and the LLM is
 a fake completion (docs/12: the LLM is mocked in tests only)."""
 
+import json
 import shutil
 import threading
 import time
@@ -123,6 +124,12 @@ def fake_completion(**kwargs: Any) -> Any:
         '"hashtags":["#test","#fake","#shorts"],"linkedin_post":"post","reason":"why",'
         '"score":0.9}]}'
     )
+    user = str(kwargs["messages"][-1]["content"])
+    if "\nClips:\n" in user:
+        # The title step (D-043) for the clips the backend filled.
+        ids = [int(line.split()[1].rstrip(":")) for line in user.splitlines()
+               if line.startswith("Clip ")]  # fmt: skip
+        text = json.dumps({"clips": [{"id": i, "title": f"Fake title {i}"} for i in ids]})
     return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
 
 
@@ -314,7 +321,7 @@ def test_more_clips_reuse_the_download(config: AppConfig, media: Path) -> None:
     # Never on top of (or within 30 s of) the clip already made.
     assert new["start_s"] >= first["end_s"] + 30 or new["end_s"] <= first["start_s"] - 30
     assert source.downloads == downloads
-    assert "Clips already made (do not repeat these moments)" in prompts[-1]
+    assert any("Clips already made (do not repeat these moments)" in p for p in prompts)
     assert video["note"].endswith("More clips: 1 more clip added.")
     assert all(step["state"] in ("done", "skipped") for step in video["checkpoints"])
 
