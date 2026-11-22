@@ -12,11 +12,14 @@ from app.llm.client import LlmClient, classify_error, extract_json, litellm_mode
 from app.llm.prompts import (
     NO_SPEECH,
     PromptCandidate,
+    TitleClip,
     select_system,
     select_user,
+    title_system,
+    title_user,
     transliterate_user,
 )
-from app.llm.schemas import SelectionAnswer, TransliterationAnswer
+from app.llm.schemas import SelectionAnswer, TitleAnswer, TransliterationAnswer
 from app.llm.session import LlmSession
 from app.llm.transliterate import transliterate_words
 
@@ -250,3 +253,31 @@ def test_preload_litellm_runs_once(monkeypatch: pytest.MonkeyPatch) -> None:
     first.join(5)
     assert client_module.preload_litellm() is None
     assert calls == [1]
+
+
+def test_select_prompt_v4_evidence_and_tone() -> None:
+    system = select_system(5)
+    # D-043: the evidence replaces sight and hearing; titles in a creator's voice.
+    assert '"On screen"' in system and '"Sounds"' in system
+    assert "start the clip before the likely cause" in system
+    assert "Never copy the first words of the transcript" in system
+    assert "Look at that ace" in system
+    candidate = PromptCandidate(
+        0, 100.0, 160.0, 0.8, {"sound": 0.9}, [], ["On screen: gameplay 90%"], ["GG\x07 WP"]
+    )
+    facts = ["Mostly on screen: gameplay 80%"]
+    user = select_user("Valorant ranked", None, 900.0, 5, [candidate], video_facts=facts)
+    assert "Mostly on screen: gameplay 80%" in user
+    assert "On screen: gameplay 90%" in user
+    assert "<chat>\nGG  WP\n</chat>" in user or "<chat>\nGG WP\n</chat>" in user
+
+
+def test_title_prompt_and_sample_output() -> None:
+    system = title_system()
+    assert "Look at that ace" in system and '"id": int' in system
+    user = title_user(
+        "A video", None, [TitleClip(2, 10.0, 40.0, [(11.0, "hello")], ["Sounds: 00:12 gunfire"])]
+    )
+    assert "Clip 2: 10.0-40.0 s" in user and "[00:11] hello" in user and "Sounds: 00:12" in user
+    answer = TitleAnswer.model_validate_json('{"clips":[{"id":2,"title":"Look at that","x":1}]}')
+    assert answer.clips[0].title == "Look at that"

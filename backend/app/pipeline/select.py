@@ -36,12 +36,21 @@ from app.config import (
     SPEECH_FULL_WPS,
     SPEECH_VIDEO_MIN_WPS,
 )
+from app.core.errors import AppError
 from app.core.files import write_json_atomic
 from app.llm.client import LlmClient
-from app.llm.prompts import PromptCandidate, clock, select_system, select_user
-from app.llm.schemas import LlmClip, SelectionAnswer
+from app.llm.prompts import (
+    PromptCandidate,
+    TitleClip,
+    clock,
+    select_system,
+    select_user,
+    title_system,
+    title_user,
+)
+from app.llm.schemas import LlmClip, SelectionAnswer, TitleAnswer
 from app.pipeline.candidates import Candidate
-from app.pipeline.screen import describe, dull_share
+from app.pipeline.screen import ScreenFile, describe, dull_share, window_shares
 from app.pipeline.sentences import (
     first_between,
     last_between,
@@ -49,7 +58,10 @@ from app.pipeline.sentences import (
     sentence_edges,
     words_per_second,
 )
+from app.pipeline.signals import message_groups
+from app.pipeline.sound import SoundEvents, timeline
 from app.pipeline.transcribe import TranscriptFile, Word
+from app.sources.base import ChatMessage
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +82,11 @@ DEFAULT_HASHTAGS = ("#shorts", "#highlights", "#clips")
 _QUOTES = "\"'`" + "".join(map(chr, (0x201C, 0x201D, 0x2018, 0x2019, 0xAB, 0xBB)))
 _HASHTAG_BODY = re.compile(r"[^\w]", re.UNICODE)
 TIME_DECIMALS = 2
+# Chat shown to the LLM (D-043): messages from 3 s before to 8 s after the reaction (or the
+# peak), at most 10, reactions first.
+CHAT_SAMPLE_BEFORE_S = 3.0
+CHAT_SAMPLE_AFTER_S = 8.0
+CHAT_SAMPLE_COUNT = 10
 # Zero-width joiner and emoji variation selector, left over when emoji are removed.
 _JOINERS = (chr(0x200D), chr(0xFE0F))
 
@@ -87,6 +104,9 @@ class SelectionClip(BaseModel):
     reason: str
     score: float = Field(ge=0, le=1)
     needs_extended: bool = False
+    # False for a clip filled from a candidate without the LLM; its text then comes from the
+    # title step (D-043).
+    from_llm: bool = True
 
 
 class SelectionFile(BaseModel):
@@ -297,7 +317,7 @@ def repair_clip(
     if window is None:
         return None
     start, end = window
-    title = clean_title(raw.title) or fallback_title(words_between(words, start, end), start)
+    title = clean_title(raw.title) or fallback_title(start)
     return SelectionClip(
         start=start,
         end=end,
@@ -319,10 +339,10 @@ def _reason_text(raw: LlmClip) -> str:
     return f"{category}: {reason}" if category and reason else reason or category
 
 
-def fallback_title(words: Sequence[Word], start: float) -> str:
-    """The first words spoken in the clip, or "Highlight at mm:ss" when nobody speaks."""
-    text = clean_title(" ".join(word.text for word in words[: TITLE_MAX_WORDS * 2]))
-    return text or f"Highlight at {clock(start)}"
+def fallback_title(start: float) -> str:
+    """An honest plain title for a clip without LLM text (D-043: never the transcript's first
+    words, which read like a random caption)."""
+    return f"Highlight at {clock(start)}"
 
 
 def rank_by_speech(candidates: Sequence[Candidate], words: Sequence[Word]) -> list[Candidate]:
@@ -374,7 +394,7 @@ def fallback_clip(
         return None
     start, end = window
     spoken = words_between(words, start, end)
-    title = fallback_title(spoken, start)
+    title = fallback_title(start)
     snippet = truncate_words(" ".join(word.text for word in spoken), DESCRIPTION_MAX_CHARS)
     description = snippet or truncate_words(
         f"A highlight from {facts.title} at {clock(start)}.", DESCRIPTION_MAX_CHARS
@@ -391,14 +411,19 @@ def fallback_clip(
         ),
         reason=f"Picked from signal peaks ({_signals_text(candidate)}).",
         score=candidate.score,
+        from_llm=False,
     )
 
 
 def prompt_candidates(
-    candidates: Sequence[Candidate], transcript: TranscriptFile | None
+    candidates: Sequence[Candidate],
+    transcript: TranscriptFile | None,
+    evidence: Evidence | None = None,
 ) -> list[PromptCandidate]:
-    """Candidates with their transcript lines in [start - 30, end + 30] for the prompt."""
+    """Candidates with their transcript lines in [start - 30, end + 30] and what the other
+    stages found there (D-043) for the prompt."""
     segments = transcript.segments if transcript is not None else []
+    seen = evidence or Evidence()
     result = []
     for index, candidate in enumerate(candidates):
         low = candidate.start - CLIP_REGION_MARGIN_S
@@ -409,12 +434,171 @@ def prompt_candidates(
             for name, value in candidate.signals.model_dump().items()
             if value is not None
         }
-        screen = describe(candidate.screen) if candidate.screen else ""
+        facts = moment_facts(seen, candidate.start, candidate.end, candidate.screen)
+        facts += chat_facts(seen, candidate)
+        chat = chat_sample(seen, candidate.reaction_t or candidate.peak_t)
         result.append(
             PromptCandidate(
-                index, candidate.start, candidate.end, candidate.score, signals, lines, screen
+                index, candidate.start, candidate.end, candidate.score, signals, lines,
+                facts, chat,
+            )
+        )  # fmt: skip
+    return result
+
+
+@dataclass(frozen=True)
+class Evidence:
+    """What the other stages found in the whole video (D-043): screen type, sound events and
+    the chat replay. Every part is optional."""
+
+    screen: ScreenFile | None = None
+    events: SoundEvents | None = None
+    chat: Sequence[ChatMessage] = ()
+
+
+def moment_facts(
+    evidence: Evidence, start: float, end: float, shares: dict[str, float] | None = None
+) -> list[str]:
+    """ "On screen: ..." and "Sounds: ..." lines for [start, end) (D-043)."""
+    facts: list[str] = []
+    if shares is None and evidence.screen is not None:
+        shares = window_shares(evidence.screen, start, end) or None
+    if shares:
+        facts.append(f"On screen: {describe(shares)}")
+    if evidence.events is not None:
+        moments = timeline(evidence.events, start, end)
+        if moments:
+            facts.append("Sounds: " + "; ".join(f"{clock(t)} {text}" for t, text in moments))
+    return facts
+
+
+def _group_counts(messages: Sequence[ChatMessage]) -> str:
+    counts: dict[str, int] = {}
+    for message in messages:
+        for group in message_groups(message.text):
+            counts[group] = counts.get(group, 0) + 1
+    return ", ".join(f"{group} {n}" for group, n in sorted(counts.items(), key=lambda p: -p[1]))
+
+
+def chat_facts(evidence: Evidence, candidate: Candidate) -> list[str]:
+    """How chat reacted in the candidate (D-042, D-043)."""
+    if not evidence.chat:
+        return []
+    inside = [m for m in evidence.chat if candidate.start <= m.t < candidate.end]
+    if candidate.reaction_t is None:
+        if not inside:
+            return []
+        groups = _group_counts(inside)
+        return [f"Chat: {len(inside)} messages here" + (f" ({groups})" if groups else "")]
+    near = [
+        m
+        for m in evidence.chat
+        if candidate.reaction_t - CHAT_SAMPLE_BEFORE_S
+        <= m.t
+        < candidate.reaction_t + CHAT_SAMPLE_AFTER_S
+    ]
+    groups = _group_counts(near)
+    line = f"Chat reacts at {clock(candidate.reaction_t)}" + (f" ({groups})" if groups else "")
+    if candidate.cause_t is not None:
+        line += f"; the likely cause is at {clock(candidate.cause_t)}, so start before it"
+    return [line]
+
+
+def chat_sample(evidence: Evidence, at: float) -> list[str]:
+    """Up to CHAT_SAMPLE_COUNT distinct chat messages around `at`, reactions first."""
+    near = [m for m in evidence.chat if at - CHAT_SAMPLE_BEFORE_S <= m.t < at + CHAT_SAMPLE_AFTER_S]
+    ordered = sorted(near, key=lambda m: (not message_groups(m.text), m.t))
+    sample: list[str] = []
+    seen: set[str] = set()
+    for message in ordered:
+        key = message.text.strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            sample.append(message.text.strip())
+        if len(sample) >= CHAT_SAMPLE_COUNT:
+            break
+    return sample
+
+
+def video_facts(evidence: Evidence) -> list[str]:
+    """One line on what the whole video mostly shows (D-043), e.g. "Mostly on screen:
+    gameplay 78%, people talking 15%"."""
+    if evidence.screen is None or not evidence.screen.shares:
+        return []
+    shares = window_shares(evidence.screen, 0, len(evidence.screen.shares) * evidence.screen.step_s)
+    text = describe(shares)
+    return [f"Mostly on screen: {text}"] if text else []
+
+
+def write_titles(
+    clips: Sequence[SelectionClip],
+    facts: VideoFacts,
+    transcript: TranscriptFile | None,
+    evidence: Evidence,
+    client: LlmClient,
+) -> list[SelectionClip]:
+    """The title step (D-043): clips filled without the LLM get their text from one LLM call
+    with their transcript and evidence. Clips that already have LLM text are returned as they
+    are. If the call fails, the fallback text stays (an honest "Highlight at mm:ss" title)
+    and the failure is logged: the clips are still good, only their text is plain."""
+    todo = [index for index, clip in enumerate(clips) if not clip.from_llm]
+    if not todo:
+        return list(clips)
+    segments = transcript.segments if transcript is not None else []
+    items = []
+    for index in todo:
+        clip = clips[index]
+        lines = [(s.start, s.text) for s in segments if s.end > clip.start and s.start < clip.end]
+        chat = chat_sample(evidence, (clip.start + clip.end) / 2)
+        items.append(
+            TitleClip(
+                index,
+                clip.start,
+                clip.end,
+                lines,
+                moment_facts(evidence, clip.start, clip.end),
+                chat,
             )
         )
+    try:
+        answer = client.complete_json(
+            title_system(), title_user(facts.title, facts.channel, items), TitleAnswer,
+            LLM_SELECT_TEMPERATURE,
+        )  # fmt: skip
+    except AppError as exc:
+        logger.warning("title step failed: %s", exc.code)
+        return list(clips)
+    result = list(clips)
+    for text in answer.clips:
+        if text.id not in todo:
+            continue
+        clip = result[text.id]
+        title = clean_title(text.title)
+        if not title:
+            continue
+        result[text.id] = clip.model_copy(
+            update={
+                "title": title,
+                "youtube_title": truncate_words(
+                    text.youtube_title.strip() or title, YOUTUBE_TITLE_MAX_CHARS
+                ),
+                "youtube_description": truncate_words(
+                    text.youtube_description.strip() or clip.youtube_description,
+                    DESCRIPTION_MAX_CHARS,
+                ),
+                "hashtags": clean_hashtags(text.hashtags),
+                "linkedin_post": truncate_words(
+                    text.linkedin_post.strip() or clip.linkedin_post, LINKEDIN_MAX_CHARS
+                ),
+                "reason": truncate_words(text.reason.strip() or clip.reason, REASON_MAX_CHARS),
+                "from_llm": True,
+            }
+        )
+    logger.info(
+        "title step clips=%s written=%s",
+        len(todo),
+        sum(c.from_llm for c in result) - (len(clips) - len(todo)),
+    )
     return result
 
 
@@ -467,6 +651,7 @@ def run_select(
     count: int,
     extended: bool,
     client: LlmClient,
+    evidence: Evidence | None = None,
 ) -> SelectionFile:
     """Write `selection.json` (skipped when a valid copy exists).
 
@@ -478,13 +663,15 @@ def run_select(
         return cached
     # Candidate ids in the prompt and in the answer refer to this re-ranked list.
     candidates = rank_by_speech(candidates, all_words(transcript))
+    seen = evidence or Evidence()
     system = select_system(count, extended)
     user = select_user(
         facts.title, facts.channel, facts.duration_s, count,
-        prompt_candidates(candidates, transcript),
+        prompt_candidates(candidates, transcript, seen), video_facts=video_facts(seen),
     )  # fmt: skip
     answer = client.complete_json(system, user, SelectionAnswer, LLM_SELECT_TEMPERATURE)
     selection = build_selection(answer, candidates, facts, transcript, count, extended)
+    selection = SelectionFile(clips=write_titles(selection.clips, facts, transcript, seen, client))
     write_json_atomic(video_dir / SELECTION_FILE_NAME, selection)
     return selection
 
@@ -498,6 +685,7 @@ def select_more(
     count: int,
     extended: bool,
     client: LlmClient,
+    evidence: Evidence | None = None,
 ) -> list[SelectionClip]:
     """More clips for a video that has some (D-034): the same selection as `run_select`, but
     the prompt lists the clips already made, no new clip may overlap or come within the gap
@@ -509,10 +697,13 @@ def select_more(
     if not candidates:
         return []
     candidates = rank_by_speech(candidates, all_words(transcript))
+    seen = evidence or Evidence()
     system = select_system(count, extended)
     user = select_user(
         facts.title, facts.channel, facts.duration_s, count,
-        prompt_candidates(candidates, transcript), taken=taken,
+        prompt_candidates(candidates, transcript, seen), taken=taken,
+        video_facts=video_facts(seen),
     )  # fmt: skip
     answer = client.complete_json(system, user, SelectionAnswer, LLM_SELECT_TEMPERATURE)
-    return build_selection(answer, candidates, facts, transcript, count, extended, taken).clips
+    chosen = build_selection(answer, candidates, facts, transcript, count, extended, taken)
+    return write_titles(chosen.clips, facts, transcript, seen, client)

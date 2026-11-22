@@ -31,4 +31,24 @@ class SelectionAnswer(BaseModel):
     clips: list[LlmClip]
 
 
+class TitleText(BaseModel):
+    """The text for one clip from the title step (D-043)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: int
+    title: str = ""
+    youtube_title: str = ""
+    youtube_description: str = ""
+    hashtags: list[str] = Field(default_factory=list)
+    linkedin_post: str = ""
+    reason: str = ""
+
+
+class TitleAnswer(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    clips: list[TitleText]
+
+
 TransliterationAnswer: TypeAdapter[list[str]] = TypeAdapter(list[str])

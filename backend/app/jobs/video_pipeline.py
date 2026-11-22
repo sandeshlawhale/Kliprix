@@ -40,6 +40,7 @@ from app.pipeline.hinglish import to_hinglish
 from app.pipeline.motion import run_motion
 from app.pipeline.screen import ScreenFile, run_screen
 from app.pipeline.select import (
+    Evidence,
     SelectionClip,
     VideoFacts,
     all_words,
@@ -256,6 +257,7 @@ class VideoPipeline:
         selection = run_select(
             video_dir, facts, candidates.items, transcript,
             count=count, extended=extended, client=client,
+            evidence=Evidence(analysis.screen, analysis.events, chat.items if chat else ()),
         )  # fmt: skip
 
         self._stage("clips")
@@ -296,6 +298,7 @@ class VideoPipeline:
         signals = analysis.signals
         chat = load_signal(video_dir, "chat", duration) if has_chat else None
         lag = CHAT_LAG_S
+        replay = None
         if chat is not None:
             signals["chat"] = chat
             replay = load_chat(video_dir)
@@ -325,8 +328,10 @@ class VideoPipeline:
             client = self._llm_client()
             chosen = select_more(
                 VideoFacts(title, channel, duration), candidates, transcript, taken,
-                count=count, extended=True,
-                client=client,
+                count=count, extended=True, client=client,
+                evidence=Evidence(
+                    analysis.screen, analysis.events, replay.items if replay else ()
+                ),
             )  # fmt: skip
             words = all_words(transcript)
         self._stage("clips")

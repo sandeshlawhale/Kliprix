@@ -4,22 +4,28 @@ import itertools
 from pathlib import Path
 
 from app.config import SPEECH_FLOOR
-from app.llm.schemas import LlmClip, SelectionAnswer
+from app.core.errors import AppError, ErrorCode
+from app.llm.schemas import LlmClip, SelectionAnswer, TitleAnswer, TitleText
 from app.pipeline.candidates import Candidate, SignalScores
 from app.pipeline.select import (
     SELECTION_FILE_NAME,
+    Evidence,
+    SelectionClip,
     VideoFacts,
     build_selection,
     clean_hashtags,
     clean_title,
     fit_window,
     load_cached,
+    prompt_candidates,
     rank_by_speech,
     run_select,
     select_more,
     truncate_words,
 )
+from app.pipeline.sound import SoundEvents
 from app.pipeline.transcribe import Segment, TranscriptFile, Word
+from app.sources.base import ChatMessage
 
 FACTS = VideoFacts(title="My Stream", channel="Chan", duration_s=1000.0)
 
@@ -143,7 +149,9 @@ def test_fallback_when_llm_returns_nothing() -> None:
     result = build_selection(SelectionAnswer(clips=[]), CANDIDATES, FACTS, transcript(), 5, False)
     assert len(result.clips) == 5
     first = result.clips[0]
-    assert first.title.startswith("w100")
+    # D-043: never the first words of the transcript; the title step replaces this text.
+    assert first.title == "Highlight at 01:40"
+    assert first.from_llm is False
     assert len(first.hashtags) == 3
     assert 25 <= first.end - first.start <= 60
 
@@ -273,17 +281,80 @@ def test_fallback_skips_windows_without_speech() -> None:
 
 
 class FakeClient:
-    def __init__(self, answer: SelectionAnswer) -> None:
+    """Answers the selection call with `answer` and the title step (D-043) with a title per
+    clip, or fails the title step when `titles_fail`."""
+
+    def __init__(self, answer: SelectionAnswer, titles_fail: bool = False) -> None:
         self.answer = answer
+        self.titles_fail = titles_fail
         self.calls = 0
+        self.title_calls = 0
         self.last_user = ""
+        self.last_title_user = ""
 
     def complete_json(self, system: str, user: str, schema: object, temperature: float) -> object:
+        assert temperature == 0.3
+        if schema is TitleAnswer:
+            self.title_calls += 1
+            self.last_title_user = user
+            if self.titles_fail:
+                raise AppError(ErrorCode.LLM_RATE_LIMITED, "slow down")
+            ids = [int(line.split()[1].rstrip(":")) for line in user.splitlines()
+                   if line.startswith("Clip ")]  # fmt: skip
+            return TitleAnswer(
+                clips=[
+                    TitleText(id=i, title=f"Look at that play {i}", hashtags=["#gaming"])
+                    for i in ids
+                ]
+            )
         self.calls += 1
         self.last_user = user
         assert "Candidate 0" in user
-        assert temperature == 0.3
         return self.answer
+
+
+def test_title_step_writes_text_for_fallback_clips_only() -> None:
+    fake = FakeClient(SelectionAnswer(clips=[llm()]))
+    clips = run_select_clips(fake, count=3)
+    assert fake.title_calls == 1
+    assert clips[0].title == "Nice play"
+    assert [c.title for c in clips[1:]] == ["Look at that play 1", "Look at that play 2"]
+    assert all(c.from_llm for c in clips)
+    assert "Clip 1:" in fake.last_title_user and "Clip 0:" not in fake.last_title_user
+
+
+def test_title_step_failure_keeps_plain_titles() -> None:
+    fake = FakeClient(SelectionAnswer(clips=[llm()]), titles_fail=True)
+    clips = run_select_clips(fake, count=3)
+    assert [c.title for c in clips[1:]] == ["Highlight at 05:00", "Highlight at 08:20"]
+    assert [c.from_llm for c in clips] == [True, False, False]
+
+
+def test_no_title_call_when_the_llm_wrote_every_clip() -> None:
+    fake = FakeClient(SelectionAnswer(clips=[llm()]))
+    run_select_clips(fake, count=1)
+    assert fake.title_calls == 0
+
+
+def run_select_clips(fake: FakeClient, count: int) -> list[SelectionClip]:
+    return select_more(
+        FACTS, CANDIDATES, transcript(), [], count=count, extended=False,
+        client=fake,  # type: ignore[arg-type]
+    )  # fmt: skip
+
+
+def test_prompt_shows_the_evidence() -> None:
+    events = SoundEvents(window_s=2, windows=[{} for _ in range(60)] + [{"gunfire": 0.8}] * 3)
+    chat = [ChatMessage(t=130.0, text="LMAO"), ChatMessage(t=131.0, text="hi"),
+            ChatMessage(t=132.0, text="lmao")]  # fmt: skip
+    led = cand(100).model_copy(
+        update={"screen": {"gameplay": 0.9, "menu": 0.1}, "reaction_t": 130.0, "cause_t": 120.0}
+    )
+    [block] = prompt_candidates([led], transcript(), Evidence(None, events, chat))
+    assert "On screen: gameplay 90%" in block.facts
+    assert "Sounds: 02:00 gunfire" in block.facts
+    assert any("Chat reacts at 02:10 (laugh 2)" in f and "02:00" in f for f in block.facts)
+    assert block.chat == ["LMAO", "hi"]  # reactions first, "lmao" repeats "LMAO"
 
 
 def test_run_select_writes_and_caches(tmp_path: Path) -> None:
