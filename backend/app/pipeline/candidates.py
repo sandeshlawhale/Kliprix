@@ -41,6 +41,7 @@ from app.pipeline.scoring import (
     pick_peaks,
     positive_z,
 )
+from app.pipeline.screen import ScreenFile, dull_series, screen_factor, window_shares
 from app.pipeline.signals import SignalFile
 
 CANDIDATES_FILE_NAME = "candidates.json"
@@ -68,6 +69,8 @@ class Candidate(BaseModel):
     # "signals": a peak of the combined score; "coverage": an evenly spread window that lets
     # the LLM judge content the signals missed (D-035).
     source: Literal["signals", "coverage"] = "signals"
+    # Mean share of each screen type in the window (D-040), e.g. {"gameplay": 0.8, ...}.
+    screen: dict[str, float] | None = None
 
 
 class CandidatesFile(BaseModel):
@@ -82,6 +85,7 @@ def find_candidates(
     duration_s: float,
     weights: Mapping[str, float] = SIGNAL_WEIGHTS,
     exclude: Sequence[tuple[float, float]] = (),
+    screen: ScreenFile | None = None,
 ) -> list[Candidate]:
     """Top `CANDIDATE_COUNT` signal windows, best first, then a few coverage windows spread
     over the rest of the video (D-035) so the LLM can judge content the signals missed.
@@ -92,6 +96,8 @@ def find_candidates(
     Peaks are at least `CANDIDATE_MIN_DISTANCE_S` apart and never in the lead-in or outro;
     each window is peak - 25 s to peak + 35 s, clamped to the video without those edges.
     No peak lies inside an `exclude` range (clips already made, D-034).
+    With `screen` (D-040), seconds showing menus, lobbies, loading or black screens lose most
+    of their score and get no coverage window.
     """
     length = min(len(signal.values) for signal in signals.values())
     smoothed = {
@@ -101,6 +107,10 @@ def find_candidates(
     normalized: dict[str, FloatArray] = {name: normalize(v) for name, v in smoothed.items()}
     seconds = np.arange(length)
     score, tiebreak, chat_on = _scores(normalized, smoothed, weights, seconds, duration_s)
+    dull = dull_series(screen, length) if screen is not None else np.zeros(length)
+    factor = screen_factor(dull)
+    score = score * factor
+    tiebreak = tiebreak * factor
     first, last = edge_limits(
         duration_s, CANDIDATE_EDGE_LEAD_SHARE, CANDIDATE_EDGE_LEAD_MAX_S,
         CANDIDATE_EDGE_TAIL_SHARE, CANDIDATE_EDGE_TAIL_MAX_S,
@@ -109,6 +119,8 @@ def find_candidates(
     for low, high in exclude:
         usable &= (seconds < low) | (seconds > high)
     score = np.where(usable, score, 0.0)
+    # Coverage windows only where the screen is not a menu or a waiting screen.
+    covered = usable & (factor >= 1.0)
 
     def make(peak: int, source: Literal["signals", "coverage"]) -> Candidate:
         per_signal = {
@@ -117,19 +129,22 @@ def find_candidates(
             # Chat near the stream's edges is greetings and goodbyes: not shown (D-035).
             if name != "chat" or chat_on[peak]
         }
+        start = max(first, float(peak - CANDIDATE_BEFORE_S))
+        end = min(last, float(peak + CANDIDATE_AFTER_S))
         return Candidate(
             peak_t=float(peak),
-            start=max(first, float(peak - CANDIDATE_BEFORE_S)),
-            end=min(last, float(peak + CANDIDATE_AFTER_S)),
+            start=start,
+            end=end,
             score=round(float(score[peak]), SCORE_DECIMALS),
             signals=SignalScores(**per_signal),
             source=source,
+            screen=window_shares(screen, start, end) or None if screen is not None else None,
         )
 
     peaks = pick_peaks(score, CANDIDATE_COUNT, CANDIDATE_MIN_DISTANCE_S, tiebreak)
     items = [make(peak, "signals") for peak in peaks]
     wanted = COVERAGE_SHORT_MAX if duration_s <= FULL_TRANSCRIBE_MAX_S else COVERAGE_LONG_COUNT
-    for spot in coverage_spots(usable, peaks, wanted, CANDIDATE_MIN_DISTANCE_S):
+    for spot in coverage_spots(covered, peaks, wanted, CANDIDATE_MIN_DISTANCE_S):
         items.append(make(spot, "coverage"))
     return items
 
@@ -202,12 +217,15 @@ def load_cached(video_dir: Path) -> CandidatesFile | None:
 
 
 def run_candidates(
-    video_dir: Path, signals: Mapping[str, SignalFile], duration_s: float
+    video_dir: Path,
+    signals: Mapping[str, SignalFile],
+    duration_s: float,
+    screen: ScreenFile | None = None,
 ) -> CandidatesFile:
     """Write `candidates.json` (skipped when a valid copy exists)."""
     cached = load_cached(video_dir)
     if cached is not None:
         return cached
-    result = CandidatesFile(items=find_candidates(signals, duration_s))
+    result = CandidatesFile(items=find_candidates(signals, duration_s, screen=screen))
     write_json_atomic(video_dir / CANDIDATES_FILE_NAME, result)
     return result

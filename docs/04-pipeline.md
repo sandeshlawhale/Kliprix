@@ -32,6 +32,7 @@ Only exists for past live streams / premieres. Try; if absent set `has_chat=fals
 All signals are resampled to a **1-second grid**.
 - **audio:** RMS loudness + spectral flux. Compute in chunks (never load a full 2-hour WAV into RAM at once).
 - **motion:** mean absolute frame difference at 1 fps, 160 px wide grayscale, streamed from ffmpeg.
+- **screen type (D-040):** one frame every 5 s (10 s over 30 min; keyframes only on long videos) through OpenAI CLIP ViT-B/32 (int8 ONNX, downloaded at first use, 89 MB), compared zero-shot with fixed labels grouped as gameplay, menu (main menu, lobby, character/agent select, loading, scoreboard, store, inventory), waiting (black screen), talking, other. Saved as `signals/screen.json` (per frame, the share of each group). Runs at the same time as audio and motion; optional: if it fails, the video goes on without it and its note says so.
 - **chat:** messages per second; plus weight for laugh/hype tokens (`lol`, `lmao`, `😂`, `pog`, `wtf`, `clip it`, `gg`). Shift chat series **earlier by 10 s** (chat reacts after the event; constant `CHAT_LAG_S`).
 
 ### 6. Candidates (scoring)
@@ -42,6 +43,8 @@ All signals are resampled to a **1-second grid**.
 5. Each candidate: `{peak_t, start, end, score, signals:{chat,audio,motion}}` where start = peak − 25 s, end = peak + 35 s (clamped to video bounds).
 
 **D-033:** audio and motion run at the same time; motion reads only keyframes on videos ≥ 10 min with keyframes ≤ 10 s apart. The weighted sum is multiplied by an agreement factor (second-strongest signal: 1 at ≥ 0.3, down to 0.5 when one signal fires alone). No peak or window in the first 3% (max 3 min) or the last 1.5% (max 2 min) of the video.
+
+**D-040:** the per-second score (and tiebreak) is multiplied by a screen factor: the menu+waiting share smoothed over 30 s, 1 up to 0.45, down to 0.15 from 0.65. Coverage windows are only placed where the factor is 1. Each candidate stores the mean screen shares of its window (`screen`), shown to the LLM as "On screen: gameplay 80%, menu/lobby/loading 20%"; a window that is ≥ 45% menu/waiting is never used as a fallback clip.
 
 ### 7. Transcribe
 faster-whisper, int8 on CPU (CUDA if available), `word_timestamps=True`, `vad_filter=True`. Model chosen from RAM (see `11-constraints.md`). Language: auto-detect, unless the style says Hinglish.

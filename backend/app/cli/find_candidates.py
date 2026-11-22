@@ -25,6 +25,7 @@ from app.pipeline.candidates import CANDIDATES_FILE_NAME, run_candidates
 from app.pipeline.chat import load_cached as load_chat
 from app.pipeline.download import load_cached as load_download
 from app.pipeline.motion import run_motion
+from app.pipeline.screen import run_screen
 from app.pipeline.signals import SignalFile, run_chat_signal
 
 
@@ -59,13 +60,19 @@ def main(argv: list[str] | None = None) -> int:
             ffmpeg_path=config.ffmpeg_path, memory=memory,
         )  # fmt: skip
         print(f"motion: {time.monotonic() - started:.1f} s, peak memory {peak_memory_gb():.2f} GB")
+        started = time.monotonic()
+        screen = run_screen(
+            folder, duration, config.data_dir / "models",
+            ffmpeg_path=config.ffmpeg_path, memory=memory,
+        )  # fmt: skip
+        print(f"screen: {time.monotonic() - started:.1f} s, {len(screen.shares)} frames")
         chat = load_chat(folder)
         if chat is not None:
             signals["chat"] = run_chat_signal(folder, chat.items, duration)
             print(f"chat: {len(chat.items)} messages")
         else:
             print("chat: none (weights renormalized over audio and motion)")
-        result = run_candidates(folder, signals, duration)
+        result = run_candidates(folder, signals, duration, screen)
     except (AppError, CommandError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

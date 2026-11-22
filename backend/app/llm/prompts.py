@@ -96,6 +96,8 @@ class PromptCandidate:
     signals: dict[str, float]
     # Transcript lines in [start - 30, end + 30] as (time in seconds, text).
     lines: list[tuple[float, str]]
+    # What the screen shows (D-040), e.g. "gameplay 80%, menu/lobby/loading 20%".
+    screen: str = ""
 
 
 def clean_text(text: str) -> str:
@@ -121,6 +123,8 @@ def _candidate_block(candidate: PromptCandidate, line_budget: int) -> str:
         f"({clock(candidate.start)}-{clock(candidate.end)}), score {candidate.score:.2f}, "
         f"signals: {signals}"
     )
+    if candidate.screen:
+        header += f"\nOn screen: {candidate.screen}"
     if candidate.lines:
         text_lines: list[str] = []
         used = 0

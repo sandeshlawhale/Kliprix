@@ -19,7 +19,6 @@ import shutil
 import tarfile
 import threading
 import urllib.error
-import urllib.request
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -28,8 +27,6 @@ import numpy as np
 
 from app.config import (
     AUDIO_SAMPLE_RATE,
-    MODEL_DOWNLOAD_BLOCK_BYTES,
-    MODEL_DOWNLOAD_TIMEOUT_S,
     PARAKEET_DUPLICATE_GAP_S,
     PARAKEET_MODEL_NAME,
     PARAKEET_MODEL_URL,
@@ -41,6 +38,7 @@ from app.config import (
 )
 from app.core.errors import AppError, ErrorCode
 from app.core.hardware import disk_free_gb
+from app.core.model_download import DownloadProgress, download_stream, open_url
 from app.core.proc import CommandCancelledError
 from app.pipeline.transcribe import TIME_DECIMALS, Segment, Word
 
@@ -54,8 +52,6 @@ MODEL_DISK_NEEDED_GB = 1.5
 SENTENCE_END = (".", "?", "!")
 _NOT_WORD = re.compile(r"[^\w']+")
 
-# Called with the fraction (0.0-1.0) of the model archive downloaded so far.
-DownloadProgress = Callable[[float], None]
 Samples = np.ndarray[Any, np.dtype[np.float32]]
 
 
@@ -101,7 +97,7 @@ def ensure_model(
     partial = archive.with_name(archive.name + ".part")
     logger.info("parakeet model download started url=%s", PARAKEET_MODEL_URL)
     try:
-        _download(PARAKEET_MODEL_URL, partial, cancel, on_progress, opener or _open_url)
+        download_stream(PARAKEET_MODEL_URL, partial, cancel, on_progress, opener or open_url)
         partial.replace(archive)
         _unpack(archive, root)
     except (urllib.error.URLError, OSError, tarfile.TarError) as exc:
@@ -121,34 +117,6 @@ def ensure_model(
         )
     logger.info("parakeet model ready path=%s", folder)
     return folder
-
-
-def _open_url(url: str, timeout_s: float) -> Any:
-    return urllib.request.urlopen(url, timeout=timeout_s)  # noqa: S310 - fixed https model URL
-
-
-def _download(
-    url: str,
-    target: Path,
-    cancel: threading.Event | None,
-    on_progress: DownloadProgress | None,
-    opener: Callable[[str, float], Any],
-) -> None:
-    with opener(url, MODEL_DOWNLOAD_TIMEOUT_S) as response, target.open("wb") as out:
-        total = int(response.headers.get("Content-Length") or 0)
-        done = 0
-        while True:
-            if cancel is not None and cancel.is_set():
-                raise CommandCancelledError("model download was cancelled")
-            block = response.read(MODEL_DOWNLOAD_BLOCK_BYTES)
-            if not block:
-                break
-            out.write(block)
-            done += len(block)
-            if on_progress is not None and total:
-                on_progress(min(1.0, done / total))
-    if total and done != total:
-        raise OSError(f"incomplete download: {done} of {total} bytes")
 
 
 def _unpack(archive: Path, root: Path) -> None:

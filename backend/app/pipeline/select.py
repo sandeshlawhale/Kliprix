@@ -29,6 +29,7 @@ from app.config import (
     CLIP_TAIL_PAD_S,
     CLIP_TARGET_MIN_S,
     LLM_SELECT_TEMPERATURE,
+    SCREEN_FALLBACK_MAX_DULL,
     SENTENCE_SNAP_S,
     SPEECH_FALLBACK_MIN_WPS,
     SPEECH_FLOOR,
@@ -40,6 +41,7 @@ from app.llm.client import LlmClient
 from app.llm.prompts import PromptCandidate, clock, select_system, select_user
 from app.llm.schemas import LlmClip, SelectionAnswer
 from app.pipeline.candidates import Candidate
+from app.pipeline.screen import describe, dull_share
 from app.pipeline.sentences import (
     first_between,
     last_between,
@@ -362,6 +364,9 @@ def fallback_clip(
     if speech is not None and speech * SPEECH_FULL_WPS < SPEECH_FALLBACK_MIN_WPS:
         logger.info("fallback skipped: little speech at %.0f-%.0f", candidate.start, candidate.end)
         return None
+    if candidate.screen is not None and dull_share(candidate.screen) >= SCREEN_FALLBACK_MAX_DULL:
+        logger.info("fallback skipped: menu screen at %.0f-%.0f", candidate.start, candidate.end)
+        return None
     window = fit_window(
         candidate.start, candidate.end, facts.duration_s, CLIP_STANDARD_MAX_S, words
     )
@@ -404,8 +409,11 @@ def prompt_candidates(
             for name, value in candidate.signals.model_dump().items()
             if value is not None
         }
+        screen = describe(candidate.screen) if candidate.screen else ""
         result.append(
-            PromptCandidate(index, candidate.start, candidate.end, candidate.score, signals, lines)
+            PromptCandidate(
+                index, candidate.start, candidate.end, candidate.score, signals, lines, screen
+            )
         )
     return result
 

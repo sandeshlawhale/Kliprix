@@ -35,6 +35,7 @@ from app.pipeline.download import load_cached as load_download
 from app.pipeline.download import max_download_height, run_download
 from app.pipeline.hinglish import to_hinglish
 from app.pipeline.motion import run_motion
+from app.pipeline.screen import ScreenFile, run_screen
 from app.pipeline.select import (
     SelectionClip,
     VideoFacts,
@@ -85,6 +86,9 @@ PARAKEET_FALLBACK_CODES = frozenset(
     {ErrorCode.TRANSCRIBE_FAILED, ErrorCode.MODEL_DOWNLOAD_FAILED, ErrorCode.DISK_FULL}
 )
 
+
+# The screen type (D-040) is optional; without it menus are not filtered out.
+SCREEN_FAILED_NOTE = "Screen type check skipped (its model could not run), so menus may be clipped."
 
 WHISPER_DEVICE_NAMES = {"cuda": "GPU", "cpu": "CPU"}
 
@@ -186,12 +190,12 @@ class VideoPipeline:
         self._update(has_chat=int(chat is not None))
 
         self._stage("audio")
-        signals = self._audio_and_motion(duration, info.width, info.height, memory)
+        signals, screen = self._audio_and_motion(duration, info.width, info.height, memory)
         if chat is not None:
             signals["chat"] = run_chat_signal(video_dir, chat.items, duration)
 
         self._stage("candidates")
-        candidates = run_candidates(video_dir, signals, duration)
+        candidates = run_candidates(video_dir, signals, duration, screen)
 
         self._stage("transcribe")
         language = str(style.get("caption_language", "en"))
@@ -245,12 +249,12 @@ class VideoPipeline:
 
         self._stage("candidates")
         # Cached signals load instantly; missing ones are computed again.
-        signals = self._audio_and_motion(duration, info.width, info.height, memory)
+        signals, screen = self._audio_and_motion(duration, info.width, info.height, memory)
         chat = load_signal(video_dir, "chat", duration) if has_chat else None
         if chat is not None:
             signals["chat"] = chat
         exclude = [(start - CLIP_MIN_GAP_S, end + CLIP_MIN_GAP_S) for start, end in taken]
-        candidates = find_candidates(signals, duration, exclude=exclude)
+        candidates = find_candidates(signals, duration, exclude=exclude, screen=screen)
         logger.info("more clips video=%s taken=%s candidates=%s", self.video_id, len(taken),
                     len(candidates))  # fmt: skip
 
@@ -328,16 +332,17 @@ class VideoPipeline:
 
     def _audio_and_motion(
         self, duration: float, width: int, height: int, memory: MemoryInfo
-    ) -> dict[str, SignalFile]:
-        """Audio and motion at the same time (D-033): both only read `source.mp4`, so the
-        step takes as long as the slower one. The bar spans both stages and moves with the
-        mean of their fractions. A failure in one stops the other and is raised; a cancel
-        stops both."""
+    ) -> tuple[dict[str, SignalFile], ScreenFile | None]:
+        """Audio, motion and screen type at the same time (D-033, D-040): all only read
+        `source.mp4`, so the step takes as long as the slowest. The bar moves with the mean of
+        their fractions. A failure in audio or motion stops the others and is raised; a cancel
+        stops all. The screen type is optional: when it fails (e.g. its model cannot be
+        downloaded) the video goes on without it and its note says so."""
         video_dir = self.ctx.video_dir(self.video_id)
         ffmpeg = self.ctx.config.ffmpeg_path
         stop = threading.Event()
         lock = threading.Lock()
-        fractions = {"audio": 0.0, "motion": 0.0}
+        fractions = {"audio": 0.0, "motion": 0.0, "screen": 0.0}
 
         def report(name: str) -> Callable[[float], None]:
             def update(fraction: float) -> None:
@@ -363,19 +368,49 @@ class VideoPipeline:
                     cancel=stop, on_progress=report("motion"),
                 )  # fmt: skip
 
-        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="signals") as pool:
+        def screen() -> ScreenFile | None:
+            with stage_timer("screen", video=self.video_id):
+                try:
+                    result = run_screen(
+                        video_dir, duration, self.ctx.data_dir / "models", ffmpeg_path=ffmpeg,
+                        memory=memory, cancel=stop, on_progress=report("screen"),
+                    )  # fmt: skip
+                    report("screen")(1.0)
+                    return result
+                except CommandCancelledError:
+                    raise
+                # onnxruntime raises plain Exception subclasses; the stage is optional, so any
+                # failure is logged and noted on the video, never fatal.
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("screen type failed video=%s: %s", self.video_id, exc)
+                    self._add_note(SCREEN_FAILED_NOTE)
+                    report("screen")(1.0)
+                    return None
+
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="signals") as pool:
             futures = {"audio": pool.submit(audio), "motion": pool.submit(motion)}
-            pending: set[Future[SignalFile]] = set(futures.values())
+            screen_future = pool.submit(screen)
+            pending: set[Future[Any]] = {*futures.values(), screen_future}
             while pending:
                 done, pending = wait(pending, timeout=CANCEL_POLL_S, return_when=FIRST_EXCEPTION)
                 if self.cancel.is_set() or any(f.exception() is not None for f in done):
                     stop.set()
-        errors = [e for f in futures.values() if (e := f.exception()) is not None]
-        # The sibling of a failed stage stops with a cancel error; raise the real failure.
+        every: list[Future[Any]] = [*futures.values(), screen_future]
+        errors = [e for f in every if (e := f.exception()) is not None]
+        # The siblings of a failed stage stop with a cancel error; raise the real failure.
         real = [e for e in errors if not isinstance(e, CommandCancelledError)]
         if real or errors:
             raise (real or errors)[0]
-        return {name: future.result() for name, future in futures.items()}
+        signals = {name: future.result() for name, future in futures.items()}
+        return signals, screen_future.result()
+
+    def _add_note(self, text: str) -> None:
+        with self.ctx.session_factory() as session:
+            video = repo.get_video(session, self.video_id)
+            if video is None or text in (video.note or ""):
+                return
+            video.note = f"{video.note or ''} {text}".strip()
+            session.commit()
 
     def _create_clip(
         self,

@@ -232,6 +232,37 @@ PARAKEET_MAX_THREADS = 4
 MODEL_DOWNLOAD_TIMEOUT_S = 30.0
 MODEL_DOWNLOAD_BLOCK_BYTES = 1024 * 1024
 
+# Screen type (D-040): OpenAI CLIP ViT-B/32 image encoder (MIT), int8 ONNX export by Xenova,
+# pinned to one revision so the label embeddings in screen_labels.json stay valid.
+SCREEN_MODEL_REPO = "Xenova/clip-vit-base-patch32"
+SCREEN_MODEL_REVISION = "6b7c523703ae26e39be4b03774966f8571c7f523"
+SCREEN_MODEL_FILE = "vision_model_quantized.onnx"
+SCREEN_MODEL_URL = (
+    f"https://huggingface.co/{SCREEN_MODEL_REPO}/resolve/{SCREEN_MODEL_REVISION}/onnx/"
+    f"{SCREEN_MODEL_FILE}"
+)
+SCREEN_MODEL_DISK_GB = 0.5
+# One frame every this many seconds; longer videos sample less often (keyframes, like motion).
+SCREEN_STEP_S = 5
+SCREEN_STEP_LONG_S = 10
+SCREEN_LONG_MIN_S = 30 * 60
+SCREEN_IMAGE_SIZE = 224
+SCREEN_BATCH = 8
+# CLIP's logit scale: softmax(100 * cosine similarity).
+SCREEN_LOGIT_SCALE = 100.0
+# Groups that are not worth clipping: menus, lobbies, character select, loading, black screens.
+SCREEN_DULL_GROUPS = ("menu", "waiting")
+# Dull share (smoothed over SCREEN_SMOOTH_S). Calibrated on the owner's Valorant stream: lobby and
+# agent select runs 0.48-0.78, gameplay 0.14-0.45. At or below LOW the score keeps its value; at or
+# above HIGH it is multiplied by SCREEN_FLOOR; linear in between.
+SCREEN_DULL_LOW = 0.45
+SCREEN_DULL_HIGH = 0.65
+SCREEN_FLOOR = 0.15
+SCREEN_SMOOTH_S = 30
+# A fallback clip (no LLM) is never made from a window that is at least this dull.
+SCREEN_FALLBACK_MAX_DULL = 0.45
+SCREEN_MAX_THREADS = 2
+
 # LLM (docs/10). Timeout per call, temperatures, backoff waits on 429/5xx before giving up.
 LLM_TIMEOUT_S = 90.0
 LLM_SELECT_TEMPERATURE = 0.3
