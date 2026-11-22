@@ -5,7 +5,7 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 ## Current state
 - **Current milestone:** all milestones built (M3→M10 in one run, D-027). **Waiting for the owner's checks** below; no milestone after M0–M2 is tagged yet.
 - **Status:** M0–M2 verified and tagged (`m0`, `m1`, `m2`). M3–M10 built and checked by the agent as far as possible without the owner (real runs on this machine, see "M3–M9 output" and "M10 output"); owner-only checks are listed below.
-- **Last session:** 2026-11-22, Claude Code (Claude Opus 5.5): D-040…D-045 smarter clip picking (screen type, sound events, chat look-back, evidence for the LLM + title step, context rule, on-screen text), on `dev`
+- **Last session:** 2026-11-22, Claude Code (Claude Opus 5.5): D-040...D-047 smarter clip picking and two-round selection; three real runs on the owner's Valorant video (see "Real runs of the two-round selection"), on `dev`
 - **Last commit:** see `git log -1`
 - **Branches (owner, 2026-11-21):** all development happens on `dev`; `main` gets a merge only after the owner confirms the work runs. Never commit straight to `main`.
 
@@ -24,6 +24,13 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 
 ## In progress (exact next step)
 Nothing in progress. **Next step: the owner runs the checks below.** Start the app with `scripts\start.bat` (Windows) or `./scripts/start.sh`, configure a real key in Configure API, and paste 3 links. Fix anything found, then tag `m3`…`m10` once each milestone's check passes (the agent did not tag them because the owner checks are open). Then consider proposal P-001 (video retry endpoint) in `14-decisions-log.md`.
+
+## Real runs of the two-round selection (D-046, D-047, 2026-11-22), on `dev`
+Owner's key, gemini-3.5-flash-lite, "Jett to Rank 1 begins..." (25 min, 1080p60), style Hinglish (so Whisper large-v3-turbo GPU, language hi).
+- Run 1 (batch 2b2e6901): review kept 5 / dropped 5 with good reasons, but the backend discarded all 5 kept clips ("times do not fit") -> 0 clips. Fixed in d91384b (seconds on every timeline line, raw times logged, rule fixes as fallback, never zero clips).
+- Run 2 (More clips, same batch): 5 clips; 2 crossed a round (OCR split "PRESS"+"TOBUY"; keyframe text thinned to 12); flash-lite echoed the draft times +-1 s on all 5. Fixed in 85d7b0f (D-047).
+- Run 3 (fresh batch bddaeef9, 26 min: download 2:10, signals 0:30, transcribe 12:30 (first run 3:08, cause not found), pick 5:30, renders 5:00): 5 clips of 23-40 s, every one with its kill/payoff ("I catch all three", operator kill, "WON" round). **Open:** 3 of 5 run into the next round's BUY PHASE at the end (1-4 s; "I catch all three" about 16 s) because keyframes are 4-6 s apart; clip 4 says "Sunset" while the map looks like Haven (map name not in the evidence).
+**Next step (proposed to the owner):** an exact end-of-clip check on the final clips (every second of the last 15 s and first 5 s, cut at any scene end: scoreboard, BUY PHASE, WASTED, MISSION PASSED, a menu), and a rule that a map/place name in a title must appear in the evidence. Then run the GTA video the same way: the screen filter marked about 25% of the GTA stream as menu (likely phone/map/overlay), and the kill-evidence ranking may under-rank funny GTA moments.
 
 ## Two-round selection (D-046, 2026-11-22), on `dev`
 After a real Valorant run gave a "1v4" clip without a kill and clips crossing rounds: round 1 drafts 10, each draft gets a close look 20 s around it (screen, sounds, text, speech, scene ends, 5 frames), round 2 asks the LLM to keep/fix/drop and pick 5; clips never cross a scene end. 143 s for 10 drafts on the 25-min video, peak 1.0 GB. **Owner check:** restart the app, run "Jett to Rank 1 begins…" again in a new batch → clips contain their kill/payoff, start near the action, stay in one round, titles only claim what is shown; the batch takes about 2.5 min longer in "Pick clips". **Not checked:** a real round-2 LLM answer (no key here), the image request on providers other than Gemini.
