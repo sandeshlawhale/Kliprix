@@ -76,6 +76,8 @@ A `jobs` row per unit of work (video-level and clip-level). On restart, jobs in 
 ## Cancellation
 User can cancel a batch: running ffmpeg/yt-dlp subprocess is terminated, queued jobs are marked `cancelled`, partial files in `work/` are removed.
 
+**Pause (D-049):** the running subprocess is terminated as on a shutdown, but nothing is removed: the batch's jobs become `paused` and are skipped by the runner; resume queues them again and the stopped stage starts over, skipping stages whose outputs are saved.
+
 ## Checkpoints shown in the UI
 The UI checkpoint list is derived from real pipeline state. Mapping (stage → checkpoint):
 

@@ -72,9 +72,11 @@ class JobContext:
 
 @dataclass
 class CancelToken:
-    """The cancel event of the running job, plus which refs it covers."""
+    """The cancel event of the running job, plus which refs it covers. `paused` tells the
+    runner the stop was a pause (D-049), so the work is kept for resume, not cancelled."""
 
     job_id: str
     ref_id: str
     batch_id: str
     event: threading.Event = field(default_factory=threading.Event)
+    paused: bool = False

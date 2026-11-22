@@ -8,7 +8,7 @@ import { StorageBanner } from "@/components/layout/storage-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { invalidateBatch, useBatch } from "@/hooks/queries";
-import { cancelBatch, errorMessage } from "@/lib/api";
+import { cancelBatch, errorMessage, pauseBatch, resumeBatch } from "@/lib/api";
 
 const STATUS_LABELS: Record<string, string> = {
   queued: "Queued",
@@ -17,6 +17,7 @@ const STATUS_LABELS: Record<string, string> = {
   partial: "Partly done",
   failed: "Failed",
   cancelled: "Cancelled",
+  paused: "Paused",
 };
 const ACTIVE = ["queued", "running"];
 
@@ -37,11 +38,14 @@ export function TopBar() {
 function BatchStamp({ batchId }: { batchId: string }) {
   const batch = useBatch(batchId);
   const client = useQueryClient();
-  const cancel = useMutation({
-    mutationFn: () => cancelBatch(batchId),
+  const options = {
     onSuccess: () => invalidateBatch(client, batchId),
-    onError: (error) => toast.error(errorMessage(error)),
-  });
+    onError: (error: unknown) => toast.error(errorMessage(error)),
+  };
+  const cancel = useMutation({ mutationFn: () => cancelBatch(batchId), ...options });
+  const pause = useMutation({ mutationFn: () => pauseBatch(batchId), ...options });
+  const resume = useMutation({ mutationFn: () => resumeBatch(batchId), ...options });
+  const busy = cancel.isPending || pause.isPending || resume.isPending;
   if (!batch.data) return null;
   const { status, created_at: createdAt } = batch.data;
   const created = new Date(createdAt);
@@ -52,9 +56,20 @@ function BatchStamp({ batchId }: { batchId: string }) {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => cancel.mutate()}
-          disabled={cancel.isPending}
+          onClick={() => pause.mutate()}
+          disabled={busy}
+          title="Stop for now; finished steps are kept"
         >
+          Pause
+        </Button>
+      )}
+      {status === "paused" && (
+        <Button size="sm" onClick={() => resume.mutate()} disabled={busy}>
+          Resume
+        </Button>
+      )}
+      {(ACTIVE.includes(status) || status === "paused") && (
+        <Button variant="outline" size="sm" onClick={() => cancel.mutate()} disabled={busy}>
           Cancel
         </Button>
       )}

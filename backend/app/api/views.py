@@ -22,7 +22,7 @@ from app.render.censor import BlurBox
 from app.sources.base import SOURCE_FILE_NAME
 
 CheckpointKey = Literal["download", "chat", "signals", "candidates", "transcribe", "select", "edit"]
-CheckpointStateName = Literal["pending", "running", "done", "skipped", "failed"]
+CheckpointStateName = Literal["pending", "running", "paused", "done", "skipped", "failed"]
 
 
 class Checkpoint(BaseModel):
@@ -181,8 +181,9 @@ def video_view(
     clips: list[ClipRow],
     positions: dict[str, int],
     active_since: datetime | None = None,
+    paused: bool = False,
 ) -> Video:
-    states = checkpoints(video, clips, ctx.video_dir(video.id))
+    states = checkpoints(video, clips, ctx.video_dir(video.id), paused=paused)
     blocked = more_clips_blocker(video, ctx.video_dir(video.id))
     return Video(
         id=video.id,
@@ -215,7 +216,9 @@ def batch_view(ctx: JobContext, session: Session, batch: BatchRow) -> Batch:
     for video in repo.videos_of(session, batch.id):
         clips = repo.clips_of_video(session, video.id)
         since = repo.generation_started_at(session, video.id, [clip.id for clip in clips])
-        videos.append(video_view(ctx, video, clips, positions, since))
+        videos.append(
+            video_view(ctx, video, clips, positions, since, paused=batch.status == "paused")
+        )
     return Batch(
         id=batch.id,
         created_at=batch.created_at,

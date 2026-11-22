@@ -3,6 +3,8 @@
 On start, jobs left `running` by a stopped process go back to `queued` and run again; their
 stages skip cached outputs. A failing job marks only its own video or clip failed.
 Cancel sets the running job's event (subprocesses are killed) and removes partial files.
+Pause (D-049) stops the running job the same way but keeps its work, like a shutdown: the
+job stays `paused` and its video/clip goes back to `queued` until resume.
 """
 
 from __future__ import annotations
@@ -67,6 +69,13 @@ class JobRunner:
             if self._current is not None and self._current.ref_id in ref_ids:
                 self._current.event.set()
 
+    def pause_refs(self, ref_ids: Sequence[str]) -> None:
+        """Stop the running job, keeping its work, if it belongs to these videos/clips."""
+        with self._lock:
+            if self._current is not None and self._current.ref_id in ref_ids:
+                self._current.paused = True
+                self._current.event.set()
+
     # ----- loop -----
 
     def _loop(self) -> None:
@@ -106,6 +115,10 @@ class JobRunner:
         token = CancelToken(job.id, job.ref_id, batch_id)
         with self._lock:
             self._current = token
+        if self._paused_meanwhile(job.id):
+            # Paused between the claim and here: stop it at its first cancel check.
+            token.paused = True
+            token.event.set()
         self._mark_batch_started(batch_id)
         try:
             if job.kind == "video_pipeline":
@@ -118,9 +131,10 @@ class JobRunner:
                 ClipJob(self.ctx, job.ref_id, job.kind == "clip_preview", token.event).run()
             self._finish(job, "done", None)
         except (CommandCancelledError, SourceCancelledError):
-            if self._stop.is_set():
-                # Shutdown, not a user cancel: leave it for the next start to resume.
-                logger.info("job interrupted by shutdown id=%s kind=%s", job.id, job.kind)
+            if self._stop.is_set() or token.paused:
+                # Shutdown or pause, not a user cancel: leave it to be resumed.
+                why = "pause" if token.paused else "shutdown"
+                logger.info("job interrupted by %s id=%s kind=%s", why, job.id, job.kind)
                 self._mark_ref(job, "queued", None)
                 self._finish(job, "queued", None)
                 return
@@ -152,14 +166,22 @@ class JobRunner:
                 self._current = None
             self._refresh_batch(batch_id)
 
+    def _paused_meanwhile(self, job_id: str) -> bool:
+        with self.ctx.session_factory() as session:
+            row = repo.get_job(session, job_id)
+            return row is not None and row.status == "paused"
+
     def _finish(self, job: JobRow, status: str, error: AppError | None) -> None:
         with self.ctx.session_factory() as session:
             row = repo.get_job(session, job.id)
             if row is None:
                 return
-            # A cancel from the API already marked it; keep that.
-            row.status = "cancelled" if row.status == "cancelled" else status
-            row.finished_at = utc_now() if row.status != "queued" else None
+            # A cancel from the API already marked it; keep that. A pause keeps the job
+            # paused unless it finished anyway (done/failed before the stop arrived).
+            keep = row.status == "cancelled" or (row.status == "paused" and status == "queued")
+            if not keep:
+                row.status = status
+            row.finished_at = utc_now() if row.status not in ("queued", "paused") else None
             if error is not None:
                 row.error_code = error.code.value
                 row.error_message = error.message[:MESSAGE_LIMIT]

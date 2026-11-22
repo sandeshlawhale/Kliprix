@@ -290,6 +290,43 @@ def test_cancel_stops_running_download(client: TestClient, app: Any) -> None:
     assert client.get(f"/api/batches/{batch_id}").status_code == 404
 
 
+def test_pause_holds_the_batch_and_resume_finishes_it(client: TestClient, app: Any) -> None:
+    """D-049: pause stops the running download, other batches still run, resume finishes."""
+    source: FakeSource = app.state.job_context.adapters[0]
+    source.release.clear()
+    batch_id = client.post("/api/batches", json={"urls": [url(SLOW_ID)]}).json()["id"]
+    wait_for(client, batch_id, lambda b: b["videos"][0]["stage"] == "download")
+    paused = client.post(f"/api/batches/{batch_id}/pause").json()
+    assert paused["status"] == "paused"
+    batch = wait_for(client, batch_id, lambda b: b["videos"][0]["status"] == "queued")
+    assert batch["status"] == "paused"
+    # Another batch runs while this one is paused.
+    other = client.post("/api/batches", json={"urls": [url("aaaaaaaaaaa")]}).json()["id"]
+    assert wait_for(client, other, finished)["status"] == "done"
+    assert client.get(f"/api/batches/{batch_id}").json()["status"] == "paused"
+    source.release.set()
+    resumed = client.post(f"/api/batches/{batch_id}/resume").json()
+    assert resumed["status"] in ("queued", "running")
+    batch = wait_for(client, batch_id, finished)
+    assert batch["status"] == "done"
+    assert all(clip["status"] == "done" for clip in batch["videos"][0]["clips"])
+
+
+def test_paused_batch_can_be_cancelled(client: TestClient, app: Any) -> None:
+    source: FakeSource = app.state.job_context.adapters[0]
+    source.release.clear()
+    batch_id = client.post("/api/batches", json={"urls": [url(SLOW_ID)]}).json()["id"]
+    wait_for(client, batch_id, lambda b: b["videos"][0]["stage"] == "download")
+    client.post(f"/api/batches/{batch_id}/pause")
+    wait_for(client, batch_id, lambda b: b["videos"][0]["status"] == "queued")
+    assert client.post(f"/api/batches/{batch_id}/cancel").json()["status"] == "cancelled"
+    batch = client.get(f"/api/batches/{batch_id}").json()
+    assert batch["videos"][0]["status"] == "cancelled"
+    source.release.set()
+    # Resume does nothing on a cancelled batch.
+    assert client.post(f"/api/batches/{batch_id}/resume").json()["status"] == "cancelled"
+
+
 def _all_rendered(clips: int) -> Callable[[dict[str, Any]], bool]:
     def check(batch: dict[str, Any]) -> bool:
         video = batch["videos"][0]

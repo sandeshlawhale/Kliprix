@@ -307,6 +307,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/batches/{batch_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause Batch
+         * @description Stop the running step and hold the batch's queued work, keeping finished steps
+         *     (D-049). Work started later from the editor or More clips still runs.
+         */
+        post: operations["pause_batch_api_batches__batch_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/batches/{batch_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Batch
+         * @description Queue the paused work again; the stopped step restarts, saved steps are skipped.
+         */
+        post: operations["resume_batch_api_batches__batch_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/batches/{batch_id}/events": {
         parameters: {
             query?: never;
@@ -586,7 +627,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "pending" | "running" | "done" | "skipped" | "failed";
+            state: "pending" | "running" | "paused" | "done" | "skipped" | "failed";
             /** Detail */
             detail?: string | null;
             /** Engine */
@@ -1715,6 +1756,68 @@ export interface operations {
         };
     };
     cancel_batch_api_batches__batch_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Batch"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    pause_batch_api_batches__batch_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Batch"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resume_batch_api_batches__batch_id__resume_post: {
         parameters: {
             query?: never;
             header?: never;

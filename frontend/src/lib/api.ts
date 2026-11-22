@@ -138,6 +138,12 @@ export const listBatches = (cursor?: string | null) =>
 export const getBatch = (id: string) => request<Batch>(`/batches/${encodeURIComponent(id)}`);
 export const cancelBatch = (id: string) =>
   request<Batch>(`/batches/${encodeURIComponent(id)}/cancel`, { method: "POST" });
+/** Hold a running batch (D-049): the running step stops, finished steps are kept. */
+export const pauseBatch = (id: string) =>
+  request<Batch>(`/batches/${encodeURIComponent(id)}/pause`, { method: "POST" });
+/** Continue a paused batch; the stopped step starts again. */
+export const resumeBatch = (id: string) =>
+  request<Batch>(`/batches/${encodeURIComponent(id)}/resume`, { method: "POST" });
 export const deleteBatch = (id: string, deleteFiles: boolean) =>
   request<void>(`/batches/${encodeURIComponent(id)}?delete_files=${deleteFiles}`, {
     method: "DELETE",

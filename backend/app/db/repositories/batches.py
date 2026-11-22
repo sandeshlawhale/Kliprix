@@ -279,11 +279,12 @@ def requeue_running(session: Session) -> int:
 
 
 def cancel_jobs(session: Session, ref_ids: Sequence[str]) -> list[JobRow]:
-    """Mark queued and running jobs for these refs cancelled; returns the running ones."""
+    """Mark queued, running and paused jobs for these refs cancelled; returns the running
+    ones."""
     jobs = list(
         session.scalars(
             select(JobRow).where(
-                JobRow.ref_id.in_(ref_ids), JobRow.status.in_(("queued", "running"))
+                JobRow.ref_id.in_(ref_ids), JobRow.status.in_(("queued", "running", "paused"))
             )
         )
     )
@@ -292,3 +293,29 @@ def cancel_jobs(session: Session, ref_ids: Sequence[str]) -> list[JobRow]:
         job.status = "cancelled"
         job.finished_at = utc_now()
     return running
+
+
+def pause_jobs(session: Session, ref_ids: Sequence[str]) -> int:
+    """Pause (D-049): queued and running jobs for these refs become `paused`, so the runner
+    skips them until resume. The running one is stopped by the runner and kept paused.
+    Returns the number of jobs."""
+    jobs = list(
+        session.scalars(
+            select(JobRow).where(
+                JobRow.ref_id.in_(ref_ids), JobRow.status.in_(("queued", "running"))
+            )
+        )
+    )
+    for job in jobs:
+        job.status = "paused"
+    return len(jobs)
+
+
+def resume_jobs(session: Session, ref_ids: Sequence[str]) -> int:
+    """Resume (D-049): paused jobs for these refs are queued again (their old queue order)."""
+    jobs = list(
+        session.scalars(select(JobRow).where(JobRow.ref_id.in_(ref_ids), JobRow.status == "paused"))
+    )
+    for job in jobs:
+        job.status = "queued"
+    return len(jobs)

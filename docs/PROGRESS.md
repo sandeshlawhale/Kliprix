@@ -5,7 +5,7 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 ## Current state
 - **Current milestone:** all milestones built (M3→M10 in one run, D-027). **Waiting for the owner's checks** below; no milestone after M0–M2 is tagged yet.
 - **Status:** M0–M2 verified and tagged (`m0`, `m1`, `m2`). M3–M10 built and checked by the agent as far as possible without the owner (real runs on this machine, see "M3–M9 output" and "M10 output"); owner-only checks are listed below.
-- **Last session:** 2026-11-22, Claude Code (Claude Opus 5.5): D-048 censoring (stars, beeps, manual blur boxes), on `dev`; the GTA re-run waits for the owner (see "Censoring")
+- **Last session:** 2026-11-22, Claude Code (Claude Opus 5.5): D-049 pause/resume a batch, on `dev` (see "Pause and resume"); before that D-048 censoring, whose GTA re-run waits for the owner
 - **Last commit:** see `git log -1`
 - **Branches (owner, 2026-11-21):** all development happens on `dev`; `main` gets a merge only after the owner confirms the work runs. Never commit straight to `main`.
 
@@ -24,6 +24,11 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 
 ## In progress (exact next step)
 Nothing in progress. **Next step: the owner runs the checks below.** Start the app with `scripts\start.bat` (Windows) or `./scripts/start.sh`, configure a real key in Configure API, and paste 3 links. Fix anything found, then tag `m3`…`m10` once each milestone's check passes (the agent did not tag them because the owner checks are open). Then consider proposal P-001 (video retry endpoint) in `14-decisions-log.md`.
+
+## Pause and resume (D-049, 2026-11-22), on `dev`
+Batch page top bar: **Pause** + Cancel while a batch runs, **Resume** + Cancel while paused. Pause stops the running step like a shutdown (keeps saved steps and files) and holds the batch's queued jobs (new job status `paused`); other batches run meanwhile; Resume restarts the stopped step and continues. Editor previews/exports and More clips started inside a paused batch still run. No spinner while paused: the stopped step shows a still pause icon (checkpoint state `paused`) and held clip tiles say "Paused".
+- Checks: 2 new integration tests (pause during a download → another batch finishes → resume → batch done; cancel a paused batch), 1 checkpoint test (paused step, no running step); full pytest, ruff, format, mypy; frontend lint, typecheck, Vitest 14 passed; API types regenerated.
+- **Not checked in the browser:** the owner's app was running on :8000/:3000, and a second backend was not started (the D-048 incident). **Owner check:** restart the app, start a batch, Pause during a step → the badge says Paused and the step stops; start another batch → it runs; Resume → the first batch continues and finishes.
 
 ## Censoring (D-048, 2026-11-22), on `dev`
 Owner (GTA streams): stars in bad words, beep the audio, blur bad scenes; try automatic detection first, manual if it does not work.
@@ -78,6 +83,7 @@ Second speech-to-text engine; Whisper code kept. **Default = Parakeet** on the o
 **Measured (2026-11-19, this PC: 6 cores/12 threads, 15.7 GB, CPU only):**
 | Audio | Engine | Transcribe time | RTF | Peak RAM | Words |
 |---|---|---|---|---|---|
+| 2026-11-22 | Claude Code / Claude Opus 5.5 | D-049: pause/resume a batch (`POST /api/batches/{id}/pause`, `/resume`, job status `paused`, top-bar Pause/Resume buttons, "Paused" video badge) | pytest all passed incl. 2 new integration tests; ruff/format/mypy clean; frontend lint/typecheck/Vitest clean; not clicked in a browser (owner's app was running) |
 | 2026-11-19 | Claude Code / Claude Opus 5.5 | Parakeet (sherpa-onnx) as a second speech-to-text engine on branch `feat/parakeet-engine` (D-028): benchmark vs Whisper small/medium on English and Hindi, engine file, setting (Parakeet default per owner), Hinglish → Whisper, Whisper fallback with a video note, engine-keyed transcript cache, migration 0002 (`videos.note`), 17 new tests | pytest 242 passed; ruff/format/mypy clean; frontend lint/format/typecheck/Vitest 11 passed; real download + 15-min transcription + clip render checked; full app run with a key not done |
 | 15-min English stream (m3-15min) | Parakeet int8, 4 threads, 30 s pieces | 111 s | 0.12 | 1.54 GB | 2133 |
 | same | Whisper small (beam 5, as the app) | 181 s | 0.20 | 1.07 GB | 2130 |

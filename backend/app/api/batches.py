@@ -1,4 +1,5 @@
-"""Batch endpoints (docs/07 "Batches"): create, history, detail, delete, cancel, SSE events."""
+"""Batch endpoints (docs/07 "Batches"): create, history, detail, delete, cancel, pause,
+resume, SSE events."""
 
 from __future__ import annotations
 
@@ -25,6 +26,7 @@ from app.db.repositories import batches as repo
 from app.db.repositories.settings import load_settings
 from app.jobs.context import JobContext
 from app.jobs.runner import JobRunner
+from app.jobs.state import derive_batch_status
 from app.llm.session import LlmSessionStore
 from app.sources.inspect_cache import InspectCache
 from app.sources.registry import resolve
@@ -162,7 +164,7 @@ def get_batch(batch_id: str, db: DbDep, ctx: CtxDep) -> Batch:
 def _cancel(db: DbDep, runner: JobRunner, batch_id: str) -> None:
     videos = repo.videos_of(db, batch_id)
     clips = repo.clips_of_batch(db, batch_id)
-    refs = [v.id for v in videos] + [c.id for c in clips]
+    refs = _refs(db, batch_id)
     repo.cancel_jobs(db, refs)
     for video in videos:
         if video.status in ("queued", "running"):
@@ -181,9 +183,45 @@ def _cancel(db: DbDep, runner: JobRunner, batch_id: str) -> None:
 def cancel_batch(batch_id: str, db: DbDep, ctx: CtxDep, runner: RunnerDep) -> Batch:
     """Stop the running step, cancel queued work, and remove partial clip files."""
     batch = _require(db, batch_id)
-    if batch.status in ("queued", "running"):
+    if batch.status in ("queued", "running", "paused"):
         _cancel(db, runner, batch_id)
         ctx.publish(batch_id, "batch", status="cancelled")
+    return batch_view(ctx, db, _require(db, batch_id))
+
+
+def _refs(db: DbDep, batch_id: str) -> list[str]:
+    videos = repo.videos_of(db, batch_id)
+    clips = repo.clips_of_batch(db, batch_id)
+    return [v.id for v in videos] + [c.id for c in clips]
+
+
+@router.post("/{batch_id}/pause")
+def pause_batch(batch_id: str, db: DbDep, ctx: CtxDep, runner: RunnerDep) -> Batch:
+    """Stop the running step and hold the batch's queued work, keeping finished steps
+    (D-049). Work started later from the editor or More clips still runs."""
+    batch = _require(db, batch_id)
+    if batch.status in ("queued", "running"):
+        refs = _refs(db, batch_id)
+        repo.pause_jobs(db, refs)
+        batch.status = "paused"
+        db.commit()
+        runner.pause_refs(refs)
+        ctx.publish(batch_id, "batch", status="paused")
+    return batch_view(ctx, db, _require(db, batch_id))
+
+
+@router.post("/{batch_id}/resume")
+def resume_batch(batch_id: str, db: DbDep, ctx: CtxDep, runner: RunnerDep) -> Batch:
+    """Queue the paused work again; the stopped step restarts, saved steps are skipped."""
+    batch = _require(db, batch_id)
+    if batch.status == "paused":
+        repo.resume_jobs(db, _refs(db, batch_id))
+        batch.status = derive_batch_status(
+            "queued", repo.videos_of(db, batch_id), repo.clips_of_batch(db, batch_id)
+        )
+        db.commit()
+        runner.wake()
+        ctx.publish(batch_id, "batch", status=batch.status)
     return batch_view(ctx, db, _require(db, batch_id))
 
 

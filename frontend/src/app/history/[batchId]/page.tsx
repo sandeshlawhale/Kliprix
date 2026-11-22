@@ -27,8 +27,10 @@ function videoFinished(video: Video): boolean {
 }
 
 /** The 7 steps show only while this video is being worked on, or when something failed
- * (D-038); a video still waiting in the queue shows none. */
+ * (D-038); a video still waiting in the queue shows none. A paused video (D-049) shows
+ * where it stopped. */
 function showSteps(video: Video): boolean {
+  if (video.checkpoints.some((step) => step.state === "paused")) return true;
   if (video.status === "queued") return false;
   if (video.status === "failed") return true;
   return !videoFinished(video) && (video.status === "running" || Boolean(video.active_since));
@@ -56,7 +58,13 @@ export default function BatchPage({ params }: PageProps<"/history/[batchId]">) {
       <h1 className="sr-only">Batch</h1>
       <SourcePolicyPrompt batch={data} />
       {data.videos.map((video) => (
-        <VideoSection key={video.id} video={video} batchId={batchId} defaultCount={defaultCount} />
+        <VideoSection
+          key={video.id}
+          video={video}
+          batchId={batchId}
+          defaultCount={defaultCount}
+          paused={data.status === "paused"}
+        />
       ))}
     </div>
   );
@@ -66,10 +74,12 @@ function VideoSection({
   video,
   batchId,
   defaultCount,
+  paused,
 }: {
   video: Video;
   batchId: string;
   defaultCount: number;
+  paused: boolean;
 }) {
   const name = video.title ?? video.url;
   return (
@@ -79,7 +89,9 @@ function VideoSection({
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="min-w-0 truncate text-xl font-semibold tracking-tight">{name}</h2>
             {video.platform && <Badge variant="secondary">{video.platform}</Badge>}
-            {video.status === "queued" && <Badge variant="outline">Waiting</Badge>}
+            {video.status === "queued" && (
+              <Badge variant="outline">{paused ? "Paused" : "Waiting"}</Badge>
+            )}
             {video.status === "done" && (
               <Badge variant="outline">
                 {video.has_chat ? "Chat replay used" : "No chat replay"}
@@ -109,7 +121,7 @@ function VideoSection({
       {video.clips.length > 0 && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
           {video.clips.map((clip) => (
-            <ClipCard key={clip.id} clip={clip} batchId={batchId} />
+            <ClipCard key={clip.id} clip={clip} batchId={batchId} batchPaused={paused} />
           ))}
         </div>
       )}

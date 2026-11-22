@@ -32,10 +32,12 @@ Messages are human-readable and never contain keys, tokens, or full file-system 
 - `GET /api/batches?cursor=&limit=` → `{ items: [BatchSummary], next_cursor }` where `BatchSummary = { id, created_at, status, title, video_count, clip_count }`
 - `GET /api/batches/{id}` → `Batch = { id, created_at, status, style, videos: [Video] }`
   - `Video = { id, url, platform, title, channel, duration_s, thumbnail_url, has_chat, status, stage, progress, error?, note?, can_add_clips, add_clips_blocked?, checkpoints: [Checkpoint], clips: [ClipSummary] }` (`can_add_clips` / `add_clips_blocked`: whether more clips can start now, else why, D-034)
-  - `Checkpoint = { key: "download"|"chat"|"signals"|"candidates"|"transcribe"|"select"|"edit", label, state: "pending"|"running"|"done"|"skipped"|"failed", detail?: string, engine?: string }` (`engine`: Transcribe step only, the engine that runs, D-030 temporary) (`detail` examples: "skipped, no chat replay", "2/5", or the error message). Always returned in the fixed order above.
+  - `Checkpoint = { key: "download"|"chat"|"signals"|"candidates"|"transcribe"|"select"|"edit", label, state: "pending"|"running"|"paused"|"done"|"skipped"|"failed", detail?: string, engine?: string }` (`engine`: Transcribe step only, the engine that runs, D-030 temporary) (`detail` examples: "skipped, no chat replay", "2/5", or the error message). Always returned in the fixed order above. `paused` (D-049): in a paused batch, the step that was stopped or is still running.
   - `ClipSummary = { id, index, status, stage, progress, queue_position?, title, start_s, end_s, duration_s, thumbnail_url?, error?, edited: bool, has_preview: bool, has_export: bool }`
 - `DELETE /api/batches/{id}?delete_files=true` → `204`
-- `POST /api/batches/{id}/cancel` → `Batch`
+- `POST /api/batches/{id}/cancel` → `Batch` (also on a paused batch)
+- `POST /api/batches/{id}/pause` → `Batch`: a `queued`/`running` batch becomes `paused`; the running step stops, finished steps are kept (D-049). No-op in other states
+- `POST /api/batches/{id}/resume` → `Batch`: a `paused` batch is queued again (D-049). No-op in other states
 - `GET /api/batches/{id}/events` → `text/event-stream`. Events: `video` and `clip` with `{id, status, stage, progress}`; `batch` with `{status}`; heartbeat comment every 15 s. Treat events as hints; refetch for truth.
 
 ## Clips

@@ -23,7 +23,7 @@ Pragmas on connect: `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`.
 settings(key TEXT PK, value_json TEXT)
 
 batches(id PK, created_at, status, title, style_json)
-  status: queued | running | done | partial | failed | cancelled
+  status: queued | running | paused | done | partial | failed | cancelled   (paused: D-049)
 
 videos(id PK, batch_id FK, position INT, url, platform, source_id, title, channel,
        duration_s REAL, thumbnail_path, has_chat INT, status, stage, progress REAL,
@@ -45,13 +45,14 @@ clips(id PK, video_id FK, batch_id FK, idx INT, status, stage, progress REAL,
 jobs(id PK, kind, ref_id, status, attempts INT, priority INT, payload_json,
      error_code, error_message, created_at, started_at, finished_at)
   kind: video_pipeline | clip_render | clip_preview
-  status: queued | running | done | failed | cancelled
+  status: queued | running | paused | done | failed | cancelled   (paused: D-049)
 ```
 Indexes: `videos(batch_id)`, `clips(video_id)`, `clips(batch_id)`, `jobs(status, priority, created_at)`.
 Deleting a batch cascades to videos, clips, jobs; files are removed when `delete_files=true`.
 
 ## State machines
-- Job: `queued → running → done | failed | cancelled`. On startup `running → queued`.
+- Job: `queued → running → done | failed | cancelled`. On startup `running → queued`. Pause (D-049): `queued | running → paused`, resume `paused → queued`.
+- Batch pause (D-049): `queued | running → paused → queued | running`; a paused batch stays paused until resume or cancel, even across a restart.
 - Video: `queued → running(stage…) → done | failed`. A video is `done` when its clips exist; clips render afterwards as their own jobs.
 - Clip: `queued → running(cut→face_crop→captions→render) → done | failed`. Editing a done clip sets `edited=1`; preview/export create new jobs.
 - Batch status is derived: all videos done and ≥1 clip done → `done`; some failed → `partial`; all failed → `failed`.

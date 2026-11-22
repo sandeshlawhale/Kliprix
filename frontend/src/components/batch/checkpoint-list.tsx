@@ -1,4 +1,4 @@
-import { Check, Circle, Loader2, Minus, X } from "lucide-react";
+import { Check, Circle, Loader2, Minus, Pause, X } from "lucide-react";
 
 import type { Checkpoint } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,7 @@ export function CheckpointList({ checkpoints }: { checkpoints: Checkpoint[] }) {
           <span
             className={cn(
               "flex items-center gap-2",
-              step.state === "running" && "text-foreground",
+              (step.state === "running" || step.state === "paused") && "text-foreground",
               step.state === "failed" && "text-destructive",
             )}
           >
@@ -30,9 +30,11 @@ export function CheckpointList({ checkpoints }: { checkpoints: Checkpoint[] }) {
               // video when the step started. Remove before production.
               <span className="border-border rounded border px-1.5 text-xs">{step.engine}</span>
             )}
-            {step.state === "running" && step.key !== "edit" && step.detail && (
-              <span className="font-mono text-xs tabular-nums">{step.detail}</span>
-            )}
+            {(step.state === "running" || step.state === "paused") &&
+              step.key !== "edit" &&
+              step.detail && <span className="font-mono text-xs tabular-nums">{step.detail}</span>}
+            {/* A paused batch (D-049): the stopped step waits, no spinner. */}
+            {step.state === "paused" && <span className="text-xs">(paused)</span>}
             {step.key === "transcribe" &&
               (step.state === "pending" || step.state === "running") && (
                 <span className="text-xs">({SLOW_STEP_NOTE})</span>
@@ -55,6 +57,7 @@ function StateIcon({ state }: { state: Checkpoint["state"] }) {
   const common = "size-4 shrink-0";
   if (state === "done") return <Check className={common} aria-hidden />;
   if (state === "running") return <Loader2 className={cn(common, "animate-spin")} aria-hidden />;
+  if (state === "paused") return <Pause className={common} aria-hidden />;
   if (state === "skipped") return <Minus className={common} aria-hidden />;
   if (state === "failed") return <X className={common} aria-hidden />;
   return <Circle className={cn(common, "opacity-50")} aria-hidden />;

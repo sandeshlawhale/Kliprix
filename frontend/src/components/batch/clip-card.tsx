@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, RotateCcw } from "lucide-react";
+import { Loader2, Pause, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 
@@ -43,7 +43,15 @@ const CHIP =
 
 /** A bare 9:16 tile: the frame, and in the corner its length or what is happening to it.
  * Title and the rest live on the clip page. */
-export function ClipCard({ clip, batchId }: { clip: ClipSummary; batchId: string }) {
+export function ClipCard({
+  clip,
+  batchId,
+  batchPaused = false,
+}: {
+  clip: ClipSummary;
+  batchId: string;
+  batchPaused?: boolean;
+}) {
   const client = useQueryClient();
   const retry = useMutation({
     mutationFn: () => retryClip(clip.id),
@@ -51,6 +59,9 @@ export function ClipCard({ clip, batchId }: { clip: ClipSummary; batchId: string
     onError: (error) => toast.error(errorMessage(error)),
   });
   const working = clip.status === "queued" || clip.status === "running";
+  // Held by a paused batch (D-049): queued without a queue place. Work the user started in
+  // a paused batch keeps its place and runs.
+  const held = batchPaused && clip.status === "queued" && !clip.queue_position;
   const failed = clip.status === "failed";
   const openable = clip.status === "done" || clip.has_export || clip.has_preview;
   const label = `${clip.title || "Untitled clip"} — ${clipStatusText(clip)}`;
@@ -73,13 +84,21 @@ export function ClipCard({ clip, batchId }: { clip: ClipSummary; batchId: string
           )}
         />
       ) : (
-        working && <div className="bg-muted-foreground/10 absolute inset-0 animate-pulse" />
+        working && (
+          <div
+            className={cn("bg-muted-foreground/10 absolute inset-0", !held && "animate-pulse")}
+          />
+        )
       )}
 
       {working && (
         <span className={CHIP} role="status">
-          <Loader2 className="size-3 animate-spin" aria-hidden />
-          {workingText(clip)}
+          {held ? (
+            <Pause className="size-3" aria-hidden />
+          ) : (
+            <Loader2 className="size-3 animate-spin" aria-hidden />
+          )}
+          {held ? "Paused" : workingText(clip)}
         </span>
       )}
 

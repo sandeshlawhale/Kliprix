@@ -8,7 +8,7 @@ Desktop-first (min width 1024). Mobile is not a target in v1.
 
 ## Global layout
 Fixed left **sidebar (260 px, always visible)** + main content area (max width 1100 px, centered; every page uses this one width, D-038).
-Above every page a top bar of fixed height (D-038): the storage warning pill on the left (empty when there is no warning), and on a batch page the batch status, Cancel (while it runs) and the date and time on the right. The page content always starts at the same height.
+Above every page a top bar of fixed height (D-038): the storage warning pill on the left (empty when there is no warning), and on a batch page the batch status, Pause + Cancel (while it runs) or Resume + Cancel (while paused, D-049) and the date and time on the right. The page content always starts at the same height.
 
 ### Sidebar (top to bottom)
 1. App name (text only).

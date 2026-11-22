@@ -54,16 +54,17 @@ MEASURED_STEPS: dict[str, tuple[float, float]] = {
 class CheckpointState:
     key: str
     label: str
-    state: str  # pending | running | done | skipped | failed
+    state: str  # pending | running | paused | done | skipped | failed
     detail: str | None = None
     # Transcribe step only: the engine that ran or runs (D-030, temporary debug display).
     engine: str | None = None
 
 
 def derive_batch_status(current: str, videos: Sequence[VideoRow], clips: Sequence[ClipRow]) -> str:
-    """queued/running while work remains; then done, partial or failed (docs/08)."""
-    if current == "cancelled":
-        return "cancelled"
+    """queued/running while work remains; then done, partial or failed (docs/08). A
+    cancelled batch stays cancelled; a paused one (D-049) stays paused until resume."""
+    if current in ("cancelled", "paused"):
+        return current
     statuses = [v.status for v in videos] + [c.status for c in clips]
     if any(status in ACTIVE for status in statuses):
         started = any(status not in ("queued",) for status in statuses)
@@ -99,9 +100,10 @@ def _files_done(video_dir: Path, key: str, clips: Sequence[ClipRow]) -> bool:
 
 
 def checkpoints(
-    video: VideoRow, clips: Sequence[ClipRow], video_dir: Path
+    video: VideoRow, clips: Sequence[ClipRow], video_dir: Path, *, paused: bool = False
 ) -> list[CheckpointState]:
-    """The 7 checkpoints in fixed order for one video."""
+    """The 7 checkpoints in fixed order for one video. In a paused batch (D-049) the step
+    that was stopped or waits shows `paused` instead of `running`."""
     current = STAGE_TO_CHECKPOINT.get(video.stage or "")
     current_index = _ORDER.index(current) if current is not None else -1
     result: list[CheckpointState] = []
@@ -125,7 +127,22 @@ def checkpoints(
             result.append(CheckpointState(key, label, "done"))
         else:
             result.append(CheckpointState(key, label, "pending"))
+    if paused:
+        result = _paused(result, video)
     return [_with_engine(step, video) for step in result]
+
+
+def _paused(steps: list[CheckpointState], video: VideoRow) -> list[CheckpointState]:
+    """Running steps become paused. A video stopped mid-pipeline is `queued` again with its
+    stage kept, so the step of that stage (pending now) is the paused one; a video that
+    never started (no stage) shows no paused step."""
+    stopped = STAGE_TO_CHECKPOINT.get(video.stage or "") if video.status == "queued" else None
+    return [
+        replace(step, state="paused")
+        if step.state == "running" or (step.key == stopped and step.state == "pending")
+        else step
+        for step in steps
+    ]
 
 
 def more_clips_blocker(video: VideoRow, video_dir: Path) -> str | None:

@@ -28,3 +28,19 @@ def test_running_step_shows_its_own_percent(tmp_path: Path) -> None:
 def test_unmeasured_steps_show_no_number(tmp_path: Path) -> None:
     assert running("select", 0.95, tmp_path) == ("select", None)
     assert running("chat", 0.36, tmp_path) == ("chat", None)
+
+
+def test_paused_batch_shows_the_stopped_step_paused(tmp_path: Path) -> None:
+    """D-049: no running step (spinner) in a paused batch."""
+    stopped = video("transcribe", 0.74)
+    stopped.status = "queued"
+    states = {c.key: c.state for c in checkpoints(stopped, [], tmp_path, paused=True)}
+    assert states["transcribe"] == "paused"
+    assert states["download"] == "done"
+    assert states["select"] == "pending"
+    assert "running" not in states.values()
+    still_running = checkpoints(video("select", 0.95), [], tmp_path, paused=True)
+    assert [c.key for c in still_running if c.state == "paused"] == ["select"]
+    waiting = VideoRow(id="w", batch_id="b", position=1, url="u", status="queued",
+                       stage=None, progress=0.0, has_chat=0)  # fmt: skip
+    assert all(c.state == "pending" for c in checkpoints(waiting, [], tmp_path, paused=True))
