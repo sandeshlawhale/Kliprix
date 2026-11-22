@@ -24,6 +24,7 @@ from app.pipeline.screen_text import ScreenText
 from app.pipeline.select import (
     SelectionClip,
     VideoFacts,
+    auto_fixed,
     cut_at_scene_end,
     draft_count,
     review_clips,
@@ -76,8 +77,8 @@ def test_summary_and_timeline_say_what_is_outside_the_clip() -> None:
     ]
     text = describe(analysis)
     assert "Clip 0: now 24:30-24:53 (23 s); analysed 24:10-25:13" in text
-    assert text.index("CLIP END") < text.index("[24:56] gunfire")
-    assert '[25:00] text "KILLED BY HUSH" | SCENE ENDS' in text
+    assert text.index("CLIP END") < text.index("[24:56 | 1496 s] gunfire")
+    assert '[25:00 | 1500 s] text "KILLED BY HUSH" | SCENE ENDS' in text
 
 
 def test_clip_never_crosses_a_scene_end() -> None:
@@ -234,3 +235,30 @@ def test_round_words_without_spaces_end_a_scene(value: str) -> None:
     # Real OCR readings from the owner's video, spaces dropped.
     rows = [Row(t=0.0), Row(t=2.0, text=[value])]
     assert scene_ends(rows)[0][0] == 2.0
+
+
+def test_auto_fix_moves_to_the_action_and_includes_the_payoff() -> None:
+    # The owner's first clip: quiet 24:30-24:53, gunfire 24:56-24:58, death screen 25:00.
+    analysis = _analysis(1470.0, 1493.0)
+    clip = draft(1470.0).model_copy(update={"end": 1493.0})
+    fixed = auto_fixed(clip, analysis)
+    # Through the gunfire to the "KILLED BY" payoff, plus a 3 s reaction.
+    assert fixed.end == 1503.0
+    assert fixed.start == 1470.0
+
+
+def test_unusable_review_times_fall_back_to_the_auto_fix() -> None:
+    # A real answer came back with times the backend could not place: all 5 kept clips were
+    # lost and the video got none. Now the draft is kept with the automatic fixes.
+    verdicts = [ReviewClip(id=0, start=5.0, end=30.0, title="Wait for it", score=0.9)]
+    llm = ReviewLlm(verdicts)
+    kept = review_clips([draft(100)], 1, FACTS, None, llm, reviewer)  # type: ignore[arg-type]
+    assert len(kept) == 1
+    assert kept[0].title == "Wait for it"
+    assert kept[0].start >= 80.0
+
+
+def test_never_zero_clips_when_the_reviewer_drops_everything() -> None:
+    verdicts = [ReviewClip(id=0, keep=False), ReviewClip(id=1, keep=False)]
+    kept = review_clips([draft(100), draft(300)], 1, FACTS, None, ReviewLlm(verdicts), reviewer)  # type: ignore[arg-type]
+    assert len(kept) == 1

@@ -16,7 +16,7 @@ from app.config import LLM_LINE_MAX_CHARS, LLM_PROMPT_MAX_CHARS
 
 SELECT_PROMPT_VERSION = 5
 TITLE_PROMPT_VERSION = 1
-REVIEW_PROMPT_VERSION = 1
+REVIEW_PROMPT_VERSION = 2
 TRANSLITERATE_PROMPT_VERSION = 1
 
 NO_SPEECH = "NO SPEECH DETECTED"
@@ -124,6 +124,10 @@ rounds make no sense to a viewer.
 5. Is the text honest? The title and description may only claim what the timeline or the \
 frames show. Do not claim a 1v4, an ace, a clutch or a number of kills unless the kill feed, \
 the speech or the frames show it.
+
+Times: every timeline line starts with [mm:ss | seconds]. "start" and "end" in your \
+answer are those seconds from the start of the whole video (for example 1470), never \
+seconds inside the clip and never mm:ss.
 
 Then choose up to {count} drafts, best first. Each kept clip must stay inside its analysed \
 range (start and end in seconds from the start of the video), last {min_s:.0f} to 60 \

@@ -228,6 +228,12 @@ def actions(rows: Sequence[Row]) -> list[float]:
     ]
 
 
+def _stamp(t: float) -> str:
+    """ "[24:30 | 1470 s]": the clock for reading, the seconds to answer with (a real
+    Gemini answer once gave times the backend could not place, D-046)."""
+    return f"[{clock(t)} | {t:.0f} s]"
+
+
 def describe(analysis: ClipAnalysis) -> str:
     """The timeline for the prompt: every row with something in it, and the clip's start and
     end marked. Rows outside the clip say so."""
@@ -242,10 +248,10 @@ def describe(analysis: ClipAnalysis) -> str:
     scene_times = {t: why for t, why in analysis.scene_ends}
     for row in analysis.rows:
         if not marked_start and row.t >= analysis.start - 1e-6:
-            lines.append(f"[{clock(analysis.start)}] ---- CLIP START ----")
+            lines.append(f"{_stamp(analysis.start)} ---- CLIP START ----")
             marked_start = True
         if not marked_end and row.t >= analysis.end - 1e-6:
-            lines.append(f"[{clock(analysis.end)}] ---- CLIP END ----")
+            lines.append(f"{_stamp(analysis.end)} ---- CLIP END ----")
             marked_end = True
         parts: list[str] = []
         if row.screen and row.screen != "gameplay":
@@ -259,9 +265,9 @@ def describe(analysis: ClipAnalysis) -> str:
         if row.t in scene_times:
             parts.append(f"SCENE ENDS ({scene_times[row.t]})")
         if parts:
-            lines.append(f"[{clock(row.t)}] " + " | ".join(parts))
+            lines.append(f"{_stamp(row.t)} " + " | ".join(parts))
     if not marked_end:
-        lines.append(f"[{clock(analysis.end)}] ---- CLIP END ----")
+        lines.append(f"{_stamp(analysis.end)} ---- CLIP END ----")
     return "\n".join(lines)
 
 

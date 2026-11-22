@@ -102,6 +102,14 @@ DEFAULT_HASHTAGS = ("#shorts", "#highlights", "#clips")
 _QUOTES = "\"'`" + "".join(map(chr, (0x201C, 0x201D, 0x2018, 0x2019, 0xAB, 0xBB)))
 _HASHTAG_BODY = re.compile(r"[^\w]", re.UNICODE)
 TIME_DECIMALS = 2
+# Rule fixes of a draft (D-046): action later than AUTO_LATE_S after the start moves the
+# start to AUTO_LEAD_S before it; action within AUTO_REACH_S after the end extends the
+# end to AUTO_TAIL_S after that burst (actions at most AUTO_GAP_S apart).
+AUTO_LATE_S = 8.0
+AUTO_LEAD_S = 5.0
+AUTO_REACH_S = 10.0
+AUTO_GAP_S = 6.0
+AUTO_TAIL_S = 3.0
 # Chat shown to the LLM (D-043): messages from 3 s before to 8 s after the reaction (or the
 # peak), at most 10, reactions first.
 CHAT_SAMPLE_BEFORE_S = 3.0
@@ -840,7 +848,9 @@ def review_clips(
             if exc.code != ErrorCode.LLM_BAD_RESPONSE or not attached:
                 break
     if answer is None:
-        return list(drafts[:count])
+        return [
+            auto_fixed(draft, analysis) for draft, analysis in zip(drafts, analyses, strict=True)
+        ][:count]
     words = all_words(transcript)
     kept: list[SelectionClip] = []
     handled: set[int] = set()
@@ -854,22 +864,73 @@ def review_clips(
             continue
         if len(kept) >= count:
             continue
-        clip = apply_verdict(verdict, drafts[verdict.id], analyses[verdict.id], facts, words)
+        draft, analysis = drafts[verdict.id], analyses[verdict.id]
+        clip = apply_verdict(verdict, draft, analysis, facts, words)
+        logger.info(
+            "review kept draft %s: draft %.1f-%.1f zone %.1f-%.1f answer %s-%s -> %s",
+            verdict.id, draft.start, draft.end, analysis.zone_start, analysis.zone_end,
+            verdict.start, verdict.end,
+            "unusable" if clip is None else f"{clip.start:.1f}-{clip.end:.1f}",
+        )  # fmt: skip
+        if clip is None:
+            # The answer's times cannot be placed: keep the reviewer's text on the draft,
+            # with the automatic fixes instead of its times.
+            clip = apply_verdict(
+                verdict.model_copy(update={"start": None, "end": None}),
+                auto_fixed(draft, analysis), analysis, facts, words,
+            )  # fmt: skip
         if clip is None or conflicts(clip.start, clip.end, kept, taken):
-            logger.info("review kept draft %s but its times do not fit", verdict.id)
             continue
         kept.append(clip)
-    for index, draft in enumerate(drafts):
-        if len(kept) >= count:
-            break
-        if index not in handled and not conflicts(draft.start, draft.end, kept, taken):
-            kept.append(draft)
+    rejected = {verdict.id for verdict in answer.clips if not verdict.keep}
+    # Drafts the reviewer did not mention fill, auto-fixed; if it kept nothing usable, the
+    # drafts it did not drop come next, then (never zero clips) the others.
+    for indexes in (
+        [i for i in range(len(drafts)) if i not in handled],
+        [i for i in range(len(drafts)) if i in handled and i not in rejected],
+        [i for i in range(len(drafts)) if i in rejected] if not kept else [],
+    ):
+        for index in indexes:
+            if len(kept) >= count:
+                break
+            fixed = auto_fixed(drafts[index], analyses[index])
+            if any(c.start == fixed.start for c in kept):
+                continue
+            if not conflicts(fixed.start, fixed.end, kept, taken):
+                kept.append(fixed)
     logger.info("review drafts=%s kept=%s images=%s", len(drafts), len(kept), len(images))
     return kept
 
 
 def _without_images(user: str) -> str:
     return "\n".join(line for line in user.splitlines() if not line.startswith("Images: "))
+
+
+def auto_fixed(draft: SelectionClip, analysis: ClipAnalysis) -> SelectionClip:
+    """The draft fixed by rules alone (D-046), for when the reviewer's times cannot be used:
+    start AUTO_LEAD_S before the first action when it comes late, end AUTO_TAIL_S after the
+    action that continues past the end (inside the zone, up to the standard maximum), and
+    never across a scene end. Unchanged when there is nothing to fix."""
+    start, end = draft.start, draft.end
+    inside = [t for t in analysis.actions if start <= t < end]
+    if inside and inside[0] - start > AUTO_LATE_S:
+        start = max(analysis.zone_start, inside[0] - AUTO_LEAD_S)
+    after = [t for t in analysis.actions if end <= t < analysis.zone_end]
+    if after and after[0] - end <= AUTO_REACH_S:
+        last = after[0]
+        for t in after[1:]:
+            if t - last > AUTO_GAP_S:
+                break
+            last = t
+        end = min(analysis.zone_end, last + AUTO_TAIL_S, start + CLIP_STANDARD_MAX_S)
+    start, end = cut_at_scene_end(start, end, analysis)
+    if end - start < REVIEW_MIN_S:
+        return draft
+    if (start, end) == (draft.start, draft.end):
+        return draft
+    return draft.model_copy(
+        update={"start": round(start, TIME_DECIMALS), "end": round(end, TIME_DECIMALS)}
+    )
 
 
 def cut_at_scene_end(start: float, end: float, analysis: ClipAnalysis) -> tuple[float, float]:
@@ -898,6 +959,9 @@ def apply_verdict(
     never across a scene end) and text. None when too short to keep."""
     start = draft.start if verdict.start is None else verdict.start
     end = draft.end if verdict.end is None else verdict.end
+    if not (analysis.zone_start - 1 <= start < end <= analysis.zone_end + 1):
+        # Times outside the analysed range (another unit, or clip-relative): not usable.
+        return None
     start, end = max(analysis.zone_start, start), min(analysis.zone_end, end)
     if end - start < REVIEW_MIN_S:
         return None
