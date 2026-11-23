@@ -19,7 +19,11 @@ export interface EditDraft {
   blur: number;
   words: Word[];
   blur_boxes: BlurBox[];
+  /** Montage (D-051): play only the clip's planned parts. */
+  montage: boolean;
 }
+
+export type Part = [number, number];
 
 export function draftFrom(clip: Clip): EditDraft {
   return {
@@ -30,7 +34,27 @@ export function draftFrom(clip: Clip): EditDraft {
     blur: clip.edit.blur,
     words: clip.words.map((word) => ({ ...word })),
     blur_boxes: clip.edit.blur_boxes.map((box) => ({ ...box })),
+    montage: clip.edit.montage,
   };
+}
+
+/** The source ranges the draft plays (mirrors the backend's `effective`): the planned parts
+ * inside the trim, the first and last moved to the trim edges, or the whole range when
+ * montage is off or fewer than two parts remain. */
+export function playedParts(draft: EditDraft, parts: Part[]): Part[] {
+  if (!draft.montage) return [[draft.start_s, draft.end_s]];
+  const kept: Part[] = parts
+    .filter(([start, end]) => end > draft.start_s && start < draft.end_s)
+    .map(([start, end]) => [Math.max(start, draft.start_s), Math.min(end, draft.end_s)]);
+  if (kept.length < 2) return [[draft.start_s, draft.end_s]];
+  kept[0] = [draft.start_s, kept[0]![1]];
+  kept[kept.length - 1] = [kept[kept.length - 1]![0], draft.end_s];
+  return kept;
+}
+
+/** Seconds the draft plays (the parts' total for a montage). */
+export function playedLength(draft: EditDraft, parts: Part[]): number {
+  return playedParts(draft, parts).reduce((sum, [start, end]) => sum + end - start, 0);
 }
 
 const round = (value: number) => Math.round(value * 100) / 100;
@@ -47,7 +71,7 @@ export function draftErrors(draft: EditDraft, clip: Clip): string[] {
   if (draft.start_s < min - 0.01 || draft.end_s > max + 0.01) {
     errors.push(`Trim must stay between ${round(min)} s and ${round(max)} s.`);
   }
-  const length = draft.end_s - draft.start_s;
+  const length = playedLength(draft, clip.edit.parts);
   if (length < EDIT_MIN_S || length > EDIT_MAX_S) {
     errors.push(`A clip must be ${EDIT_MIN_S}–${EDIT_MAX_S} s long.`);
   }
@@ -65,8 +89,8 @@ export function draftErrors(draft: EditDraft, clip: Clip): string[] {
 }
 
 /** A soft warning outside 15–90 s (still allowed, D-035). */
-export function lengthWarning(draft: EditDraft): string | null {
-  const length = draft.end_s - draft.start_s;
+export function lengthWarning(draft: EditDraft, parts: Part[] = []): string | null {
+  const length = playedLength(draft, parts);
   if (length >= EDIT_MIN_S && length < GOOD_MIN_S) {
     return `${length.toFixed(1)} s is very short; 15–90 s works best.`;
   }
@@ -92,6 +116,7 @@ export function patchFrom(draft: EditDraft, clip: Clip): ClipPatch {
   if (draft.caption_style !== clip.edit.caption_style) patch.caption_style = draft.caption_style;
   if (draft.crop_mode !== clip.edit.crop_mode) patch.crop_mode = draft.crop_mode;
   if (draft.blur !== clip.edit.blur) patch.blur = draft.blur;
+  if (draft.montage !== clip.edit.montage) patch.montage = draft.montage;
   const wordsChanged =
     draft.words.length !== clip.words.length ||
     draft.words.some((word, index) => word.text.trim() !== clip.words[index]?.text);

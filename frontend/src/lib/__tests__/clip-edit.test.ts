@@ -10,6 +10,8 @@ import {
   lengthWarning,
   newBlurBox,
   patchFrom,
+  playedLength,
+  playedParts,
   wordLines,
 } from "@/lib/clip-edit";
 
@@ -46,6 +48,8 @@ function clip(): Clip {
       start_s: 100,
       end_s: 150,
       blur_boxes: [],
+      parts: [],
+      montage: false,
     },
     words: [
       { text: "hello", start: 0.5, end: 0.9 },
@@ -152,5 +156,62 @@ describe("clip editor logic", () => {
         3,
       ),
     ).toEqual([[0, 1, 2], [3, 4, 5], [6]]);
+  });
+});
+
+describe("montage clips (D-051)", () => {
+  function montageClip(): Clip {
+    const base = clip();
+    return {
+      ...base,
+      duration_s: 30,
+      edit: {
+        ...base.edit,
+        parts: [
+          [100, 110],
+          [120, 130],
+          [140, 150],
+        ],
+        montage: true,
+      },
+    };
+  }
+
+  it("plays only the parts and counts their length", () => {
+    const c = montageClip();
+    const draft = draftFrom(c);
+    expect(playedParts(draft, c.edit.parts)).toEqual([
+      [100, 110],
+      [120, 130],
+      [140, 150],
+    ]);
+    expect(playedLength(draft, c.edit.parts)).toBe(30);
+    expect(isDirty(draft, c)).toBe(false);
+  });
+
+  it("moves the outer parts with the trim and keeps the inner cuts", () => {
+    const c = montageClip();
+    const draft = { ...draftFrom(c), start_s: 104, end_s: 145 };
+    expect(playedParts(draft, c.edit.parts)).toEqual([
+      [104, 110],
+      [120, 130],
+      [140, 145],
+    ]);
+    expect(playedLength(draft, c.edit.parts)).toBe(21);
+  });
+
+  it("switches montage off as its own change", () => {
+    const c = montageClip();
+    const draft = { ...draftFrom(c), montage: false };
+    expect(playedLength(draft, c.edit.parts)).toBe(50);
+    expect(patchFrom(draft, c)).toEqual({ montage: false });
+  });
+
+  it("checks the played length, not the range", () => {
+    const c = montageClip();
+    const draft = { ...draftFrom(c), start_s: 107, end_s: 142 };
+    // Plays 3 + 10 + 2 = 15 s although the range is 35 s.
+    expect(playedLength(draft, c.edit.parts)).toBe(15);
+    expect(draftErrors(draft, c)).toEqual([]);
   });
 });

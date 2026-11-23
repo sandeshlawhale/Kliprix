@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { CaptionStylePicker } from "@/components/style/caption-style-picker";
 import { invalidateBatch, keys } from "@/hooks/queries";
 import { errorMessage, patchClip, type Clip } from "@/lib/api";
@@ -20,6 +21,8 @@ import {
   MAX_BLUR_BOXES,
   newBlurBox,
   patchFrom,
+  playedLength,
+  playedParts,
   wordLines,
   type EditDraft,
 } from "@/lib/clip-edit";
@@ -45,7 +48,7 @@ export function EditPanel({
 }) {
   const client = useQueryClient();
   const errors = draftErrors(draft, clip);
-  const warning = lengthWarning(draft);
+  const warning = lengthWarning(draft, clip.edit.parts);
   const dirty = isDirty(draft, clip);
   const busy = clip.status === "running" || clip.status === "queued";
   const save = useMutation({
@@ -61,7 +64,10 @@ export function EditPanel({
   const set = <K extends keyof EditDraft>(key: K, value: EditDraft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
   const { min_start_s: min, max_end_s: max } = clip.source_bounds;
-  const length = draft.end_s - draft.start_s;
+  const length = playedLength(draft, clip.edit.parts);
+  const hasParts = clip.edit.parts.length > 1;
+  const played = playedParts(draft, clip.edit.parts);
+  const skipped = draft.end_s - draft.start_s - length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -111,6 +117,25 @@ export function EditPanel({
           <p className="text-foreground flex items-center gap-2 text-sm">
             <TriangleAlert className="size-4" aria-hidden /> {warning}
           </p>
+        )}
+        {hasParts && (
+          <div className="flex flex-col gap-2 rounded-md border p-3">
+            <div className="flex items-center gap-3">
+              <Switch
+                id="montage"
+                checked={draft.montage}
+                onCheckedChange={(checked) => set("montage", checked)}
+              />
+              <Label htmlFor="montage">Skip the quiet gaps (montage)</Label>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {draft.montage && played.length > 1
+                ? `Plays ${played.length} parts and skips ${skipped.toFixed(0)} s where nothing is said or happens: ` +
+                  played.map(([start, end]) => `${clock(start)}–${clock(end)}`).join(", ") +
+                  "."
+                : "Plays the whole range without skipping."}
+            </p>
+          </div>
         )}
       </section>
 

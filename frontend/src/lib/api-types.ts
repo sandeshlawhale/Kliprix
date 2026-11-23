@@ -731,6 +731,8 @@ export interface components {
             words?: components["schemas"]["WordIn"][] | null;
             /** Blur Boxes */
             blur_boxes?: components["schemas"]["BlurBox"][] | null;
+            /** Montage */
+            montage?: boolean | null;
         };
         /** ClipSummary */
         ClipSummary: {
@@ -818,6 +820,19 @@ export interface components {
              * @default []
              */
             blur_boxes: components["schemas"]["BlurBox"][];
+            /**
+             * Parts
+             * @default []
+             */
+            parts: [
+                number,
+                number
+            ][];
+            /**
+             * Montage
+             * @default false
+             */
+            montage: boolean;
         };
         /** ErrorBody */
         ErrorBody: {
