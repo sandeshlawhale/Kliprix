@@ -18,6 +18,7 @@ from app.jobs.context import JobContext, slugify
 from app.pipeline.audio import AUDIO_FILE_NAME
 from app.pipeline.clip_render import ClipSpec, SourceVideo, make_thumbnail, render_clip
 from app.pipeline.download import load_cached as load_download
+from app.pipeline.parts import Part, effective, is_montage, normalized
 from app.pipeline.transcribe import Word
 from app.render.censor import BlurBox
 from app.sources.base import SOURCE_FILE_NAME
@@ -27,6 +28,19 @@ logger = logging.getLogger(__name__)
 
 def clip_words(clip: ClipRow) -> list[Word]:
     return [Word.model_validate(item) for item in json.loads(clip.words_json or "[]")]
+
+
+def stored_parts(clip: ClipRow) -> tuple[Part, ...]:
+    """The montage parts planned for the clip (D-051), whether or not they are used."""
+    return normalized(json.loads(clip.parts_json or "[]"))
+
+
+def played_parts(clip: ClipRow) -> tuple[Part, ...]:
+    """The source ranges the clip plays: its parts inside its trim when montage is on,
+    else the single range from start to end."""
+    if clip.montage and stored_parts(clip):
+        return effective(clip.start_s, clip.end_s, stored_parts(clip))
+    return ((clip.start_s, clip.end_s),)
 
 
 def clip_blur_boxes(clip: ClipRow) -> list[BlurBox]:
@@ -76,6 +90,7 @@ class ClipJob:
                 show_title=bool(style.get("show_title", True)),
                 style=clip.caption_style, crop=clip.crop_mode, blur=clip.blur,  # type: ignore[arg-type]
                 words=clip_words(clip), blur_boxes=clip_blur_boxes(clip),
+                parts=parts if is_montage(parts := played_parts(clip)) else (),
             )  # fmt: skip
             out = (
                 self.ctx.data_dir / "previews" / f"{clip.id}.mp4"

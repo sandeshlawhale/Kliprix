@@ -26,9 +26,10 @@ from app.core.errors import ERROR_RESPONSES, AppError, ErrorCode
 from app.core.settings_schema import CaptionLanguage, CaptionStyle, CropMode
 from app.db.models import ClipRow
 from app.db.repositories import batches as repo
-from app.jobs.clip_jobs import clip_blur_boxes, clip_words
+from app.jobs.clip_jobs import clip_blur_boxes, clip_words, played_parts, stored_parts
 from app.jobs.context import JobContext
 from app.pipeline.clip_render import CROP_INFO_FILE_NAME, CropInfo
+from app.pipeline.parts import Part, effective, is_montage, to_source, total, words_for
 from app.pipeline.select import TITLE_MAX_CHARS, all_words, words_between
 from app.pipeline.transcribe import Word
 from app.pipeline.transcribe import load_cached as load_transcript
@@ -40,7 +41,9 @@ EDIT_MIN_S = 5.0
 TEXT_MAX = 5000
 WORD_MAX = 100
 _UNSAFE_FILENAME = re.compile(r"[^A-Za-z0-9 ._-]+")
-VIDEO_FIELDS = ("caption_style", "caption_language", "crop_mode", "blur", "start_s", "end_s")
+VIDEO_FIELDS = (
+    "caption_style", "caption_language", "crop_mode", "blur", "start_s", "end_s", "montage",
+)  # fmt: skip
 MEDIA_TYPES = {"preview": "video/mp4", "export": "video/mp4", "thumbnail": "image/jpeg"}
 
 
@@ -71,6 +74,8 @@ class ClipPatch(BaseModel):
     end_s: float | None = Field(default=None, ge=0)
     words: list[WordIn] | None = None
     blur_boxes: list[BlurBox] | None = Field(default=None, max_length=MAX_BLUR_BOXES)
+    # Montage on/off (D-051): play only the planned parts, or the whole range.
+    montage: bool | None = None
 
 
 class Accepted(BaseModel):
@@ -125,12 +130,14 @@ def clip_view(ctx: JobContext, db: DbDep, clip: ClipRow) -> Clip:
             start_s=clip.start_s,
             end_s=clip.end_s,
             blur_boxes=clip_blur_boxes(clip),
+            parts=list(stored_parts(clip)),
+            montage=bool(clip.montage) and bool(stored_parts(clip)),
         ),
         words=[WordOut(**w.model_dump()) for w in clip_words(clip)],
         source_bounds=source_bounds(ctx, clip, video),
         warning=_crop_warning(ctx, clip)
         or (clip.error_message if clip.status != "failed" else None),
-        length_warning=_length_warning(clip.end_s - clip.start_s),
+        length_warning=_length_warning(total(played_parts(clip))),
     )
 
 
@@ -164,6 +171,29 @@ def _retimed_words(ctx: JobContext, clip: ClipRow, new_start: float, new_end: fl
     ]
 
 
+def _montage_words(
+    ctx: JobContext, clip: ClipRow, old: tuple[Part, ...], new: tuple[Part, ...]
+) -> list[Word]:
+    """Words for a montage change (D-051): the clip's (possibly edited) words mapped back to
+    source time, plus transcript words of newly played ranges, in the new clip's time."""
+    kept = [
+        Word(
+            text=w.text,
+            start=to_source(w.start, old),
+            end=to_source(w.start, old) + w.end - w.start,
+        )
+        for w in clip_words(clip)
+    ]
+    transcript = load_transcript(ctx.video_dir(clip.video_id))
+    for word in all_words(transcript):
+        middle = (word.start + word.end) / 2
+        played = any(a <= middle < b for a, b in new)
+        if played and not any(a <= middle < b for a, b in old):
+            kept.append(word)
+    kept.sort(key=lambda w: w.start)
+    return words_for(kept, new)
+
+
 @router.patch("/{clip_id}")
 def patch_clip(clip_id: str, body: ClipPatch, db: DbDep, ctx: CtxDep) -> Clip:
     """Edit metadata, captions, style, blur, crop, or trim.
@@ -183,7 +213,14 @@ def patch_clip(clip_id: str, body: ClipPatch, db: DbDep, ctx: CtxDep) -> Clip:
         raise AppError(ErrorCode.CONFLICT, "Wait until the current render finishes.")
     new_start = changes.get("start_s", clip.start_s)
     new_end = changes.get("end_s", clip.end_s)
-    if "start_s" in changes or "end_s" in changes:
+    planned = stored_parts(clip)
+    if changes.get("montage") and not planned:
+        raise AppError(ErrorCode.VALIDATION_ERROR, "This clip has no montage parts.")
+    old_parts = played_parts(clip)
+    montage_on = changes.get("montage", bool(clip.montage)) and bool(planned)
+    new_parts = effective(new_start, new_end, planned) if montage_on else ((new_start, new_end),)
+    played = total(new_parts)
+    if "start_s" in changes or "end_s" in changes or "montage" in changes:
         video = repo.get_video(db, clip.video_id)
         if video is None:
             raise AppError(ErrorCode.NOT_FOUND, "This clip's video does not exist.")
@@ -194,27 +231,29 @@ def patch_clip(clip_id: str, body: ClipPatch, db: DbDep, ctx: CtxDep) -> Clip:
                 "The trim goes beyond the available video.",
                 {"source_bounds": bounds.model_dump()},
             )
-        length = new_end - new_start
-        if length < EDIT_MIN_S or length > CLIP_EXTENDED_MAX_S:
+        if played < EDIT_MIN_S or played > CLIP_EXTENDED_MAX_S:
             raise AppError(ErrorCode.VALIDATION_ERROR, "A clip must be 5-90 seconds long.")
         if "words" not in changes:
-            clip.words_json = json.dumps(
-                [w.model_dump() for w in _retimed_words(ctx, clip, new_start, new_end)]
+            words = (
+                _montage_words(ctx, clip, old_parts, new_parts)
+                if is_montage(old_parts) or is_montage(new_parts)
+                else _retimed_words(ctx, clip, new_start, new_end)
             )
+            clip.words_json = json.dumps([w.model_dump() for w in words])
     if "words" in changes:
-        length = new_end - new_start
         words = [Word(**w) for w in changes.pop("words")]
-        if any(w.end < w.start or w.start > length + 0.01 for w in words):
+        if any(w.end < w.start or w.start > played + 0.01 for w in words):
             raise AppError(ErrorCode.VALIDATION_ERROR, "Word times must lie inside the clip.")
         clip.words_json = json.dumps([w.model_dump() for w in words])
     if "blur_boxes" in changes:
-        length = new_end - new_start
         boxes = [BlurBox(**b) for b in changes.pop("blur_boxes")]
-        if any(b.start > length + 0.01 for b in boxes):
+        if any(b.start > played + 0.01 for b in boxes):
             raise AppError(ErrorCode.VALIDATION_ERROR, "Blur boxes must start inside the clip.")
         clip.blur_boxes_json = json.dumps([b.model_dump() for b in boxes])
     if "hashtags" in changes:
         clip.hashtags_json = json.dumps(changes.pop("hashtags"))
+    if "montage" in changes:
+        clip.montage = 1 if changes.pop("montage") else 0
     for key, value in changes.items():
         setattr(clip, key, value)
     if video_changed:

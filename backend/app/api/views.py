@@ -14,10 +14,12 @@ from app.core.errors import ErrorBody, ErrorCode
 from app.core.settings_schema import CaptionLanguage, CaptionStyle, CropMode
 from app.db.models import BatchRow, ClipRow, VideoRow
 from app.db.repositories import batches as repo
+from app.jobs.clip_jobs import played_parts
 from app.jobs.context import JobContext
 from app.jobs.state import checkpoints, more_clips_blocker
 from app.pipeline.cut import load_cut
 from app.pipeline.download import INFO_FILE_NAME
+from app.pipeline.parts import total
 from app.render.censor import BlurBox
 from app.sources.base import SOURCE_FILE_NAME
 
@@ -113,6 +115,10 @@ class EditState(BaseModel):
     end_s: float
     # Manual blur boxes (D-048), clip seconds and shares of the 1080x1920 canvas.
     blur_boxes: list[BlurBox] = []
+    # Montage (D-051): the planned source ranges ([] when the clip has none) and whether the
+    # clip plays only them. Caption words and blur boxes are in the played clip's time.
+    parts: list[tuple[float, float]] = []
+    montage: bool = False
 
 
 class WordOut(BaseModel):
@@ -163,7 +169,7 @@ def clip_summary(ctx: JobContext, clip: ClipRow, positions: dict[str, int]) -> C
         title=clip.title or "",
         start_s=clip.start_s,
         end_s=clip.end_s,
-        duration_s=round(clip.end_s - clip.start_s, 2),
+        duration_s=round(total(played_parts(clip)), 2),
         thumbnail_url=f"/api/clips/{clip.id}/media/thumbnail"
         if file_exists(ctx, clip.thumbnail_path)
         else None,

@@ -131,6 +131,10 @@ class ClipRow(Base):
     words_json: Mapped[str | None] = mapped_column(Text)
     # Manual blur boxes (D-048): JSON list of BlurBox.
     blur_boxes_json: Mapped[str | None] = mapped_column(Text)
+    # Montage (D-051): the planned source ranges (JSON [[start, end], ...]) and whether the
+    # clip plays only those (1) or the whole range from start to end (0).
+    parts_json: Mapped[str | None] = mapped_column(Text)
+    montage: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     edited: Mapped[int] = mapped_column(Integer, default=0)
     thumbnail_path: Mapped[str | None] = mapped_column(String)
     preview_path: Mapped[str | None] = mapped_column(String)

@@ -86,7 +86,7 @@ def gta_engine(texts: dict[float, list[str]] | None = None) -> ContextEngine:
         (158.0, "they are shooting at us"),
         (170.0, "we made it bro"),
     )
-    windows = [{} for _ in range(int(DURATION // 2))]
+    windows: list[dict[str, float]] = [{} for _ in range(int(DURATION // 2))]
     for t in (152.0, 156.0, 160.0, 164.0):
         windows[int(t // 2)] = {"gunfire": 0.9}
     frames: dict[str, list[str]] = {f"{t:.2f}": [] for t in range(0, int(DURATION), 4)}

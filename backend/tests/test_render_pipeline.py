@@ -180,3 +180,41 @@ def test_blur_box_blurs_only_its_area_and_time(source: Path, tmp_path: Path) -> 
     assert before > 0.005 and after > 0.005
     assert inside < before / 5
     assert inside < after / 5
+
+
+@needs_ffmpeg
+def test_montage_plays_only_its_parts_and_reuses_its_cut(source: Path, tmp_path: Path) -> None:
+    """D-051: the parts are cut with handles only at the outer edges, joined, and rendered
+    at the parts' total length; the same parts reuse the cut without the source."""
+    from app.core.errors import AppError
+    from app.pipeline.cut import load_cut
+
+    work = tmp_path / "work"
+    parts = ((4.0, 7.0), (10.0, 12.0), (15.0, 17.5))
+    montage = ClipSpec(**{**spec("full").__dict__, "start_s": 4.0, "end_s": 17.5, "parts": parts})
+    assert montage.length_s == pytest.approx(7.5)
+    video = SourceVideo(source, LENGTH, SRC_W, SRC_H)
+    out = tmp_path / "montage.mp4"
+    render_clip(
+        video, work, montage, out, "preview",
+        models_dir=tmp_path / "models", ffmpeg_path=None, memory=MEMORY,
+    )  # fmt: skip
+    streams = probe_streams(out, None)
+    assert streams.video_s == pytest.approx(7.5, abs=0.1)
+    assert streams.audio_s is not None and abs(streams.video_s - streams.audio_s) < 0.15
+    cut = load_cut(work)
+    assert cut is not None and cut.parts is not None
+    assert cut.parts[0] == (0.0, 7.0) and cut.parts[-1] == (15.0, 20.0)
+    no_source = SourceVideo(None, LENGTH, SRC_W, SRC_H)
+    again = tmp_path / "again.mp4"
+    render_clip(
+        no_source, work, montage, again, "preview",
+        models_dir=tmp_path / "models", ffmpeg_path=None, memory=MEMORY,
+    )  # fmt: skip
+    assert probe_streams(again, None).video_s == pytest.approx(7.5, abs=0.1)
+    other = ClipSpec(**{**montage.__dict__, "parts": ((4.0, 7.0), (12.0, 17.5))})
+    with pytest.raises(AppError):
+        render_clip(
+            no_source, work, other, tmp_path / "other.mp4", "preview",
+            models_dir=tmp_path / "models", ffmpeg_path=None, memory=MEMORY,
+        )  # fmt: skip

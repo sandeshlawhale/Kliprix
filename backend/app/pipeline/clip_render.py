@@ -19,7 +19,15 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from app.core.errors import AppError, ErrorCode
 from app.core.files import write_json_atomic
 from app.core.hardware import MemoryInfo
-from app.pipeline.cut import CUT_FILE_NAME, CutInfo, cut_range, load_cut, run_cut
+from app.pipeline.cut import (
+    CUT_FILE_NAME,
+    CutInfo,
+    cut_range,
+    load_cut,
+    montage_cut_parts,
+    run_cut,
+    run_montage_cut,
+)
 from app.pipeline.face_crop import (
     CROP_FILE_NAME,
     CropChoice,
@@ -29,6 +37,7 @@ from app.pipeline.face_crop import (
     ensure_face_model,
     render_crop,
 )
+from app.pipeline.parts import Part, total
 from app.pipeline.transcribe import Word
 from app.render import layout_constants as lc
 from app.render.ass import CaptionStyle
@@ -53,12 +62,15 @@ class CropInfo(BaseModel):
     warning: str | None
     source_start: float
     source_end: float
+    # The montage cut's parts (D-051); a crop decided for other parts is not reused.
+    parts: list[tuple[float, float]] | None = None
 
 
 @dataclass(frozen=True)
 class ClipSpec:
     """A clip to render. `start_s`/`end_s` are source-video seconds; `words` are relative to
-    `start_s`."""
+    `start_s`. A montage (D-051) plays only `parts` (two or more source ranges), and its
+    words and blur boxes are in the montage's own time."""
 
     start_s: float
     end_s: float
@@ -69,6 +81,11 @@ class ClipSpec:
     blur: int
     words: Sequence[Word]
     blur_boxes: Sequence[BlurBox] = ()
+    parts: tuple[Part, ...] = ()
+
+    @property
+    def length_s(self) -> float:
+        return total(self.parts) if self.parts else self.end_s - self.start_s
 
 
 @dataclass(frozen=True)
@@ -93,7 +110,11 @@ def _load_crop(work_dir: Path, cut: CutInfo, choice: CropChoice) -> CropInfo | N
         info = CropInfo.model_validate_json(path.read_text(encoding="utf-8"))
     except (OSError, ValidationError):
         return None
-    same_cut = info.source_start == cut.source_start and info.source_end == cut.source_end
+    same_cut = (
+        info.source_start == cut.source_start
+        and info.source_end == cut.source_end
+        and info.parts == cut.parts
+    )
     if not same_cut or info.choice != choice:
         return None
     if info.mode == "face" and not (work_dir / CROP_FILE_NAME).is_file():
@@ -111,10 +132,30 @@ def ensure_cut(
     cancel: threading.Event | None,
 ) -> CutInfo:
     """A cut that contains [start_s, end_s]: the existing one when it does, else a new cut
-    from the source (or RENDER_FAILED when the source was deleted)."""
+    from the source (or RENDER_FAILED when the source was deleted). A montage needs a cut of
+    exactly its parts."""
     existing = load_cut(work_dir)
+    if spec.parts:
+        wanted = montage_cut_parts(spec.parts, source.duration_s)
+        if existing is not None and existing.parts is not None:
+            same = len(existing.parts) == len(wanted) and all(
+                abs(a[0] - b[0]) < 0.01 and abs(a[1] - b[1]) < 0.01
+                for a, b in zip(existing.parts, wanted, strict=True)
+            )
+            if same:
+                return existing
+        if source.path is None or not source.path.is_file():
+            raise AppError(
+                ErrorCode.RENDER_FAILED,
+                "The source video was deleted, so this montage cannot be cut again.",
+            )
+        return run_montage_cut(
+            source.path, work_dir, wanted, source.width, source.height,
+            ffmpeg_path=ffmpeg_path, memory=memory, cancel=cancel,
+        )  # fmt: skip
     if (
         existing is not None
+        and existing.parts is None
         and existing.source_start <= spec.start_s
         and spec.end_s <= existing.source_end
     ):
@@ -147,7 +188,7 @@ def ensure_crop(
     if cached is not None:
         return cached
     cut_file = work_dir / CUT_FILE_NAME
-    length = cut.source_end - cut.source_start
+    length = total(cut.parts) if cut.parts else cut.source_end - cut.source_start
     if choice == "full":
         decision_mode, ratio, warning, path = "full", 0.0, None, []
     else:
@@ -175,6 +216,7 @@ def ensure_crop(
         warning=warning,
         source_start=cut.source_start,
         source_end=cut.source_end,
+        parts=cut.parts,
     )
     write_json_atomic(work_dir / CROP_INFO_FILE_NAME, info)
     logger.info("crop decided mode=%s face_ratio=%.2f", info.mode, info.face_ratio)
@@ -217,8 +259,9 @@ def render_clip(
     job = RenderJob(
         work_dir=work_dir,
         fg_file=CROP_FILE_NAME if crop.mode == "face" else CUT_FILE_NAME,
-        offset_s=spec.start_s - cut.source_start,
-        duration_s=spec.end_s - spec.start_s,
+        # A montage cut starts with the handle before its first part (D-051).
+        offset_s=(spec.parts[0][0] if spec.parts else spec.start_s) - cut.source_start,
+        duration_s=spec.length_s,
         layout=layout,
         blur=spec.blur,
         style=spec.style,

@@ -38,6 +38,7 @@ from app.pipeline.download import load_cached as load_download
 from app.pipeline.download import max_download_height, run_download
 from app.pipeline.hinglish import to_hinglish
 from app.pipeline.motion import run_motion
+from app.pipeline.parts import is_montage, normalized, words_for
 from app.pipeline.review import ClipAnalysis, analyse, video_readers
 from app.pipeline.screen import ScreenFile, run_screen
 from app.pipeline.screen_text import ScreenText, frame_times, read_frames
@@ -377,6 +378,9 @@ class VideoPipeline:
                              end=round(max(0.0, w.end - clip.start), 2))
                         for w in words_between(words, clip.start, clip.end)
                     ]  # fmt: skip
+                    if is_montage(parts := normalized(clip.parts)):
+                        # A montage's captions follow its parts (output time, D-051).
+                        clip_words = words_for(words, parts)
                     if language == "hinglish" and client is not None:
                         clip_words = to_hinglish(
                             clip_words, partial(transliterate_words, client)
@@ -560,6 +564,8 @@ class VideoPipeline:
             caption_language=style.get("caption_language", "en"),
             crop_mode=style.get("crop_mode", "auto"), blur=int(style.get("blur", 30)),
             words_json=json.dumps([w.model_dump() for w in words]), edited=0,
+            parts_json=json.dumps(chosen.parts) if chosen.parts else None,
+            montage=1 if chosen.parts else 0,
         )  # fmt: skip
         repo.add_job(session, "clip_render", clip.id, repo.PRIORITY_BACKGROUND)
 

@@ -415,3 +415,38 @@ def test_resume_after_restart(config: AppConfig, media: Path) -> None:
         batch = wait_for(client, batch_id, finished)
     assert batch["videos"][0]["status"] == "done"
     assert batch["status"] == "done"
+
+
+def test_montage_toggle_retimes_words_and_renders_only_the_parts(
+    client: TestClient, app: Any, config: AppConfig
+) -> None:
+    """D-051: a clip with planned parts plays only them when montage is on: the API length,
+    the caption words and the rendered preview follow; switching it off restores the range."""
+    from app.db.repositories import batches as repo
+    from app.render.compose import probe_streams
+
+    batch_id = client.post("/api/batches", json={"urls": [url("ddddddddddd")]}).json()["id"]
+    batch = wait_for(client, batch_id, finished)
+    clip_id = batch["videos"][0]["clips"][0]["id"]
+    plain = client.patch(f"/api/clips/{clip_id}", json={"start_s": 10.0, "end_s": 40.0}).json()
+    assert plain["duration_s"] == 30.0
+    assert plain["edit"]["parts"] == [] and plain["edit"]["montage"] is False
+    refused = client.patch(f"/api/clips/{clip_id}", json={"montage": True})
+    assert refused.json()["error"]["code"] == "VALIDATION_ERROR"
+    with app.state.job_context.session_factory() as session:
+        row = repo.get_clip(session, clip_id)
+        assert row is not None
+        row.parts_json = json.dumps([[10.0, 16.0], [24.0, 40.0]])
+        session.commit()
+    montage = client.patch(f"/api/clips/{clip_id}", json={"montage": True}).json()
+    assert montage["edit"]["montage"] is True
+    assert montage["edit"]["parts"] == [[10.0, 16.0], [24.0, 40.0]]
+    assert montage["duration_s"] == 22.0
+    assert all(word["end"] <= 22.0 + 0.01 for word in montage["words"])
+    assert client.post(f"/api/clips/{clip_id}/preview").status_code == 202
+    wait_for(client, batch_id, lambda b: b["videos"][0]["clips"][0]["has_preview"])
+    preview = config.data_dir / "previews" / f"{clip_id}.mp4"
+    assert probe_streams(preview, None).video_s == pytest.approx(22.0, abs=0.1)
+    whole = client.patch(f"/api/clips/{clip_id}", json={"montage": False}).json()
+    assert whole["duration_s"] == 30.0
+    assert whole["edit"]["parts"] == [[10.0, 16.0], [24.0, 40.0]]
