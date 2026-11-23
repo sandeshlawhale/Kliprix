@@ -150,3 +150,23 @@ def test_trimming_a_montage_keeps_its_inner_cuts() -> None:
     # Trimmed down to one part: an ordinary clip again.
     assert effective(12.0, 19.0, parts) == ((12.0, 19.0),)
     assert normalized([(5.0, 6.0), (1.0, 2.0), (1.5, 3.0)]) == ((1.0, 3.0), (5.0, 6.0))
+
+
+def test_later_kills_of_the_round_chain_into_the_clip() -> None:
+    """The first kill is the core; the next kills 30 s and 28 s later join the clip and the
+    waits between them are skipped, so the round fits."""
+    ctx = context(VALORANT, round_words(), texts=KILLS)
+    template = VALORANT.template("kill")
+    resolution = resolve(ctx, template, Core(110.0, 111.0, exact=True), LIMITS)
+    assert resolution.end >= 169.0
+    parts = plan(resolution.start, resolution.end, template, ctx, LIMITS.min_s)
+    assert len(parts) >= 3 and total(parts) <= LIMITS.max_s
+    assert all(any(a <= t < b for a, b in parts) for t in KILLS)
+
+
+def test_talk_payoffs_do_not_chain_far() -> None:
+    ctx = context(VALORANT, round_words(), texts=KILLS)
+    template = VALORANT.template("funny")
+    resolution = resolve(ctx, template, Core(110.0, 111.0, exact=True), LIMITS)
+    # Only grown to the minimum length; the last kill (168 s) is not chained in.
+    assert resolution.end < 160.0

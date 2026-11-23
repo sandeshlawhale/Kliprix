@@ -33,6 +33,8 @@ from app.config import (
     CONTEXT_FIX_SENTENCES,
     DANGLING_STARTS,
     EDGE_TOLERANCE_S,
+    MONTAGE_CHAIN_GAP_S,
+    MONTAGE_SPAN_MAX_S,
     RESOLVE_BURST_GAP_S,
     RESOLVE_DEAD_AIR_S,
     RESOLVE_END_EXPAND_S,
@@ -288,18 +290,29 @@ def on_to_answer(
 
 def _payoff_end(ctx: ClipContext, template: MomentTemplate, core: Core, high: float) -> float:
     """The end of the payoff burst after the core: payoff events from the core's end within
-    `payoff_reach_s`, chained while they are at most RESOLVE_BURST_GAP_S apart."""
+    `payoff_reach_s`, chained while they are at most RESOLVE_BURST_GAP_S apart. An action
+    moment that can become a montage (D-051) chains payoffs up to MONTAGE_CHAIN_GAP_S apart
+    (the second and third kill of the round), inside its segment and MONTAGE_SPAN_MAX_S: the
+    waits between them are skipped later."""
+    gap, first_reach = RESOLVE_BURST_GAP_S, template.payoff_reach_s
+    limit = core.end + template.payoff_reach_s
+    if template.montage:
+        gap = MONTAGE_CHAIN_GAP_S
+        first_reach = max(first_reach, gap)
+        limit = core.start + MONTAGE_SPAN_MAX_S
     found: list[Event] = [
         e
         for e in ctx.events
         if kind_matches(e.kind, template.payoff_kinds)
-        and core.end - 1 <= e.t <= core.end + template.payoff_reach_s
+        and core.end - 1 <= e.t <= limit
         and e.t < high
     ]
     end = core.end
     for index, event in enumerate(sorted(found, key=lambda e: e.t)):
         # The first payoff may come anywhere in the reach; the rest chain as one burst.
-        if index > 0 and event.t - end > RESOLVE_BURST_GAP_S:
+        if index == 0 and event.t > core.end + first_reach:
+            break
+        if index > 0 and event.t - end > gap:
             break
         end = max(end, min(high, event.end))
     return end

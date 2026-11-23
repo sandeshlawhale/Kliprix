@@ -514,3 +514,6 @@ MONTAGE_SETUP_REACH_S = 300.0
 MONTAGE_SETUP_MAX_S = 8.0
 # Audio fade at each join so the cut does not click.
 MONTAGE_AUDIO_FADE_S = 0.08
+# Payoffs of an action moment (the next kills of the round) chain into the clip while they
+# are at most this far apart; the quiet waits between them are then skipped (D-051).
+MONTAGE_CHAIN_GAP_S = 30.0
