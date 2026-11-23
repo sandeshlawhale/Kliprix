@@ -435,3 +435,61 @@ CONTEXT_FIX_REACH_S = 25.0
 RENDER_TIMEOUT_BASE_S = 300.0
 RENDER_TIMEOUT_PER_CLIP_S = 30.0
 RENDER_MIN_FREE_GB = 1.0
+
+# Contextual clipping (D-050): the highlight is the core moment; the clip is the smallest
+# coherent window around it. Utterances group words by pauses, punctuation and speaker
+# changes; a pause shorter than UTTERANCE_STRONG_PAUSE_S after a connector word ("and",
+# "the", "ko", ...) does not end one (transcripts with little punctuation).
+UTTERANCE_PAUSE_S = 0.6
+UTTERANCE_STRONG_PAUSE_S = 1.2
+# Utterances longer than this are split into pieces at a comma or the longest pause inside;
+# a piece edge is an acceptable (soft) cut, the middle of a piece is not.
+UTTERANCE_MAX_S = 15.0
+UTTERANCE_CONNECTORS = (
+    "and", "but", "or", "so", "because", "the", "a", "an", "to", "of", "in", "on", "with",
+    "for", "my", "your", "is", "was", "if", "that", "like", "aur", "ki", "ka", "ke", "ko",
+    "se", "mein", "toh", "par", "lekin",
+)  # fmt: skip
+# Boundary resolver: an edge inside an utterance moves to the utterance's edge when that is
+# at most this far (start: back to its start; end: on to its end); otherwise the cut moves to
+# the gap on the other side, away from the speech.
+RESOLVE_START_EXPAND_S = 8.0
+RESOLVE_END_EXPAND_S = 8.0
+# Context events found before the core are included from this many seconds before them.
+RESOLVE_SETUP_LEAD_S = 2.0
+# Edges with nothing (no speech, no event) for longer than this are dead air and trimmed.
+RESOLVE_DEAD_AIR_S = 5.0
+# Payoff events at most this far apart belong to one burst (a multi-kill, a chase).
+RESOLVE_BURST_GAP_S = 6.0
+# Context analysed around a clip that has no close analysis (seconds before and after it).
+CONTEXT_ZONE_S = 30.0
+# Round-start banners within this of the previous one belong to the same buy phase; the
+# same terminal banner (a death screen) within TERMINAL_MERGE_S is one event.
+ROUND_START_MERGE_S = 40.0
+TERMINAL_MERGE_S = 15.0
+# A cut inside an utterance this close to a round/scene edge inside it is forced by the
+# structure (talk across a round change): a soft defect, not a broken clip.
+STRUCTURE_SLACK_S = 3.0
+# Deterministic repair tries at most this many rounds of fixes before a clip is rejected.
+REPAIR_MAX_ATTEMPTS = 3
+# Validation tolerance: an edge within this of an utterance edge counts as on the edge.
+EDGE_TOLERANCE_S = 0.3
+# A clip is a duplicate of a better one when this share of its words are the same.
+DUPLICATE_WORD_SHARE = 0.6
+# A share of silent 2 s rows (no speech, no event) above this is "mostly silence" (soft).
+SILENCE_SHARE_MAX = 0.7
+# Final ranking (D-050): weighted factors, all 0-1. Coherence and context completeness carry
+# much of the weight; hard validation rules run before scoring and are never outweighed.
+CLIP_SCORE_WEIGHTS: dict[str, float] = {
+    "entertainment": 0.30, "coherence": 0.20, "context": 0.15, "payoff": 0.15,
+    "audio": 0.05, "visual": 0.05, "novelty": 0.05, "standalone": 0.05,
+}  # fmt: skip
+# Clips under this combined score are dropped unless fewer than one clip would remain.
+CLIP_SCORE_MIN = 0.25
+# Clip critic (D-050): one extra LLM call, only for clips the rules could not judge (payoff
+# unverified, dangling end), at most CRITIC_MAX_CLIPS clips per video.
+CRITIC_ENABLED = True
+CRITIC_MAX_CLIPS = 4
+# Without a review round, this many extra clips are built so a clip the context engine
+# rejects can be replaced (D-050).
+SELECT_SPARES = 2
