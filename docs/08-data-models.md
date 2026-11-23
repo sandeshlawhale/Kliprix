@@ -35,8 +35,10 @@ clips(id PK, video_id FK, batch_id FK, idx INT, status, stage, progress REAL,
       start_s REAL, end_s REAL, title, youtube_title, youtube_description,
       hashtags_json, linkedin_post, reason, score REAL,
       caption_style, caption_language, crop_mode, blur INT,
-      words_json,                      -- [{text,start,end}] relative to clip start
+      words_json,                      -- [{text,start,end}] relative to clip start (a montage: its played time)
       blur_boxes_json,                 -- [{start,end,x,y,w,h}] manual blur boxes (D-048, migration 0004)
+      parts_json,                      -- [[start,end],...] planned montage parts, source s (D-051, migration 0005)
+      montage INT,                     -- 1: play only the parts (inside the trim); 0: the whole range
       edited INT, thumbnail_path, preview_path, export_path,
       error_code, error_message, created_at, updated_at)
   status: queued | running | done | failed | cancelled
@@ -62,7 +64,7 @@ Deleting a batch cascades to videos, clips, jobs; files are removed when `delete
 `signals/<name>.json`: `{ "version":1, "hz":1, "values":[...] }`
 `candidates.json`: `{ "version":1, "items":[{ "peak_t":312, "start":287, "end":347, "score":0.82, "signals":{"chat":0.9,"audio":0.7,"motion":0.6} }] }`
 `transcript.json`: `{ "version":1, "language":"en", "engine":"parakeet"|"whisper" (D-028; missing = whisper), "segments":[{ "start":290.1, "end":294.8, "text":"...", "words":[{"text":"no","start":290.1,"end":290.3}] }] }`
-`selection.json`: `{ "version":1, "clips":[{ "start":288.4, "end":340.2, "title":"...", "youtube_title":"...", "youtube_description":"...", "hashtags":["..."], "linkedin_post":"...", "reason":"...", "score":0.9, "needs_extended":false, "from_llm":true, "moment_type":"clutch", "quality":["setup includes clutch_call (E3)"] }] }` (D-050: `score` is the combined quality score; `moment_type` and `quality`, the context engine's notes, are optional and default to empty in older files)
+`selection.json`: `{ "version":1, "clips":[{ "start":288.4, "end":340.2, "title":"...", "youtube_title":"...", "youtube_description":"...", "hashtags":["..."], "linkedin_post":"...", "reason":"...", "score":0.9, "needs_extended":false, "from_llm":true, "moment_type":"clutch", "quality":["setup includes clutch_call (E3)"], "parts":[[288.4,300.1],[312.0,340.2]], "setup_at":null }] }` (D-051: `parts`, the montage's source ranges (empty for one piece), and `setup_at`, the LLM's far setup line; D-050: `score` is the combined quality score; `moment_type` and `quality`, the context engine's notes, are optional and default to empty in older files)
 
 ## Retention
 `source_policy`: `delete` removes `downloads/<video_id>/source.mp4` and `audio.wav` after all clips of the video finish (keeps signals, transcript, selection so edits still work) **and keeps each clip's `work/<clip_id>/cut.mp4`** (which includes 5 s handles before and after). Trimming beyond those handles needs the source, so with `delete` the editor limits trim to the handles and says so (`source_bounds` in the API reflects this). `keep` leaves everything. `ask` shows a dialog when a batch finishes. Show the warning banner when total size > `storage_warn_gb`. Never delete anything without a user action or an explicit policy.

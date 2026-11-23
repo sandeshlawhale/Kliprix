@@ -70,7 +70,7 @@ Two columns.
 - **Left:** 9:16 video player (preview if available else export, else raw-cut message). Under it: Preview button, Export button, Download button (enabled only after export), status text.
 - **Right (tabs):**
   - **Metadata:** on-video title, YouTube title, YouTube description, hashtags, LinkedIn post, "Why this moment". Each with a Copy button and editable text.
-  - **Edit:** trim start/end (two number inputs + slider, shows resulting length, warns outside 25–90 s), caption style (3 options with small visual examples), caption text editor (list of words/phrases, editable inline), background blur (slider), crop mode (Auto / Face / Full frame).
+  - **Edit:** trim start/end (two number inputs + slider, shows resulting length, warns outside 25–90 s; for a montage clip (D-051) a "Skip the quiet gaps (montage)" switch lists the parts that play and the seconds skipped, and the length is the played length), caption style (3 options with small visual examples), caption text editor (list of words/phrases, editable inline), background blur (slider), crop mode (Auto / Face / Full frame).
 - Unsaved/needs-preview state clearly shown. Edits never silently re-render.
 
 ## Edit video style `/style`
