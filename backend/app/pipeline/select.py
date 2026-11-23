@@ -5,6 +5,10 @@ Repairs: times inside the video and the candidate region, whole sentences (D-033
 25-90 s (target 30-60, up to 90 only with `needs_extended` in extended mode), no overlap and
 a 30 s gap between clips, no duplicates, text lengths, emoji-free titles, and hashtag format.
 Before the LLM call, candidates are re-ranked by how much is said in them (D-033).
+
+Last, the contextual engine (D-050, `app.pipeline.context`) turns every clip into the
+smallest coherent window around its moment (utterance edges, setup, payoff, one round),
+validates and repairs it, rejects what cannot be repaired, and ranks what is left.
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ from app.config import (
     REVIEW_STEP_S,
     REVIEW_WORKERS,
     SCREEN_FALLBACK_MAX_DULL,
+    SELECT_SPARES,
     SENTENCE_SNAP_S,
     SPEECH_FALLBACK_MIN_WPS,
     SPEECH_FLOOR,
@@ -69,6 +74,10 @@ from app.llm.schemas import (
     TitleAnswer,
 )
 from app.pipeline.candidates import Candidate
+from app.pipeline.context.boundaries import Limits
+from app.pipeline.context.engine import ContextEngine, Moment, MomentRefs, Placed
+from app.pipeline.context.strategies import GENERIC, GameStrategy, detect_strategy
+from app.pipeline.context.timeline import describe_context
 from app.pipeline.review import ClipAnalysis
 from app.pipeline.review import describe as describe_analysis
 from app.pipeline.screen import ScreenFile, describe, dull_share, window_shares
@@ -142,6 +151,10 @@ class SelectionClip(BaseModel):
     # False for a clip filled from a candidate without the LLM; its text then comes from the
     # title step (D-043).
     from_llm: bool = True
+    # The kind of moment and the context engine's notes (D-050): what it changed and the
+    # soft issues left (for the log and for debugging; not shown in the app).
+    moment_type: str = ""
+    quality: list[str] = Field(default_factory=list)
 
 
 class SelectionFile(BaseModel):
@@ -392,6 +405,7 @@ def repair_clip(
         reason=truncate_words(_reason_text(raw), REASON_MAX_CHARS),
         score=min(1.0, max(0.0, raw.score)),
         needs_extended=end - start > CLIP_STANDARD_MAX_S,
+        moment_type=(raw.moment_type or raw.category).strip().lower()[:30],
     )
 
 
@@ -735,16 +749,20 @@ def run_select(
     # Candidate ids in the prompt and in the answer refer to this re-ranked list.
     candidates = rank_by_speech(candidates, all_words(transcript))
     seen = evidence or Evidence()
+    strategy = strategy_for(facts, seen)
     drafts = draft_count(count, reviewer)
-    system = select_system(drafts, extended)
     user = select_user(
         facts.title, facts.channel, facts.duration_s, drafts,
         prompt_candidates(candidates, transcript, seen), video_facts=video_facts(seen),
     )  # fmt: skip
-    answer = client.complete_json(system, user, SelectionAnswer, LLM_SELECT_TEMPERATURE)
-    drafted = build_selection(answer, candidates, facts, transcript, drafts, extended).clips
+    answer = client.complete_json(
+        system_for(drafts, extended, strategy), user, SelectionAnswer, LLM_SELECT_TEMPERATURE
+    )
+    drafted = build_selection(
+        answer, candidates, facts, transcript, pool_size(drafts, reviewer), extended
+    ).clips
     selection = SelectionFile(
-        clips=finish(drafted, count, facts, transcript, seen, client, reviewer)
+        clips=finish(drafted, count, facts, transcript, seen, client, reviewer, strategy=strategy)
     )
     write_json_atomic(video_dir / SELECTION_FILE_NAME, selection)
     return selection
@@ -773,16 +791,21 @@ def select_more(
         return []
     candidates = rank_by_speech(candidates, all_words(transcript))
     seen = evidence or Evidence()
+    strategy = strategy_for(facts, seen)
     drafts = draft_count(count, reviewer)
-    system = select_system(drafts, extended)
     user = select_user(
         facts.title, facts.channel, facts.duration_s, drafts,
         prompt_candidates(candidates, transcript, seen), taken=taken,
         video_facts=video_facts(seen),
     )  # fmt: skip
-    answer = client.complete_json(system, user, SelectionAnswer, LLM_SELECT_TEMPERATURE)
-    drafted = build_selection(answer, candidates, facts, transcript, drafts, extended, taken).clips
-    return finish(drafted, count, facts, transcript, seen, client, reviewer, taken)
+    answer = client.complete_json(
+        system_for(drafts, extended, strategy), user, SelectionAnswer, LLM_SELECT_TEMPERATURE
+    )
+    drafted = build_selection(
+        answer, candidates, facts, transcript, pool_size(drafts, reviewer), extended, taken
+    ).clips
+    return finish(drafted, count, facts, transcript, seen, client, reviewer, taken,
+                  strategy=strategy)  # fmt: skip
 
 
 # ---------- round 2: the review (D-046) ----------
@@ -798,6 +821,31 @@ def draft_count(count: int, reviewer: Reviewer | None) -> int:
     return max(count, min(REVIEW_DRAFT_MAX, count * REVIEW_DRAFT_FACTOR))
 
 
+def strategy_for(facts: VideoFacts, evidence: Evidence) -> GameStrategy:
+    """The game strategy (D-050) from the video's title and channel and the on-screen text
+    already read."""
+    texts = [t for items in evidence.text.frames.values() for t in items] if evidence.text else []
+    strategy = detect_strategy(facts.title, facts.channel, texts)
+    logger.info("context strategy=%s", strategy.name)
+    return strategy
+
+
+def system_for(count: int, extended: bool, strategy: GameStrategy) -> str:
+    guidance = strategy.guidance if strategy is not GENERIC else ""
+    return select_system(count, extended, guidance, sorted(strategy.templates))
+
+
+def pool_size(drafts: int, reviewer: Reviewer | None) -> int:
+    """Without a review, SELECT_SPARES extra clips are built so a clip the context engine
+    rejects can be replaced (D-050)."""
+    return drafts if reviewer is not None else drafts + SELECT_SPARES
+
+
+def _limits(clip: SelectionClip, minimum: float) -> Limits:
+    longest = CLIP_EXTENDED_MAX_S if clip.needs_extended else CLIP_STANDARD_MAX_S
+    return Limits(min_s=minimum, max_s=max(longest, clip.end - clip.start))
+
+
 def finish(
     drafts: Sequence[SelectionClip],
     count: int,
@@ -807,14 +855,74 @@ def finish(
     client: LlmClient,
     reviewer: Reviewer | None,
     taken: Sequence[Window] = (),
+    strategy: GameStrategy | None = None,
 ) -> list[SelectionClip]:
-    """The final clips: reviewed when there is a reviewer, then the title step for any clip
-    still without LLM text."""
-    if reviewer is None or not drafts:
-        chosen = list(drafts[:count])
+    """The final clips: reviewed when there is a reviewer, made coherent by the context
+    engine (D-050), then the title step for any clip still without LLM text."""
+    if not drafts:
+        return []
+    strategy = strategy or strategy_for(facts, evidence)
+    engine = ContextEngine(
+        strategy, all_words(transcript), facts.duration_s,
+        screen=evidence.screen, events=evidence.events, text=evidence.text,
+    )  # fmt: skip
+    if reviewer is None:
+        moments = [
+            Moment(key=i, start=c.start, end=c.end, llm_score=c.score, group=0 if c.from_llm else 1,
+                   limits=_limits(c, CLIP_MIN_S), moment_type=c.moment_type)
+            for i, c in enumerate(drafts)
+        ]  # fmt: skip
+        pool = list(drafts)
     else:
-        chosen = review_clips(drafts, count, facts, transcript, client, reviewer, taken)
-    return write_titles(chosen, facts, transcript, evidence, client)
+        entries = review_pool(drafts, count, facts, transcript, client, reviewer, engine)
+        pool = [entry.clip for entry in entries]
+        moments = [entry.moment(i) for i, entry in enumerate(entries)]
+    chosen = engine.select(moments, count, taken, client, facts.title)
+    clips = [_placed_clip(pool[item.moment.key], item) for item in chosen]
+    logger.info("context strategy=%s pool=%s kept=%s", strategy.name, len(pool), len(clips))
+    return write_titles(clips, facts, transcript, evidence, client)
+
+
+def _placed_clip(clip: SelectionClip, placed: Placed) -> SelectionClip:
+    length = placed.end - placed.start
+    return clip.model_copy(
+        update={
+            "start": placed.start,
+            "end": placed.end,
+            "score": placed.score,
+            "needs_extended": length > CLIP_STANDARD_MAX_S,
+            "moment_type": placed.template.name,
+            "quality": placed.summary(),
+        }
+    )
+
+
+@dataclass(frozen=True)
+class PoolEntry:
+    """One clip the review produced (D-046) with what the context engine needs (D-050).
+    `tier`: 0 kept by the reviewer, 1 not mentioned, 2 mentioned but not placed, 3 dropped."""
+
+    clip: SelectionClip
+    analysis: ClipAnalysis
+    tier: int
+    verdict: ReviewClip | None = None
+    draft: int = 0
+
+    def moment(self, key: int) -> Moment:
+        verdict = self.verdict
+        refs = MomentRefs()
+        kind = self.clip.moment_type
+        if verdict is not None:
+            refs = MomentRefs(
+                setup=verdict.setup, core=tuple(verdict.core), payoff=verdict.payoff,
+                end_after=verdict.end_after, multi_round=verdict.multi_round,
+            )  # fmt: skip
+            kind = verdict.moment_type or verdict.category or kind
+        return Moment(
+            key=key, start=self.clip.start, end=self.clip.end, llm_score=self.clip.score,
+            limits=_limits(self.clip, REVIEW_MIN_S), moment_type=kind, refs=refs,
+            group={-1: 0, 0: 0, 1: 1, 2: 1}.get(self.tier, 2), analysis=self.analysis,
+        )  # fmt: skip
 
 
 def review_clips(
@@ -826,18 +934,59 @@ def review_clips(
     reviewer: Reviewer,
     taken: Sequence[Window] = (),
 ) -> list[SelectionClip]:
-    """Round 2 (D-046): analyse every draft closely, send the timelines (and frames, when the
-    model takes images) to the LLM, and apply its verdicts: kept clips with fixed times and
-    text, best first; dropped ones are gone. Drafts it did not mention fill up to `count`.
-    If the call fails, the first `count` drafts are used as they are (logged)."""
+    """Round 2 (D-046) on its own: the review's clips in order, without the context engine:
+    kept clips with fixed times and text, best first; dropped ones are gone. Drafts it did not
+    mention fill up to `count`. If the call fails, the first `count` drafts are used."""
+    entries = review_pool(drafts, count, facts, transcript, client, reviewer)
+    if entries and all(e.tier == -1 for e in entries):
+        return [e.clip for e in entries][:count]
+    kept: list[SelectionClip] = []
+    for tier in (0, 1, 2, 3):
+        if tier == 3 and any(e.tier == 0 for e in entries if e.clip in kept):
+            break
+        for entry in (e for e in entries if e.tier == tier):
+            if len(kept) >= count:
+                break
+            clip = entry.clip
+            if tier > 0 and any(c.start == clip.start for c in kept):
+                continue
+            if not conflicts(clip.start, clip.end, kept, taken):
+                kept.append(clip)
+    return kept
+
+
+def review_pool(
+    drafts: Sequence[SelectionClip],
+    count: int,
+    facts: VideoFacts,
+    transcript: TranscriptFile | None,
+    client: LlmClient,
+    reviewer: Reviewer,
+    engine: ContextEngine | None = None,
+) -> list[PoolEntry]:
+    """Round 2 (D-046): analyse every draft closely, send the timelines (with the context ids
+    of D-050 when there is an `engine`, and frames when the model takes images) to the LLM,
+    and return every usable clip with its tier: reviewer's kept clips (its times and text,
+    then the rule fixes), drafts it did not mention, drafts it mentioned but whose answer
+    could not be placed, and dropped drafts, each auto-fixed. If the call fails, every draft
+    auto-fixed with tier -1 (logged)."""
     # Drafts are analysed REVIEW_WORKERS at a time: most of the time is ffmpeg seeks and OCR.
     with ThreadPoolExecutor(max_workers=REVIEW_WORKERS, thread_name_prefix="review") as pool:
         analyses = list(
             pool.map(lambda pair: reviewer(pair[0], pair[1].start, pair[1].end), enumerate(drafts))
         )
-    timelines = [(describe_analysis(a), [label for label, _ in a.frames]) for a in analyses]
+    timelines = []
+    for draft, analysis in zip(drafts, analyses, strict=True):
+        text = describe_analysis(analysis)
+        if engine is not None:
+            text += "\n" + describe_context(engine.context(draft.start, draft.end, analysis))
+        timelines.append((text, [label for label, _ in analysis.frames]))
     images = [image for a in analyses for _, image in a.frames]
-    system = review_system(count, REVIEW_MIN_S)
+    strategy = engine.strategy if engine is not None else GENERIC
+    system = review_system(
+        count, REVIEW_MIN_S, strategy.guidance if strategy is not GENERIC else "",
+        sorted(strategy.templates),
+    )  # fmt: skip
     user = review_user(facts.title, facts.channel, count, timelines)
     answer: ReviewAnswer | None = None
     for attached in [images, []] if images else [[]]:
@@ -854,10 +1003,11 @@ def review_clips(
                 break
     if answer is None:
         return [
-            auto_fixed(draft, analysis) for draft, analysis in zip(drafts, analyses, strict=True)
-        ][:count]
+            PoolEntry(auto_fixed(draft, analysis), analysis, -1, draft=i)
+            for i, (draft, analysis) in enumerate(zip(drafts, analyses, strict=True))
+        ]
     words = all_words(transcript)
-    kept: list[SelectionClip] = []
+    entries: list[PoolEntry] = []
     handled: set[int] = set()
     ordered = sorted(enumerate(answer.clips), key=lambda p: (not p[1].keep, -p[1].score, p[0]))
     for _, verdict in ordered:
@@ -867,14 +1017,12 @@ def review_clips(
         if not verdict.keep:
             logger.info("review dropped draft %s: %s", verdict.id, verdict.problem[:120])
             continue
-        if len(kept) >= count:
-            continue
         draft, analysis = drafts[verdict.id], analyses[verdict.id]
         clip = apply_verdict(verdict, draft, analysis, facts, words)
         logger.info(
-            "review kept draft %s: draft %.1f-%.1f zone %.1f-%.1f answer %s-%s -> %s",
+            "review kept draft %s: draft %.1f-%.1f zone %.1f-%.1f answer %s-%s ids %s -> %s",
             verdict.id, draft.start, draft.end, analysis.zone_start, analysis.zone_end,
-            verdict.start, verdict.end,
+            verdict.start, verdict.end, ",".join(verdict.core)[:40] or "-",
             "unusable" if clip is None else f"{clip.start:.1f}-{clip.end:.1f}",
         )  # fmt: skip
         if clip is None:
@@ -889,27 +1037,24 @@ def review_clips(
         # The code owns the edges (a real review kept the draft times +-1 s on all 5 clips):
         # the rule fixes run on every kept clip.
         clip = auto_fixed(clip, analysis)
-        if conflicts(clip.start, clip.end, kept, taken):
-            continue
-        kept.append(clip)
+        kind = (verdict.moment_type or verdict.category).strip().lower()[:30]
+        entries.append(PoolEntry(clip.model_copy(update={"moment_type": kind or clip.moment_type}),
+                                 analysis, 0, verdict, verdict.id))  # fmt: skip
     rejected = {verdict.id for verdict in answer.clips if not verdict.keep}
-    # Drafts the reviewer did not mention fill, auto-fixed; if it kept nothing usable, the
-    # drafts it did not drop come next, then (never zero clips) the others.
-    for indexes in (
-        [i for i in range(len(drafts)) if i not in handled],
-        [i for i in range(len(drafts)) if i in handled and i not in rejected],
-        [i for i in range(len(drafts)) if i in rejected] if not kept else [],
+    for tier, indexes in (
+        (1, [i for i in range(len(drafts)) if i not in handled]),
+        (2, [i for i in range(len(drafts)) if i in handled and i not in rejected]),
+        (3, [i for i in range(len(drafts)) if i in rejected]),
     ):
         for index in indexes:
-            if len(kept) >= count:
-                break
-            fixed = auto_fixed(drafts[index], analyses[index])
-            if any(c.start == fixed.start for c in kept):
-                continue
-            if not conflicts(fixed.start, fixed.end, kept, taken):
-                kept.append(fixed)
-    logger.info("review drafts=%s kept=%s images=%s", len(drafts), len(kept), len(images))
-    return kept
+            entries.append(
+                PoolEntry(
+                    auto_fixed(drafts[index], analyses[index]), analyses[index], tier, draft=index
+                )
+            )
+    logger.info("review drafts=%s kept=%s images=%s", len(drafts),
+                sum(1 for e in entries if e.tier == 0), len(images))  # fmt: skip
+    return entries
 
 
 def _without_images(user: str) -> str:
