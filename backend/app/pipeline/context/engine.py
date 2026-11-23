@@ -19,10 +19,15 @@ from app.config import (
     CRITIC_ENABLED,
     CRITIC_MAX_CLIPS,
     DUPLICATE_WORD_SHARE,
+    MONTAGE_GAP_MIN_S,
+    MONTAGE_SETUP_MAX_S,
+    MONTAGE_SETUP_REACH_S,
+    UTTERANCE_PAUSE_S,
 )
 from app.llm.client import LlmClient
 from app.pipeline.context.boundaries import Core, Hints, Limits, Resolution, find_core, resolve
 from app.pipeline.context.critic import critique
+from app.pipeline.context.montage import plan
 from app.pipeline.context.quality import Defect, Issue, Repaired, repair
 from app.pipeline.context.scoring import Factors, factors, word_overlap
 from app.pipeline.context.strategies import GameStrategy, MomentTemplate
@@ -35,6 +40,7 @@ from app.pipeline.context.timeline import (
     zone_for,
 )
 from app.pipeline.context.utterances import UtteranceIndex, segment
+from app.pipeline.parts import Part, total
 from app.pipeline.review import ClipAnalysis
 from app.pipeline.screen import ScreenFile
 from app.pipeline.screen_text import ScreenText
@@ -84,6 +90,8 @@ class Moment:
     refs: MomentRefs = MomentRefs()
     group: int = 0
     analysis: ClipAnalysis | None = None
+    # A setup line said well before the clip (D-051), source seconds: joined as a first part.
+    setup_at: float | None = None
 
 
 @dataclass
@@ -98,6 +106,8 @@ class Placed:
     factors: Factors
     score: float
     notes: list[str] = field(default_factory=list)
+    # Montage parts (D-051), source seconds; () when the clip is one piece.
+    parts: tuple[Part, ...] = ()
 
     @property
     def defects(self) -> set[Defect]:
@@ -253,7 +263,7 @@ class ContextEngine:
             score_factors.total(),
             ",".join(i.defect.value for i in fixed.issues) or "none",
         )
-        return Placed(
+        placed = Placed(
             moment=moment,
             start=fixed.start,
             end=fixed.end,
@@ -265,6 +275,62 @@ class ContextEngine:
             score=round(score_factors.total(), 3),
             notes=notes,
         )
+        self.plan_parts(placed)
+        return placed
+
+    # ----- montage (D-051) -----
+
+    def plan_parts(self, placed: Placed) -> None:
+        """Set the clip's montage parts: quiet gaps skipped, and a far setup line joined in
+        front when the LLM named one and nothing structural lies between."""
+        limits = placed.moment.limits
+        parts = plan(placed.start, placed.end, placed.template, placed.ctx, limits.min_s)
+        body: tuple[Part, ...] = parts or ((placed.start, placed.end),)
+        setup, note = self._setup_part(placed, total(body))
+        if note:
+            placed.notes.append(note)
+        if setup is not None:
+            body = (setup, *body)
+        placed.parts = body if len(body) > 1 else ()
+        if parts:
+            skipped = (placed.end - placed.start) - total(parts)
+            placed.notes.append(f"montage: {len(parts)} parts, {skipped:.0f} s of quiet skipped")
+
+    def _setup_part(self, placed: Placed, kept: float) -> tuple[Part | None, str | None]:
+        at = placed.moment.setup_at
+        start, template, limits = placed.start, placed.template, placed.moment.limits
+        if not template.montage or at is None:
+            return None, None
+        if not start - MONTAGE_SETUP_REACH_S <= at < start - MONTAGE_GAP_MIN_S:
+            return None, None
+        first = next((u for u in self.utterances.utterances if u.end > at), None)
+        if first is None or first.end > start - MONTAGE_GAP_MIN_S:
+            return None, None
+        part_start, part_end = first.start, first.end
+        following = self.utterances.following(first)
+        while (
+            following is not None
+            and following.start - part_end <= UTTERANCE_PAUSE_S
+            and following.end - part_start <= MONTAGE_SETUP_MAX_S
+            and following.end < start - MONTAGE_GAP_MIN_S
+        ):
+            part_end = following.end
+            following = self.utterances.following(following)
+        if part_end - part_start > MONTAGE_SETUP_MAX_S:
+            return None, f"setup {first.id} not joined: longer than {MONTAGE_SETUP_MAX_S:.0f} s"
+        if kept + part_end - part_start > limits.max_s:
+            return None, f"setup {first.id} not joined: the clip would be too long"
+        if not placed.resolution.cross_allowed:
+            between = self.context(part_end, start)
+            edges = [
+                b
+                for b in between.boundaries
+                if b.kind in ("round", "terminal") and part_end < b.t < start
+            ]
+            if edges:
+                return None, f"setup {first.id} not joined: {edges[0].reason} lies between"
+        part = (round(part_start, 2), round(part_end, 2))
+        return part, f"setup {first.id} joined from {start - part_end:.0f} s earlier"
 
     def _resolved(
         self,
@@ -382,6 +448,7 @@ class ContextEngine:
                 if again.ok:
                     item.start, item.end, item.issues = again.start, again.end, again.issues
                     item.notes.append("edges moved by the critic")
+                    self.plan_parts(item)
                     item.factors = factors(
                         item.start,
                         item.end,

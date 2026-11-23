@@ -27,7 +27,9 @@ from app.pipeline.context.boundaries import (
     snap_start,
     trim_dead_air,
 )
+from app.pipeline.context.montage import plan
 from app.pipeline.context.timeline import ClipContext, kind_matches
+from app.pipeline.parts import total
 
 
 class Defect(StrEnum):
@@ -94,7 +96,9 @@ def validate(
         or end <= start
     ):
         return [Issue(Defect.INVALID_TIMES, f"{start}-{end} is not a range inside the video")]
-    length = end - start
+    # A montage (D-051) plays only its parts: that is the length that counts.
+    parts = plan(start, end, resolution.template, ctx, limits.min_s) or ((start, end),)
+    length = total(parts)
     if length < limits.min_s - 1e-6:
         issues.append(Issue(Defect.TOO_SHORT, f"{length:.1f} s < {limits.min_s:.0f} s"))
     if length > limits.max_s + 1e-6:
@@ -155,7 +159,7 @@ def validate(
             issues.append(Issue(Defect.DEAD_AIR_START, f"{cut_start - start:.0f} s of nothing"))
         if cut_end < end - 0.5 and cut_end - start >= limits.min_s:
             issues.append(Issue(Defect.DEAD_AIR_END, f"{end - cut_end:.0f} s of nothing"))
-        rows = [r for r in ctx.rows if start <= r.t < end]
+        rows = [r for r in ctx.rows if any(a <= r.t < b for a, b in parts)]
         if rows:
             quiet = [r for r in rows if not (r.sounds or r.speech or r.text)]
             if len(quiet) / len(rows) > SILENCE_SHARE_MAX:

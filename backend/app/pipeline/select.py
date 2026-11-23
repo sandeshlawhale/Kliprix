@@ -14,6 +14,7 @@ validates and repairs it, rejects what cannot be repaired, and ranks what is lef
 from __future__ import annotations
 
 import logging
+import math
 import re
 import unicodedata
 from collections.abc import Callable, Sequence
@@ -78,6 +79,7 @@ from app.pipeline.context.boundaries import Limits
 from app.pipeline.context.engine import ContextEngine, Moment, MomentRefs, Placed
 from app.pipeline.context.strategies import GENERIC, GameStrategy, detect_strategy
 from app.pipeline.context.timeline import describe_context
+from app.pipeline.parts import total
 from app.pipeline.review import ClipAnalysis
 from app.pipeline.review import describe as describe_analysis
 from app.pipeline.screen import ScreenFile, describe, dull_share, window_shares
@@ -155,6 +157,10 @@ class SelectionClip(BaseModel):
     # soft issues left (for the log and for debugging; not shown in the app).
     moment_type: str = ""
     quality: list[str] = Field(default_factory=list)
+    # Montage (D-051): the source ranges played back to back ([] = one piece), and the setup
+    # line the LLM named well before the clip (seconds, or None).
+    parts: list[tuple[float, float]] = Field(default_factory=list)
+    setup_at: float | None = None
 
 
 class SelectionFile(BaseModel):
@@ -406,7 +412,15 @@ def repair_clip(
         score=min(1.0, max(0.0, raw.score)),
         needs_extended=end - start > CLIP_STANDARD_MAX_S,
         moment_type=(raw.moment_type or raw.category).strip().lower()[:30],
+        setup_at=_setup_at(raw.setup_at, start),
     )
+
+
+def _setup_at(value: float | None, start: float) -> float | None:
+    """The LLM's setup time when it lies before the clip, inside the video (D-051)."""
+    if value is None or not math.isfinite(value) or not 0 <= value < start:
+        return None
+    return round(value, 2)
 
 
 def _reason_text(raw: LlmClip) -> str:
@@ -869,7 +883,8 @@ def finish(
     if reviewer is None:
         moments = [
             Moment(key=i, start=c.start, end=c.end, llm_score=c.score, group=0 if c.from_llm else 1,
-                   limits=_limits(c, CLIP_MIN_S), moment_type=c.moment_type)
+                   limits=_limits(c, CLIP_MIN_S), moment_type=c.moment_type,
+                   setup_at=c.setup_at)
             for i, c in enumerate(drafts)
         ]  # fmt: skip
         pool = list(drafts)
@@ -884,7 +899,7 @@ def finish(
 
 
 def _placed_clip(clip: SelectionClip, placed: Placed) -> SelectionClip:
-    length = placed.end - placed.start
+    length = total(placed.parts) if placed.parts else placed.end - placed.start
     return clip.model_copy(
         update={
             "start": placed.start,
@@ -893,6 +908,7 @@ def _placed_clip(clip: SelectionClip, placed: Placed) -> SelectionClip:
             "needs_extended": length > CLIP_STANDARD_MAX_S,
             "moment_type": placed.template.name,
             "quality": placed.summary(),
+            "parts": [list(part) for part in placed.parts],
         }
     )
 
@@ -922,6 +938,7 @@ class PoolEntry:
             key=key, start=self.clip.start, end=self.clip.end, llm_score=self.clip.score,
             limits=_limits(self.clip, REVIEW_MIN_S), moment_type=kind, refs=refs,
             group={-1: 0, 0: 0, 1: 1, 2: 1}.get(self.tier, 2), analysis=self.analysis,
+            setup_at=self.clip.setup_at,
         )  # fmt: skip
 
 

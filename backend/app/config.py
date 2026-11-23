@@ -493,3 +493,24 @@ CRITIC_MAX_CLIPS = 4
 # Without a review round, this many extra clips are built so a clip the context engine
 # rejects can be replaced (D-050).
 SELECT_SPARES = 2
+# Montage clips (D-051): an action moment may skip quiet gaps inside it and join a setup said
+# long before. A gap is quiet when nobody speaks and no event happens; it is skipped only
+# when it is at least MONTAGE_GAP_MIN_S long, keeping MONTAGE_TAIL_S after the last beat and
+# MONTAGE_LEAD_S before the next one, and only when that removes at least MONTAGE_SKIP_MIN_S.
+MONTAGE_GAP_MIN_S = 5.0
+MONTAGE_TAIL_S = 1.0
+MONTAGE_LEAD_S = 1.5
+MONTAGE_SKIP_MIN_S = 3.0
+# Every part is at least this long; at most MONTAGE_MAX_PARTS parts (the longest gaps win).
+MONTAGE_PART_MIN_S = 2.0
+MONTAGE_MAX_PARTS = 5
+# A moment whose span is longer than this is never made into a montage (it would be a story,
+# not a moment).
+MONTAGE_SPAN_MAX_S = 180.0
+# A setup line the LLM named up to this long before the core becomes the montage's first
+# part (GTA: "watch, I'll rob this bank" ... the robbery minutes later), at most
+# MONTAGE_SETUP_MAX_S of speech.
+MONTAGE_SETUP_REACH_S = 300.0
+MONTAGE_SETUP_MAX_S = 8.0
+# Audio fade at each join so the cut does not click.
+MONTAGE_AUDIO_FADE_S = 0.08

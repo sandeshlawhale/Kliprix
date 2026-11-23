@@ -20,6 +20,8 @@ class LlmClip(BaseModel):
     category: str = ""
     # The kind of moment for the context rules (D-050): clutch, kill, funny, chaos, death, ...
     moment_type: str = ""
+    # A setup line said well before the clip (D-051), in seconds; joined as a first part.
+    setup_at: float | None = None
     title: str = ""
     youtube_title: str = ""
     youtube_description: str = ""

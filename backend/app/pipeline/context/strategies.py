@@ -46,6 +46,9 @@ class MomentTemplate:
     # The moment is incomplete without a payoff event (checked when the strategy can see one).
     needs_payoff: bool = False
     speech_led: bool = False
+    # Action moments (D-051): quiet gaps inside the clip may be skipped (a montage), and a
+    # setup said long before the core may be joined to it as its own part.
+    montage: bool = False
 
 
 @dataclass(frozen=True)
@@ -111,6 +114,7 @@ def _t(
     core: Iterable[str] = (),
     needs_payoff: bool = False,
     speech_led: bool = False,
+    montage: bool = False,
 ) -> MomentTemplate:
     return MomentTemplate(
         name=name,
@@ -124,6 +128,7 @@ def _t(
         core_kinds=frozenset(core),
         needs_payoff=needs_payoff,
         speech_led=speech_led,
+        montage=montage,
     )
 
 
@@ -183,6 +188,7 @@ GENERIC_TEMPLATES = {
             3,
             payoff=("kill", *_REACTIONS),
             core=("kill",),
+            montage=True,
         ),
         _t("discovery", "approach -> discovery -> reaction", (6, 20), 6, 4, payoff=_REACTIONS),
     )
@@ -243,6 +249,7 @@ VALORANT = GameStrategy(
                 3,
                 payoff=("kill", "multi_kill", "round_end"),
                 core=("kill", "multi_kill"),
+                montage=True,
             ),
             _t(
                 "multi_kill",
@@ -254,6 +261,7 @@ VALORANT = GameStrategy(
                 payoff=("kill", "multi_kill", "round_end"),
                 core=("multi_kill", "kill"),
                 needs_payoff=True,
+                montage=True,
             ),
             _t(
                 "clutch",
@@ -265,6 +273,7 @@ VALORANT = GameStrategy(
                 payoff=("kill", "multi_kill", "round_end", "defuse"),
                 core=("clutch_call", "multi_kill", "kill"),
                 needs_payoff=True,
+                montage=True,
             ),
             _t(
                 "spike",
@@ -276,6 +285,7 @@ VALORANT = GameStrategy(
                 payoff=("defuse", "round_end", "explosion"),
                 core=("spike_plant", "defuse"),
                 needs_payoff=True,
+                montage=True,
             ),
             _t(
                 "round_outcome",
@@ -286,6 +296,7 @@ VALORANT = GameStrategy(
                 payoff=("round_end",),
                 core=("round_end",),
                 needs_payoff=True,
+                montage=True,
             ),
             _t(
                 "funny",
@@ -399,6 +410,7 @@ GTA = GameStrategy(
                 payoff=("explosion", "crash", "wasted", "busted", "laughter", "shout"),
                 core=("explosion", "crash", "gunfire"),
                 needs_payoff=True,
+                montage=True,
             ),
             _t(
                 "mission",
@@ -409,6 +421,7 @@ GTA = GameStrategy(
                 payoff=("mission_end", "wasted", "busted"),
                 core=("mission_end",),
                 needs_payoff=True,
+                montage=True,
             ),
             _t(
                 "failure",
@@ -420,6 +433,7 @@ GTA = GameStrategy(
                 payoff=("wasted", "busted", "fail_cue", "crash"),
                 core=("wasted", "busted", "crash"),
                 needs_payoff=True,
+                montage=True,
             ),
             _t(
                 "discovery",
@@ -457,6 +471,7 @@ GTA = GameStrategy(
                 payoff=("crash", "wasted", "busted", "explosion"),
                 core=("chase",),
                 needs_payoff=True,
+                montage=True,
             ),
         )
     },
@@ -531,6 +546,7 @@ MINECRAFT = GameStrategy(
                 payoff=("death", "death_cue"),
                 core=("death", "explosion"),
                 needs_payoff=True,
+                montage=True,
             ),
             _t(
                 "boss",
@@ -542,6 +558,7 @@ MINECRAFT = GameStrategy(
                 payoff=("achievement", "death", "cheer", "shout"),
                 core=("boss",),
                 needs_payoff=True,
+                montage=True,
             ),
             _t(
                 "building",

@@ -40,6 +40,7 @@ from app.config import (
     RESOLVE_START_EXPAND_S,
     UTTERANCE_CONNECTORS,
 )
+from app.pipeline.context.montage import kept_length
 from app.pipeline.context.strategies import MomentTemplate
 from app.pipeline.context.timeline import ClipContext, Event, kind_matches
 from app.pipeline.context.utterances import Utterance
@@ -393,10 +394,16 @@ def fit_length(
 ) -> tuple[float, float, list[str]]:
     """Bring the clip into [min_s, max_s] on utterance edges: too long loses setup, then
     reaction, then is cut at the last utterance end that fits; too short grows by whole
-    utterances after it, then before it, then (no speech) by fixed padding."""
+    utterances after it, then before it, then (no speech) by fixed padding. A montage
+    (D-051) is too long only when its kept parts are: skipping quiet gaps comes first."""
     notes: list[str] = []
     utterances = ctx.utterances
-    if end - start > limits.max_s:
+    # Montage first: a long span whose kept parts fit is not trimmed.
+    over = end - start > limits.max_s
+    if over and kept_length(start, end, template, ctx, limits.min_s) <= limits.max_s:
+        notes.append("quiet gaps skipped to fit the length (montage)")
+        over = False
+    if over:
         keep = core.start - (template.min_setup_s if core.exact else 0.0)
         target = max(start, min(keep, end - limits.max_s))
         start = snap_start(target, low, core.start, ctx)
@@ -406,7 +413,7 @@ def fit_length(
             if inside is not None and inside.end <= end - limits.min_s:
                 start = inside.end
         notes.append("setup shortened to fit the length")
-    if end - start > limits.max_s:
+    if over and end - start > limits.max_s:
         end = max(core.end, start + limits.max_s)
         fitting = [u.end for u in utterances.between(start, end) if u.end <= start + limits.max_s]
         if fitting and fitting[-1] >= min(core.end, start + limits.min_s):
@@ -436,7 +443,13 @@ def fit_length(
 
 
 def pad(
-    start: float, end: float, low: float, high: float, limits: Limits, ctx: ClipContext
+    start: float,
+    end: float,
+    low: float,
+    high: float,
+    limits: Limits,
+    ctx: ClipContext,
+    template: MomentTemplate,
 ) -> tuple[float, float]:
     """A little room before the first and after the last word, never into a neighbouring
     word, outside the segment, or past the maximum length."""
@@ -447,7 +460,8 @@ def pad(
     after = min((w.start for w in words if w.start >= end - 1e-6), default=ctx.duration_s)
     padded_start = max(low, before, start - CLIP_LEAD_PAD_S)
     padded_end = min(high, after, end + CLIP_TAIL_PAD_S)
-    if padded_end - padded_start > limits.max_s:
+    extra = (start - padded_start) + (padded_end - end)
+    if kept_length(start, end, template, ctx, limits.min_s) + extra > limits.max_s:
         return start, end
     return padded_start, padded_end
 
@@ -481,7 +495,7 @@ def resolve(
         end = snap_end(end, core.end, high, ctx)
     start, end, more = fit_length(start, end, core, template, limits, low, high, ctx)
     notes += more
-    start, end = pad(start, end, low, high, limits, ctx)
+    start, end = pad(start, end, low, high, limits, ctx, template)
     return Resolution(
         start=round(start, TIME_DECIMALS),
         end=round(end, TIME_DECIMALS),
