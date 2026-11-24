@@ -7,6 +7,7 @@ import { CheckpointList } from "@/components/batch/checkpoint-list";
 import { ClipCard } from "@/components/batch/clip-card";
 import { ElapsedTimer } from "@/components/batch/elapsed-timer";
 import { MoreClips } from "@/components/batch/more-clips";
+import { ResumeVideo } from "@/components/batch/resume-video";
 import { SourcePolicyPrompt } from "@/components/batch/source-policy-prompt";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -114,7 +115,10 @@ function VideoSection({
         <Alert variant="destructive">
           <AlertCircle aria-hidden />
           <AlertTitle>This video failed</AlertTitle>
-          <AlertDescription>{video.error.message}</AlertDescription>
+          <AlertDescription>
+            <p>{video.error.message}</p>
+            <ResumeVideo video={video} batchId={batchId} />
+          </AlertDescription>
         </Alert>
       )}
       {showSteps(video) && <CheckpointList checkpoints={video.checkpoints} />}

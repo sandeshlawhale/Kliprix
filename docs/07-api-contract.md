@@ -15,16 +15,19 @@ Messages are human-readable and never contain keys, tokens, or full file-system 
 - `POST /api/system/update-downloader` → `{ before, after }` (runs the yt-dlp upgrade)
 - `POST /api/system/open-folder` body `{ "target": "exports" | "data" }` → opens the folder in the OS file manager (local use only; optional feature)
 
-## LLM session (in memory only)
+## LLM session (in memory; optionally saved encrypted, D-053)
 - `GET /api/llm/providers` → `[{ id, label, needs_base_url }]` (gemini, anthropic, openai, openrouter, openai_compatible)
 - `POST /api/llm/models` body `{ provider, api_key, base_url? }` → `{ models: [{id, label}] }` (fetched live from the provider; on failure, `LLM_AUTH_FAILED`)
 - `POST /api/llm/test` body `{ provider, model, api_key, base_url? }` → `{ ok: true, latency_ms }`
-- `PUT /api/llm/session` body `{ provider, model, api_key, base_url? }` → `{ configured: true, provider, model }`
-- `GET /api/llm/session` → `{ configured, provider?, model? }` (never returns the key)
-- `DELETE /api/llm/session` → `204`
+- `PUT /api/llm/session` body `{ provider, model, api_key, base_url? }` → `{ configured: true, provider, model, saved }` (memory only)
+- `GET /api/llm/session` → `{ configured, provider?, model?, saved: {provider, model} | null }` (never returns the key)
+- `DELETE /api/llm/session` → `204` (forgets the in-memory session; a saved setup stays saved)
+- `PUT /api/llm/saved` body as `PUT /api/llm/session` → `{ configured: true, provider, model, saved }`: stores provider, model, base URL and the key encrypted in `llm_credentials` and uses them now; loaded again on every backend start (D-053)
+- `DELETE /api/llm/saved` → `204` (deletes the saved setup; the running session stays)
 
 ## Videos
 - `POST /api/videos/inspect` body `{ urls: string[] }` (1–3) → `{ results: [{ url, ok, video?: {platform, source_id, title, channel, duration_s, thumbnail_url, has_chat, is_live}, error? }] }`. Live (ongoing) streams are rejected with `VIDEO_UNAVAILABLE` ("Live streams are not supported yet").
+- `POST /api/videos/{id}/retry` → `202 Batch` (D-054). Resumes a failed video from the step that failed: queues its last job again (pipeline, or more clips with the same count); finished steps are reused from their saved files and clips are never created twice. Errors: `NOT_FOUND`, `LLM_NOT_CONFIGURED`, `CONFLICT` (the video did not fail, or is queued/running).
 - `POST /api/videos/{id}/more-clips` body `{ count }` (1–5) → `202 Batch` (D-034). Up to `count` more clips from the video's saved download: no new download or signals; candidates are found again with the existing clips (± 30 s) blocked; only parts of the new candidate spans that were never transcribed are transcribed; the LLM is told which moments already have clips; new clips follow the existing indexes. Finding nothing new is not a failure (the video's `note` says so). Errors: `NOT_FOUND`, `LLM_NOT_CONFIGURED`, `CONFLICT` (the video is queued/running, or its download was deleted), `VALIDATION_ERROR`.
 
 ## Batches (history)

@@ -182,6 +182,16 @@ def active_video_job(session: Session, video_id: str) -> JobRow | None:
     return session.scalars(query).first()
 
 
+def last_video_job(session: Session, video_id: str) -> JobRow | None:
+    """The newest pipeline or "more clips" job of this video, whatever its status."""
+    query = (
+        select(JobRow)
+        .where(JobRow.ref_id == video_id, JobRow.kind.in_(VIDEO_JOB_KINDS))
+        .order_by(JobRow.created_at.desc())
+    )
+    return session.scalars(query).first()
+
+
 # A clip job queued this soon after its video job finished belongs to the same run.
 _RUN_GAP_S = 10.0
 

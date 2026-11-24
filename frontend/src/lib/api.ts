@@ -117,6 +117,10 @@ export const getLlmSession = () => request<SessionStatus>("/llm/session");
 export const putLlmSession = (config: LlmConfig) =>
   request<Schemas["SessionConfigured"]>("/llm/session", json("PUT", llmBody(config)));
 export const deleteLlmSession = () => request<void>("/llm/session", { method: "DELETE" });
+/** Saves provider, model and key (encrypted) in the backend's database (D-053). */
+export const putLlmSaved = (config: LlmConfig) =>
+  request<Schemas["SessionConfigured"]>("/llm/saved", json("PUT", llmBody(config)));
+export const deleteLlmSaved = () => request<void>("/llm/saved", { method: "DELETE" });
 export const listModels = (provider: ProviderId, apiKey: string, baseUrl?: string | null) =>
   request<Schemas["ModelsResponse"]>(
     "/llm/models",
@@ -149,6 +153,9 @@ export const deleteBatch = (id: string, deleteFiles: boolean) =>
     method: "DELETE",
   });
 /** Up to `count` more clips from a video's saved download (D-034); returns the batch. */
+/** Resumes a failed video from the step that failed (P-001). */
+export const retryVideo = (videoId: string) =>
+  request<Batch>(`/videos/${encodeURIComponent(videoId)}/retry`, { method: "POST" });
 export const moreClips = (videoId: string, count: number) =>
   request<Batch>(`/videos/${encodeURIComponent(videoId)}/more-clips`, json("POST", { count }));
 /** URL of the batch's Server-Sent Events stream (opened by the SSE hook). */

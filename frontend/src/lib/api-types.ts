@@ -167,7 +167,7 @@ export interface paths {
         };
         /**
          * Get Session
-         * @description The active provider and model, if any.
+         * @description The active provider and model, if any, and the saved setup.
          */
         get: operations["get_session_api_llm_session_get"];
         /**
@@ -181,9 +181,36 @@ export interface paths {
         post?: never;
         /**
          * Delete Session
-         * @description Forget the session (and its key).
+         * @description Forget the session (and its key) in memory. A saved setup stays saved.
          */
         delete: operations["delete_session_api_llm_session_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/saved": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put Saved
+         * @description Save provider, model, and key (encrypted) in the database, and use them now.
+         *
+         *     The saved setup is loaded again when the backend starts (D-053).
+         *     Errors: VALIDATION_ERROR as for `PUT /api/llm/session`.
+         */
+        put: operations["put_saved_api_llm_saved_put"];
+        post?: never;
+        /**
+         * Delete Saved
+         * @description Delete the saved setup from the database. The current session keeps running.
+         */
+        delete: operations["delete_saved_api_llm_saved_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -231,6 +258,34 @@ export interface paths {
          *     its download was deleted), VALIDATION_ERROR (count outside 1-5).
          */
         post: operations["more_clips_api_videos__video_id__more_clips_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/videos/{video_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Video
+         * @description Resume a failed video from the step that failed (P-001, approved 2026-11-24).
+         *
+         *     Queues the video's last job again (the pipeline, or "more clips" with the same count).
+         *     Every finished step is reused from its saved file (download, chat, signals,
+         *     candidates, transcript, selection) and clips are never created twice, so the work
+         *     continues where it stopped. Returns the batch.
+         *
+         *     Errors: NOT_FOUND, LLM_NOT_CONFIGURED, CONFLICT (the video did not fail, or is queued
+         *     or running).
+         */
+        post: operations["retry_video_api_videos__video_id__retry_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -972,6 +1027,19 @@ export interface components {
             /** Needs Base Url */
             needs_base_url: boolean;
         };
+        /**
+         * SavedSetup
+         * @description The setup saved in the database (its key is never returned).
+         */
+        SavedSetup: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "gemini" | "anthropic" | "openai" | "openrouter" | "openai_compatible";
+            /** Model */
+            model: string;
+        };
         /** SessionConfigured */
         SessionConfigured: {
             /** Configured */
@@ -983,6 +1051,7 @@ export interface components {
             provider: "gemini" | "anthropic" | "openai" | "openrouter" | "openai_compatible";
             /** Model */
             model: string;
+            saved?: components["schemas"]["SavedSetup"] | null;
         };
         /** SessionRequest */
         SessionRequest: {
@@ -1003,7 +1072,7 @@ export interface components {
         };
         /**
          * SessionStatus
-         * @description Whether a session is active. Never includes the key.
+         * @description Whether a session is active, and what is saved for the next start. Never the key.
          */
         SessionStatus: {
             /** Configured */
@@ -1012,6 +1081,7 @@ export interface components {
             provider?: ("gemini" | "anthropic" | "openai" | "openrouter" | "openai_compatible") | null;
             /** Model */
             model?: string | null;
+            saved?: components["schemas"]["SavedSetup"] | null;
         };
         /** Settings */
         Settings: {
@@ -1575,6 +1645,66 @@ export interface operations {
             };
         };
     };
+    put_saved_api_llm_saved_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionConfigured"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_saved_api_llm_saved_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     inspect_videos_api_videos_inspect_post: {
         parameters: {
             query?: never;
@@ -1622,6 +1752,37 @@ export interface operations {
                 "application/json": components["schemas"]["MoreClipsRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Batch"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    retry_video_api_videos__video_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                video_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             202: {

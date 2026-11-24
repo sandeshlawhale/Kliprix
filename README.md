@@ -71,7 +71,9 @@ Free tiers are enough for normal use.
 
 In Kliprix: open the menu at the bottom of the sidebar → **Configure API** → choose the
 provider → paste the key → **Load models** → choose a model (or type its id) → **Test
-connection** → **Save for this session**.
+connection** → **Save for this session** (forgotten when the tab closes or the app
+restarts) or **Save** (kept encrypted on this PC with the model, ready on every start).
+Pin the models you use with the pin button in the Model list; they stay at the top.
 
 ## How to use
 
@@ -143,8 +145,9 @@ Then open http://127.0.0.1:3000. Data is kept in `./data`. Both ports are publis
   capped at 720p below 6 GB RAM.
 - **Hinglish accuracy**: Whisper's Hindi recognition is weaker than English; check the
   captions in the editor and fix words there.
-- **"The AI model is not configured" after a restart**: the key is kept in memory only. With
-  the browser tab still open it is re-sent automatically; otherwise configure it again.
+- **"The AI model is not configured" after a restart**: with **Save for this session** the
+  key is kept in memory only. With the browser tab still open it is re-sent automatically;
+  otherwise configure it again, or use **Save** so it loads on every start.
 - **Port 3000 or 8000 is busy**: stop the other program using it.
 
 ## Performance (measured, not promised)
@@ -162,8 +165,11 @@ transcription ran on the CPU):
 A measurement on a low-spec (4 GB) machine is still to be added.
 
 ## Privacy
-- Your API key stays in this browser tab (session storage) and in the backend's memory. It is
-  never written to disk, logs or the database, and it is sent only to your chosen provider.
+- With **Save for this session** your API key stays in this browser tab (session storage) and
+  in the backend's memory only. With **Save** it is also stored encrypted in the database on
+  this PC (the encryption key is `data/secret.key`, bound to your Windows user on Windows);
+  **Delete saved key** removes it. It is never written in plain text, never logged, and sent
+  only to your chosen provider.
 - The only network traffic is: the video platform (download and chat replay), your LLM
   provider, and one-time package/model downloads during setup.
 - No analytics or telemetry (Next.js, FastAPI, Hugging Face and LiteLLM telemetry are switched off).

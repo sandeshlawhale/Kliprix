@@ -450,3 +450,54 @@ def test_montage_toggle_retimes_words_and_renders_only_the_parts(
     whole = client.patch(f"/api/clips/{clip_id}", json={"montage": False}).json()
     assert whole["duration_s"] == 30.0
     assert whole["edit"]["parts"] == [[10.0, 16.0], [24.0, 40.0]]
+
+
+class AuthenticationError(Exception):
+    """Named like the provider error, so the client fails at once (no retry wait)."""
+
+
+def test_failed_video_resumes_from_the_failed_step(config: AppConfig, media: Path) -> None:
+    app = build(config, media)
+    ctx = app.state.job_context
+    source: FakeSource = ctx.adapters[0]
+    llm_down = threading.Event()
+    llm_down.set()
+
+    def flaky(**kwargs: Any) -> Any:
+        if llm_down.is_set():
+            raise AuthenticationError("provider said no")
+        return fake_completion(**kwargs)
+
+    ctx.completion = flaky
+    with TestClient(app, raise_server_exceptions=False) as client:
+        client.put("/api/llm/session", json={"provider": "gemini", "model": "m", "api_key": KEY})
+        client.put("/api/settings", json={"style_defaults": {"clips_per_video": 1}})
+        batch_id = client.post("/api/batches", json={"urls": [url("aaaaaaaaaaa")]}).json()["id"]
+        failed = wait_for(client, batch_id, finished)
+        video = failed["videos"][0]
+        assert (video["status"], video["stage"]) == ("failed", "select")
+        assert video["error"]["code"] == "LLM_AUTH_FAILED"
+        states = {step["key"]: step["state"] for step in video["checkpoints"]}
+        assert states["download"] == "done" and states["select"] == "failed"
+        downloads = source.downloads
+
+        # Not allowed while the AI model is not configured, nor for a video that did not fail.
+        client.delete("/api/llm/session")
+        no_llm = client.post(f"/api/videos/{video['id']}/retry")
+        assert no_llm.json()["error"]["code"] == "LLM_NOT_CONFIGURED"
+        client.put("/api/llm/session", json={"provider": "gemini", "model": "m", "api_key": KEY})
+        assert client.post("/api/videos/nope/retry").status_code == 404
+
+        llm_down.clear()
+        resumed = client.post(f"/api/videos/{video['id']}/retry")
+        assert resumed.status_code == 202
+        assert resumed.json()["videos"][0]["status"] in ("queued", "running", "done")
+        batch = wait_for(client, batch_id, _all_rendered(1))
+        again = client.post(f"/api/videos/{video['id']}/retry")
+        assert again.json()["error"]["code"] == "CONFLICT"
+    video = batch["videos"][0]
+    assert video["status"] == "done" and video["error"] is None
+    assert batch["status"] == "done"
+    assert len(video["clips"]) == 1
+    # The saved download was reused: no second download.
+    assert source.downloads == downloads

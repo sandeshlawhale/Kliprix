@@ -50,7 +50,7 @@ Kliprix/
 ## Runtime model
 - One backend process (Uvicorn, 1 worker) with an in-process **job runner thread** that picks the next `queued` job from SQLite and runs it. One job at a time. Heavy work runs in subprocesses (ffmpeg, yt-dlp) or in the runner thread (whisper, opencv), never on the async event loop.
 - Progress events: runner publishes to an in-memory pubsub; `GET /api/batches/{id}/events` streams them as Server-Sent Events. The DB is the source of truth; events are only hints to refetch.
-- LLM session: provider, model, key held in a module-level object in memory. Never persisted.
+- LLM session: provider, model, key held in a module-level object in memory. Persisted only when the user clicks **Save** on Configure API: then encrypted in `llm_credentials` and loaded into memory on every start (D-053).
 - Ports: backend `127.0.0.1:8000`, frontend `127.0.0.1:3000`.
 
 ## Environment variables (backend)

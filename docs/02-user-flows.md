@@ -23,7 +23,7 @@
 
 ## D. Configure API
 1. Open menu at bottom of sidebar → **Configure API**.
-2. Choose provider (dropdown) → paste key → click **Load models** → choose model (dropdown, with "custom model id" option) → **Test** → **Save for this session**.
+2. Choose provider (dropdown) → paste key → click **Load models** → choose model (dropdown, with "custom model id" option) → **Test** → **Save for this session** or **Save** (D-053: stored encrypted with the model and used again on every start). Models can be pinned to the top of the dropdown.
 3. Key is kept in the browser session and in backend memory only. If the backend restarts, the frontend re-sends it automatically while the tab is open. Closing the tab forgets the key.
 4. If no key is configured when the user clicks Start on Home, show a clear message with a button to Configure API. Do not start.
 

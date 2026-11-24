@@ -22,6 +22,9 @@ Pragmas on connect: `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`.
 ```
 settings(key TEXT PK, value_json TEXT)
 
+llm_credentials(id INT PK (always 1), provider, model, base_url, api_key_enc TEXT, saved_at)
+  api_key_enc: Fernet token; the encryption key is DATA_DIR/secret.key (DPAPI-wrapped on Windows) (D-053)
+
 batches(id PK, created_at, status, title, style_json)
   status: queued | running | paused | done | partial | failed | cancelled   (paused: D-049)
 

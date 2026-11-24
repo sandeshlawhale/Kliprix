@@ -1,23 +1,32 @@
 """LLM session endpoints (docs/07-api-contract.md, "LLM session").
 
 `POST /api/llm/models` lists models live from the provider; `POST /api/llm/test` makes one
-tiny completion. The session itself lives in memory only.
+tiny completion. The session lives in memory; `PUT /api/llm/saved` also keeps it in the
+database with the key encrypted (D-053), and it is loaded again on the next start.
 """
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, SecretStr
+from sqlalchemy.orm import Session
 
+from app.api.deps import DbDep
 from app.config import LLM_TEST_TIMEOUT_S
 from app.core.errors import ERROR_RESPONSES, AppError, ErrorCode
+from app.core.secret_box import SecretBox
+from app.db.models import LlmCredentialRow
+from app.db.repositories import llm_credentials
 from app.llm.client import LlmClient
 from app.llm.models import list_models
 from app.llm.providers import PROVIDERS, PROVIDERS_BY_ID, ProviderId
 from app.llm.session import LlmSession, LlmSessionStore
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/llm", tags=["llm"], responses=ERROR_RESPONSES)
 
@@ -31,6 +40,14 @@ def get_store(request: Request) -> LlmSessionStore:
 
 
 StoreDep = Annotated[LlmSessionStore, Depends(get_store)]
+
+
+def get_secret_box(request: Request) -> SecretBox:
+    box: SecretBox = request.app.state.secret_box
+    return box
+
+
+BoxDep = Annotated[SecretBox, Depends(get_secret_box)]
 
 
 class ProviderInfo(BaseModel):
@@ -48,18 +65,34 @@ class SessionRequest(BaseModel):
     base_url: HttpUrl | None = None
 
 
-class SessionConfigured(BaseModel):
-    configured: bool
+class SavedSetup(BaseModel):
+    """The setup saved in the database (its key is never returned)."""
+
     provider: ProviderId
     model: str
 
 
+class SessionConfigured(BaseModel):
+    configured: bool
+    provider: ProviderId
+    model: str
+    saved: SavedSetup | None = None
+
+
 class SessionStatus(BaseModel):
-    """Whether a session is active. Never includes the key."""
+    """Whether a session is active, and what is saved for the next start. Never the key."""
 
     configured: bool
     provider: ProviderId | None = None
     model: str | None = None
+    saved: SavedSetup | None = None
+
+
+def _saved_setup(db: Session) -> SavedSetup | None:
+    row = db.get(LlmCredentialRow, 1)
+    if row is None or row.provider not in PROVIDERS_BY_ID:
+        return None
+    return SavedSetup(provider=PROVIDERS_BY_ID[row.provider].id, model=row.model)
 
 
 @router.get("/providers")
@@ -156,7 +189,7 @@ def post_test(body: SessionRequest, request: Request) -> TestResponse:
 
 
 @router.put("/session")
-def put_session(body: SessionRequest, store: StoreDep) -> SessionConfigured:
+def put_session(body: SessionRequest, store: StoreDep, db: DbDep) -> SessionConfigured:
     """Keep provider, model, and key in memory for this backend process.
 
     Errors: VALIDATION_ERROR if the key or model is blank, or base_url is missing for
@@ -164,20 +197,51 @@ def put_session(body: SessionRequest, store: StoreDep) -> SessionConfigured:
     """
     session = _session_from(body.provider, body.model, body.api_key, body.base_url)
     store.set(session)
-    return SessionConfigured(configured=True, provider=session.provider, model=session.model)
+    return SessionConfigured(
+        configured=True, provider=session.provider, model=session.model, saved=_saved_setup(db)
+    )
 
 
 @router.get("/session")
-def get_session(store: StoreDep) -> SessionStatus:
-    """The active provider and model, if any."""
+def get_session(store: StoreDep, db: DbDep) -> SessionStatus:
+    """The active provider and model, if any, and the saved setup."""
     session = store.get()
+    saved = _saved_setup(db)
     if session is None:
-        return SessionStatus(configured=False)
-    return SessionStatus(configured=True, provider=session.provider, model=session.model)
+        return SessionStatus(configured=False, saved=saved)
+    return SessionStatus(
+        configured=True, provider=session.provider, model=session.model, saved=saved
+    )
 
 
 @router.delete("/session", status_code=204)
 def delete_session(store: StoreDep) -> Response:
-    """Forget the session (and its key)."""
+    """Forget the session (and its key) in memory. A saved setup stays saved."""
     store.clear()
+    return Response(status_code=204)
+
+
+@router.put("/saved")
+def put_saved(body: SessionRequest, store: StoreDep, box: BoxDep, db: DbDep) -> SessionConfigured:
+    """Save provider, model, and key (encrypted) in the database, and use them now.
+
+    The saved setup is loaded again when the backend starts (D-053).
+    Errors: VALIDATION_ERROR as for `PUT /api/llm/session`.
+    """
+    session = _session_from(body.provider, body.model, body.api_key, body.base_url)
+    llm_credentials.save(db, box, session)
+    db.commit()
+    store.set(session)
+    logger.info("LLM setup saved provider=%s model=%s", session.provider, session.model)
+    return SessionConfigured(
+        configured=True, provider=session.provider, model=session.model, saved=_saved_setup(db)
+    )
+
+
+@router.delete("/saved", status_code=204)
+def delete_saved(db: DbDep) -> Response:
+    """Delete the saved setup from the database. The current session keeps running."""
+    llm_credentials.clear(db)
+    db.commit()
+    logger.info("saved LLM setup deleted")
     return Response(status_code=204)

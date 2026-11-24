@@ -24,14 +24,16 @@ def test_session_lifecycle_never_returns_key(client: TestClient) -> None:
         "configured": False,
         "provider": None,
         "model": None,
+        "saved": None,
     }
     put = client.put(
         "/api/llm/session", json={"provider": "gemini", "model": "gemini-x", "api_key": KEY}
     )
     assert put.status_code == 200
-    assert put.json() == {"configured": True, "provider": "gemini", "model": "gemini-x"}
+    expected = {"configured": True, "provider": "gemini", "model": "gemini-x", "saved": None}
+    assert put.json() == expected
     status = client.get("/api/llm/session")
-    assert status.json() == {"configured": True, "provider": "gemini", "model": "gemini-x"}
+    assert status.json() == expected
     assert KEY not in put.text + status.text
     assert client.delete("/api/llm/session").status_code == 204
     assert client.get("/api/llm/session").json()["configured"] is False

@@ -27,7 +27,7 @@ Allowed: video platform (download, chat), user's LLM provider, package and model
 - URL allowlist: only hosts in `supported_hosts`. Reject everything else before calling yt-dlp (yt-dlp can fetch arbitrary sites).
 - No `shell=True`; no string-built commands; validate numbers passed to ffmpeg.
 - Media endpoints serve only DB-known files inside `DATA_DIR`.
-- API key: memory only; redact in logs (`***`); never in URLs; sent only in request bodies over localhost.
+- API key: memory only unless the user clicks **Save** (then encrypted at rest, D-053); redact in logs (`***`); never in URLs; never returned by the API; sent only in request bodies over localhost.
 - Render LLM/user text as plain text in the UI.
 - Add a short README note: users are responsible for having rights to the videos they clip and for following the platform's terms.
 

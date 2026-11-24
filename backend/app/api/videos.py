@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Annotated
 
@@ -129,6 +130,52 @@ def more_clips(
     batch.status = "queued"
     repo.add_job(db, "video_more_clips", video_id, repo.PRIORITY_USER, {"count": body.count})
     db.commit()
+    runner.wake()
+    ctx.publish(video.batch_id, "video", id=video.id, status=video.status, stage=video.stage,
+                progress=video.progress)  # fmt: skip
+    ctx.publish(video.batch_id, "batch", status="queued")
+    return batch_view(ctx, db, batch)
+
+
+@router.post("/{video_id}/retry", status_code=202)
+def retry_video(
+    video_id: str,
+    request: Request,
+    db: DbDep,
+    ctx: CtxDep,
+    runner: RunnerDep,
+) -> Batch:
+    """Resume a failed video from the step that failed (P-001, approved 2026-11-24).
+
+    Queues the video's last job again (the pipeline, or "more clips" with the same count).
+    Every finished step is reused from its saved file (download, chat, signals,
+    candidates, transcript, selection) and clips are never created twice, so the work
+    continues where it stopped. Returns the batch.
+
+    Errors: NOT_FOUND, LLM_NOT_CONFIGURED, CONFLICT (the video did not fail, or is queued
+    or running).
+    """
+    video = repo.get_video(db, video_id)
+    batch = repo.get_batch(db, video.batch_id) if video is not None else None
+    if video is None or batch is None:
+        raise AppError(ErrorCode.NOT_FOUND, "This video does not exist.")
+    if video.status != "failed" or repo.active_video_job(db, video_id) is not None:
+        raise AppError(ErrorCode.CONFLICT, "Only a failed video can be resumed.")
+    store: LlmSessionStore = request.app.state.llm_session
+    if store.get() is None:
+        raise AppError(
+            ErrorCode.LLM_NOT_CONFIGURED, "Configure the AI model first (Configure API)."
+        )
+    last = repo.last_video_job(db, video_id)
+    kind = last.kind if last is not None else "video_pipeline"
+    payload = json.loads(last.payload_json) if last is not None and last.payload_json else None
+    video.status = "queued"
+    video.error_code = None
+    video.error_message = None
+    batch.status = "queued"
+    repo.add_job(db, kind, video_id, repo.PRIORITY_USER, payload)
+    db.commit()
+    logger.info("video resumed id=%s kind=%s stage=%s", video_id, kind, video.stage)
     runner.wake()
     ctx.publish(video.batch_id, "video", id=video.id, status=video.status, stage=video.stage,
                 progress=video.progress)  # fmt: skip

@@ -56,6 +56,19 @@ class SettingRow(Base):
     value_json: Mapped[str] = mapped_column(Text)
 
 
+class LlmCredentialRow(Base):
+    """The one saved LLM setup (D-053). `api_key_enc` is Fernet-encrypted, never plain."""
+
+    __tablename__ = "llm_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String)
+    model: Mapped[str] = mapped_column(String)
+    base_url: Mapped[str | None] = mapped_column(String)
+    api_key_enc: Mapped[str] = mapped_column(Text)
+    saved_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
+
+
 class BatchRow(Base):
     __tablename__ = "batches"
 

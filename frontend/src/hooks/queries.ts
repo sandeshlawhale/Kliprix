@@ -39,7 +39,12 @@ export function useLlmSession() {
       const saved = loadLlmConfig();
       if (!saved) return status;
       const restored = await api.putLlmSession(saved);
-      return { configured: true, provider: restored.provider, model: restored.model };
+      return {
+        configured: true,
+        provider: restored.provider,
+        model: restored.model,
+        saved: restored.saved ?? null,
+      };
     },
     refetchInterval: 30_000,
   });

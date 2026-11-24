@@ -100,8 +100,12 @@ function SelectLabel({ className, ...props }: React.ComponentProps<typeof Select
 function SelectItem({
   className,
   children,
+  trailing,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Item>) {
+}: React.ComponentProps<typeof SelectPrimitive.Item> & {
+  /** Shown after the text inside the row but not in the trigger (e.g. a pin button). */
+  trailing?: React.ReactNode;
+}) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
@@ -117,6 +121,7 @@ function SelectItem({
         </SelectPrimitive.ItemIndicator>
       </span>
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      {trailing}
     </SelectPrimitive.Item>
   );
 }

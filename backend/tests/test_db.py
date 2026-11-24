@@ -12,7 +12,15 @@ from app.db.migrate import upgrade_to_head
 from app.db.models import Base, BatchRow, VideoRow
 from app.db.repositories import settings as settings_repo
 
-EXPECTED_TABLES = {"settings", "batches", "videos", "clips", "jobs", "alembic_version"}
+EXPECTED_TABLES = {
+    "settings",
+    "batches",
+    "videos",
+    "clips",
+    "jobs",
+    "llm_credentials",
+    "alembic_version",
+}
 
 
 @pytest.fixture

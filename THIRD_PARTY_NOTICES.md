@@ -52,6 +52,7 @@ regenerate when dependencies change.
 | cloudpickle | 3.1.3 | BSD-3-Clause |
 | colorama | 0.4.6 | BSD License |
 | contourpy | 1.4.0 | BSD-3-Clause |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause |
 | ctranslate2 | 4.9.0 | MIT |
 | cycler | 0.12.1 | BSD License |
 | decorator | 5.3.1 | BSD-2-Clause |

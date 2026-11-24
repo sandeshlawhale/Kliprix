@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.telemetry import TelemetryConfig
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.api import batches, clips, llm, settings, storage, system, videos
 from app.config import (
@@ -33,8 +34,10 @@ from app.core.hardware import (
     speech_threads,
 )
 from app.core.logging import setup_logging
+from app.core.secret_box import SecretBox
 from app.db.engine import make_engine, make_session_factory
 from app.db.migrate import upgrade_to_head
+from app.db.repositories import llm_credentials
 from app.jobs.context import JobContext, ParakeetFactory
 from app.jobs.runner import JobRunner
 from app.llm.client import default_completion, preload_litellm
@@ -82,6 +85,18 @@ def _parakeet_factory(config: AppConfig) -> ParakeetFactory:
     return factory
 
 
+def _restore_saved_llm(
+    session_factory: sessionmaker[Session], box: SecretBox, store: LlmSessionStore
+) -> None:
+    """Use the LLM setup saved with "Save" (D-053), if any, from the first request on."""
+    with session_factory() as db:
+        saved = llm_credentials.load(db, box)
+        db.commit()
+    if saved is not None:
+        store.set(saved)
+        logger.info("saved LLM setup loaded provider=%s model=%s", saved.provider, saved.model)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     runner: JobRunner = app.state.job_runner
@@ -112,6 +127,8 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
     app.state.source_adapters = build_adapters(active)
     app.state.inspect_cache = InspectCache()
     app.state.session_factory = make_session_factory(make_engine(active.db_url))
+    app.state.secret_box = SecretBox(active.data_dir)
+    _restore_saved_llm(app.state.session_factory, app.state.secret_box, llm_session)
     app.state.event_bus = EventBus()
     # The job runner thread and what its jobs need (tests swap in fakes before starting).
     app.state.job_context = JobContext(
