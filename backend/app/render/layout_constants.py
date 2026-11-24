@@ -125,11 +125,12 @@ FACE_MAX_PAN_PER_S = 0.6
 SCENE_CUT_DIFF = 40.0
 SCENE_CUT_THUMB_W = 64
 
-# Facecam detection (D-052): faces are searched on full-size tiles (a third of the frame,
+# Facecam detection (D-052): faces are searched on full-size tiles (a quarter of the frame,
 # overlapping by half) of FACECAM_SAMPLES frames spread over the cut, because a facecam face
-# is too small for the detector on the whole frame.
+# is too small for the detector on the whole frame. Quarter tiles: a third scored a small,
+# red-lit cam face (CarryisLive, 70-95 px) 0.68-0.76, a quarter 0.85-0.93.
 FACECAM_SAMPLES = 12
-FACECAM_TILE_DIV = 3
+FACECAM_TILE_DIV = 4
 FACECAM_MIN_CONFIDENCE = 0.7
 # A facecam face: at most this share of the frame width, in the same place (center within
 # FACECAM_MATCH_FACES face widths) in at least FACECAM_MIN_PRESENT of the samples, and its

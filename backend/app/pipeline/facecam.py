@@ -67,7 +67,7 @@ class BoxDetector(Protocol):
 
 
 def tiles(src_w: int, src_h: int) -> list[Rect]:
-    """Overlapping tiles a third of the frame in size, half a tile apart."""
+    """Overlapping tiles (1/FACECAM_TILE_DIV of the frame), half a tile apart."""
     tile_w, tile_h = src_w // lc.FACECAM_TILE_DIV, src_h // lc.FACECAM_TILE_DIV
     step_x, step_y = max(1, tile_w // 2), max(1, tile_h // 2)
     xs = list(range(0, src_w - tile_w + 1, step_x))

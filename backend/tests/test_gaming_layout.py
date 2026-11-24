@@ -108,8 +108,8 @@ def test_merge_boxes_keeps_one_box_per_face() -> None:
 
 def test_tiles_cover_the_frame_with_overlap() -> None:
     grid = tiles(W, H)
-    assert len(grid) == 25
-    assert grid[0] == Rect(0, 0, 640, 360)
+    assert len(grid) == 49
+    assert grid[0] == Rect(0, 0, 480, 270)
     assert grid[-1].right == W and grid[-1].bottom == H
 
 
