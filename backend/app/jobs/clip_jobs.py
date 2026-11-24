@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from app.jobs.context import JobContext, slugify
 from app.pipeline.audio import AUDIO_FILE_NAME
 from app.pipeline.clip_render import ClipSpec, SourceVideo, make_thumbnail, render_clip
 from app.pipeline.download import load_cached as load_download
+from app.pipeline.gaming import video_is_gaming
 from app.pipeline.parts import Part, effective, is_montage, normalized
 from app.pipeline.transcribe import Word
 from app.render.censor import BlurBox
@@ -99,6 +101,7 @@ class ClipJob:
             )
             old_export = clip.export_path
             video_id = video.id
+            video_facts = (video.title, video.channel, video.duration_s)
         video_dir = self.ctx.video_dir(video_id)
         info = (
             load_download(video_dir, self.ctx.config.ffmpeg_path)
@@ -106,6 +109,7 @@ class ClipJob:
             else None
         )
         source = _source_video(video_dir, info)
+        spec = replace(spec, gaming=video_is_gaming(video_dir, *video_facts))
         stages = ("cut", "face_crop", "captions", "render")
 
         def on_stage(name: str) -> None:

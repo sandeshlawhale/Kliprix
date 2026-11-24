@@ -28,7 +28,7 @@ def test_face_layout_matches_spec() -> None:
     layout = compute_layout("face", 1920, 1080)
     assert (layout.fg_w, layout.fg_h, layout.fg_top, layout.fg_bottom) == (1080, 1350, 240, 1590)
     assert layout.title_y == 150  # max(150, 240 - 110)
-    assert layout.caption_y == 1700  # min(1700, 1590 + 130)
+    assert layout.caption_y == 1344  # min(1344, 1590 + 130): 30% above the bottom (D-052)
 
 
 def test_full_frame_layout_for_16_9() -> None:

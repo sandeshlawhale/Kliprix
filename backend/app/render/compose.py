@@ -36,7 +36,7 @@ from app.render import layout_constants as lc
 from app.render.ass import CaptionStyle, build_ass
 from app.render.censor import BlurBox, bleep_spans, censor_text, censor_words
 from app.render.fonts import WORK_FONTS_DIR_NAME, install_fonts
-from app.render.layout import Layout, blur_radius
+from app.render.layout import Layout, Panel, blur_radius
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,9 @@ class RenderJob:
     words: Sequence[Word]  # relative to the clip start
     title: str | None
     blur_boxes: Sequence[BlurBox] = ()
+    # Gaming layouts (D-052): source rectangles of `fg_file` placed on the canvas; when set,
+    # they replace the single scaled foreground.
+    panels: Sequence[Panel] = ()
 
 
 def write_ass(job: RenderJob) -> Path:
@@ -88,18 +91,39 @@ def filter_graph(job: RenderJob, quality: Quality) -> str:
         f"crop={lc.CANVAS_W}:{lc.CANVAS_H},scale={small_w}:{small_h}{blur},"
         f"scale={lc.CANVAS_W}:{lc.CANVAS_H},eq=brightness={lc.BG_BRIGHTNESS},setsar=1[bg]"
     )
-    foreground = f"[1:v]scale={job.layout.fg_w}:{job.layout.fg_h},setsar=1[fg]"
     tail = f"ass={ASS_FILE_NAME}:fontsdir={WORK_FONTS_DIR_NAME}"
     if quality == "preview":
         tail += f",scale={lc.PREVIEW_W}:{lc.PREVIEW_H}"
+    layers = foreground_layers(job)
     boxes = box_blur_chain(job.blur_boxes, "[base]", "[boxed]")
+    finish = f"fps={lc.FPS},format=yuv420p"
     if not boxes:
-        compose = (
-            f"[bg][fg]overlay=(W-w)/2:{job.layout.fg_top},fps={lc.FPS},format=yuv420p,{tail}[v]"
+        return ";".join([background, *layers, f"[over]{finish},{tail}[v]"])
+    return ";".join([background, *layers, f"[over]{finish}[base]", *boxes, f"[boxed]{tail}[v]"])
+
+
+def foreground_layers(job: RenderJob) -> list[str]:
+    """Filters that lay input 1 over [bg], ending in [over]: one scaled foreground, or the
+    layout's panels (each a crop of input 1, scaled and placed)."""
+    if not job.panels:
+        return [
+            f"[1:v]scale={job.layout.fg_w}:{job.layout.fg_h},setsar=1[fg]",
+            f"[bg][fg]overlay=(W-w)/2:{job.layout.fg_top}[over]",
+        ]
+    count = len(job.panels)
+    names = "".join(f"[src{i}]" for i in range(count))
+    steps = [f"[1:v]split={count}{names}" if count > 1 else "[1:v]null[src0]"]
+    current = "[bg]"
+    for i, panel in enumerate(job.panels):
+        src = panel.src
+        out = "[over]" if i == count - 1 else f"[layer{i}]"
+        steps.append(
+            f"[src{i}]crop={src.w}:{src.h}:{src.x}:{src.y},"
+            f"scale={panel.dest_w}:{panel.dest_h},setsar=1[panel{i}]"
         )
-        return ";".join([background, foreground, compose])
-    compose = f"[bg][fg]overlay=(W-w)/2:{job.layout.fg_top},fps={lc.FPS},format=yuv420p[base]"
-    return ";".join([background, foreground, compose, *boxes, f"[boxed]{tail}[v]"])
+        steps.append(f"{current}[panel{i}]overlay=(W-w)/2:{panel.dest_y}{out}")
+        current = out
+    return steps
 
 
 def _even(value: float) -> int:

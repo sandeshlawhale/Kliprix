@@ -42,6 +42,14 @@ FULL_FG_CENTER_Y = 900
 # Face crop window aspect (width:height = 4:5).
 FACE_CROP_ASPECT = 4 / 5
 
+# Gaming layouts (D-052). Center: the middle 3:4 of the game over the blurred background.
+CENTER_FG_W = 1080
+CENTER_FG_H = 1440
+CENTER_FG_TOP = 240
+# Facecam split: the streamer's cam on top (30% of the canvas), the game below, no blur.
+FACECAM_TOP_H = 576
+FACECAM_GAME_H = CANVAS_H - FACECAM_TOP_H
+
 # Title.
 TITLE_FONT = "Anton"
 TITLE_FONT_FILE = "Anton-Regular.ttf"
@@ -74,7 +82,8 @@ POP_MAX_WORDS = 3
 CAPTION_PAUSE_S = 0.35
 # A chunk stays this long after its last word unless the next chunk starts earlier.
 CAPTION_LINGER_S = 0.3
-CAPTION_MAX_CENTER_Y = 1700
+# Captions stay at least 30% above the bottom (owner, D-052): center at most 70% down.
+CAPTION_MAX_CENTER_Y = 1344
 CAPTION_GAP = 130
 BOTTOM_SAFE = 160
 
@@ -115,6 +124,33 @@ FACE_MAX_PAN_PER_S = 0.6
 # Mean absolute difference (0-255) between sampled frames that counts as a scene cut.
 SCENE_CUT_DIFF = 40.0
 SCENE_CUT_THUMB_W = 64
+
+# Facecam detection (D-052): faces are searched on full-size tiles (a third of the frame,
+# overlapping by half) of FACECAM_SAMPLES frames spread over the cut, because a facecam face
+# is too small for the detector on the whole frame.
+FACECAM_SAMPLES = 12
+FACECAM_TILE_DIV = 3
+FACECAM_MIN_CONFIDENCE = 0.7
+# A facecam face: at most this share of the frame width, in the same place (center within
+# FACECAM_MATCH_FACES face widths) in at least FACECAM_MIN_PRESENT of the samples, and its
+# center outside the middle FACECAM_CENTER_ZONE of the frame (cams sit at edges/corners).
+FACECAM_MAX_FACE_W = 0.15
+FACECAM_MATCH_FACES = 0.6
+FACECAM_MIN_PRESENT = 0.5
+FACECAM_CENTER_ZONE = 0.34
+# The cam box guessed from the face (width = face width x this, 16:9), then each side moves
+# to the strongest still edge (the cam border) within FACECAM_EDGE_SEARCH of the box size
+# when that edge is FACECAM_EDGE_RATIO times the median of its search band.
+FACECAM_W_PER_FACE = 4.0
+FACECAM_GUESS_ASPECT = 16 / 9
+FACECAM_EDGE_SEARCH = 0.3
+FACECAM_EDGE_RATIO = 2.5
+# A refined cam box must keep an aspect (w/h) in this range, else the guess is used.
+FACECAM_MIN_ASPECT = 0.8
+FACECAM_MAX_ASPECT = 2.6
+# The cam crop is moved this share of the cam size inward on every side, so the overlay's
+# border never shows.
+FACECAM_INSET = 0.02
 
 # Cut handles kept around each clip so trim can extend (docs/04 "Cut").
 HANDLE_BEFORE_S = 5.0

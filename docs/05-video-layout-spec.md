@@ -16,6 +16,14 @@ All numbers below are constants in ONE file (`backend/app/render/layout_constant
 
 Foreground top `fg_top = 240` for 4:5 (bottom = 1590). For full frame: center vertically at y=900, so `fg_top = 900 − h/2`.
 
+### Gaming layouts (D-052)
+Auto uses these for a gaming video (a D-050 game strategy from the title/channel, or game screens ≥ 85% of the video); face/full stay for everything else.
+| Mode | Canvas | Source |
+|---|---|---|
+| `facecam` | cam 1080x576 at y 0, game 1080x1344 at y 576, no blur | the streamer's cam (found by tiled face detection, snapped to its border, trimmed 2%) cropped around the face; the game full height, centered, moved off the cam if they overlap |
+| `center` | 1080x1440 at y 240 over the blurred background | the middle 3:4 of the game |
+Title: on the seam (y 576) for `facecam`; as usual for `center`. A forced `facecam` without a cam falls back to `center` with a warning.
+
 ## Auto crop-mode rule
 Sample every 3rd frame; if a face is detected in ≥ **40%** of samples → Face crop, else Full frame. The user can override per clip (Auto / Face / Full). If Face is forced but no face is found, fall back to a center crop and show a warning on the clip.
 
@@ -34,7 +42,7 @@ Sample every 3rd frame; if a face is detected in ≥ **40%** of samples → Face
 - Animation: 250 ms fade-in at clip start; stays for the whole clip.
 
 ## Captions
-- Position: horizontally centered, vertical center `min(1700, fg_bottom + 130)`. Keep inside the bottom safe margin (bottom 160 px stays empty for app UI overlays).
+- Position: horizontally centered, vertical center `min(1344, fg_bottom + 130)`: always at least 30% above the bottom (owner, D-052). Keep inside the bottom safe margin (bottom 160 px stays empty for app UI overlays).
 - Max line width 900 px; 1–2 lines; show 2–4 words at a time (split by punctuation, pauses > 0.35 s, and max 18 characters per line).
 - Font: Montserrat ExtraBold (OFL), 72 px, white, black outline 5 px. Devanagari fallback: Noto Sans Devanagari (OFL).
 - Words come from `captions_json` of the clip (editable by the user). Times are relative to the clip start.

@@ -10,7 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field
 CaptionStyle = Literal["pop", "karaoke", "boxed"]
 CaptionLanguage = Literal["en", "hinglish"]
 ClipLengthMode = Literal["standard", "extended"]
-CropMode = Literal["auto", "face", "full"]
+# "facecam" and "center" are the gaming layouts (D-052); Auto picks them for gaming videos.
+CropMode = Literal["auto", "face", "full", "facecam", "center"]
 Theme = Literal["light", "dark", "system"]
 WhisperSetting = Literal["auto", "tiny", "base", "small", "medium"]
 # Speech-to-text engine (D-028). Parakeet is English-only; Hinglish always uses Whisper.

@@ -37,7 +37,8 @@ FACE_MODEL_FILE = "blaze_face_short_range.tflite"
 CROP_FILE_NAME = "crop.mp4"
 MODEL_DOWNLOAD_TIMEOUT_S = 60.0
 
-CropChoice = Literal["auto", "face", "full"]
+# "facecam" and "center" are the gaming layouts (D-052).
+CropChoice = Literal["auto", "face", "full", "facecam", "center"]
 
 
 @dataclass(frozen=True)

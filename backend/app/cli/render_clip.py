@@ -2,7 +2,8 @@
 
 Usage (from `backend/`):
     python -m app.cli.render_clip <folder> --start S --end E [--title T]
-        [--style pop|karaoke|boxed] [--crop auto|face|full] [--blur 30] [--preview]
+        [--style pop|karaoke|boxed] [--crop auto|face|full|facecam|center] [--gaming]
+        [--blur 30] [--preview]
         [--out FILE] [--frames DIR]
 
 `<folder>` holds `source.mp4` + `info.json` (and `transcript.json` for captions). Prints the
@@ -41,7 +42,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--end", type=float, required=True)
     parser.add_argument("--title", default="")
     parser.add_argument("--style", choices=["pop", "karaoke", "boxed"], default="pop")
-    parser.add_argument("--crop", choices=["auto", "face", "full"], default="auto")
+    parser.add_argument(
+        "--crop", choices=["auto", "face", "full", "facecam", "center"], default="auto"
+    )
+    parser.add_argument("--gaming", action="store_true", help="treat as a gaming video (D-052)")
     parser.add_argument("--blur", type=int, default=30)
     parser.add_argument("--preview", action="store_true")
     parser.add_argument(
@@ -65,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     ]
     spec = ClipSpec(
         start_s=args.start, end_s=args.end, title=args.title, show_title=bool(args.title),
-        style=args.style, crop=args.crop, blur=args.blur, words=words,
+        style=args.style, crop=args.crop, blur=args.blur, words=words, gaming=args.gaming,
     )  # fmt: skip
     source = SourceVideo(folder / SOURCE_FILE_NAME, info.probed_duration_s, info.width, info.height)
     quality: Quality = "preview" if args.preview else "final"
@@ -87,7 +91,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     crop = result.crop
-    print(f"crop: mode={crop.mode} face_ratio={crop.face_ratio} warning={crop.warning}")
+    print(
+        f"crop: mode={crop.mode} face_ratio={crop.face_ratio} cam={crop.cam} warning={crop.warning}"
+    )
     print(f"words: {len(words)}; output: {out} ({out.stat().st_size} bytes); thumbnail {thumb}")
     print(
         f"streams: {streams.width}x{streams.height} @ {streams.fps}, video {streams.video_s:.3f} s,"

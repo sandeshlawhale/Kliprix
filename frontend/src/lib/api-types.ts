@@ -720,7 +720,7 @@ export interface components {
             /** Caption Language */
             caption_language?: ("en" | "hinglish") | null;
             /** Crop Mode */
-            crop_mode?: ("auto" | "face" | "full") | null;
+            crop_mode?: ("auto" | "face" | "full" | "facecam" | "center") | null;
             /** Blur */
             blur?: number | null;
             /** Start S */
@@ -808,7 +808,7 @@ export interface components {
              * Crop Mode
              * @enum {string}
              */
-            crop_mode: "auto" | "face" | "full";
+            crop_mode: "auto" | "face" | "full" | "facecam" | "center";
             /** Blur */
             blur: number;
             /** Start S */
@@ -1100,7 +1100,7 @@ export interface components {
              * Crop Mode
              * @enum {string}
              */
-            crop_mode: "auto" | "face" | "full";
+            crop_mode: "auto" | "face" | "full" | "facecam" | "center";
             /** Show Title */
             show_title: boolean;
         };
@@ -1117,7 +1117,7 @@ export interface components {
             /** Blur */
             blur?: number | null;
             /** Crop Mode */
-            crop_mode?: ("auto" | "face" | "full") | null;
+            crop_mode?: ("auto" | "face" | "full" | "facecam" | "center") | null;
             /** Show Title */
             show_title?: boolean | null;
         };
