@@ -229,8 +229,20 @@ function Player({
             className="bg-muted aspect-[9/16] h-full max-w-[min(420px,40vw)] rounded-xl object-contain"
           />
         ) : (
-          <div className="bg-muted text-muted-foreground flex aspect-[9/16] h-full max-w-[min(420px,40vw)] items-center justify-center rounded-xl p-6 text-center text-sm">
-            {busy ? "Rendering…" : "No rendered video yet. Make a preview to see your changes."}
+          // A plain box gets its width from its height only after the grid sized the column,
+          // so it spilled over the side panel. An empty SVG with the video's own 1080x1920 size
+          // sizes the column exactly like the <video>.
+          <div className="relative h-full">
+            <svg
+              viewBox="0 0 9 16"
+              width={1080}
+              height={1920}
+              className="block h-full w-auto max-w-[min(420px,40vw)]"
+              aria-hidden
+            />
+            <div className="bg-muted text-muted-foreground absolute inset-0 flex items-center justify-center rounded-xl p-6 text-center text-sm">
+              {busy ? "Rendering…" : "No rendered video yet. Make a preview to see your changes."}
+            </div>
           </div>
         )}
         {kind && overlay}
