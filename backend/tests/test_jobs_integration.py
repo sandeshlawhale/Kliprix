@@ -357,10 +357,21 @@ def test_more_clips_reuse_the_download(config: AppConfig, media: Path) -> None:
         video = wait_for(client, batch_id, _all_rendered(1))["videos"][0]
         assert video["can_add_clips"] is True
         first = video["clips"][0]
+        # A newer batch is on top of the history until More clips moves the old one up (D-055).
+        newer = client.post("/api/batches", json={"urls": [url("ddddddddddd")]}).json()["id"]
+        wait_for(client, newer, finished)
+        history = client.get("/api/batches").json()["items"]
+        assert [item["id"] for item in history[:2]] == [newer, batch_id]
+        assert not any(item["working"] for item in history)
         downloads = source.downloads
         queued = client.post(f"/api/videos/{video['id']}/more-clips", json={"count": 1})
         assert queued.status_code == 202
+        top = client.get("/api/batches").json()["items"][0]
+        assert top["id"] == batch_id
+        assert top["working"] is True
+        assert top["last_activity_at"] > top["created_at"]
         batch = wait_for(client, batch_id, _all_rendered(2))
+        assert client.get("/api/batches").json()["items"][0]["working"] is False
     video = batch["videos"][0]
     assert [clip["index"] for clip in video["clips"]] == [0, 1]
     new = video["clips"][1]

@@ -12,7 +12,8 @@ import {
   patchFrom,
   playedLength,
   playedParts,
-  wordLines,
+  keptWords,
+  wordAt,
 } from "@/lib/clip-edit";
 
 function clip(): Clip {
@@ -82,7 +83,7 @@ describe("clip editor logic", () => {
     ]);
   });
 
-  it("validates bounds, length and empty words", () => {
+  it("validates bounds and length", () => {
     const c = clip();
     expect(draftErrors({ ...draftFrom(c), end_s: 700 }, c)).toContain(
       "Trim must stay between 0 s and 600 s.",
@@ -95,7 +96,7 @@ describe("clip editor logic", () => {
     );
     const empty = draftFrom(c);
     empty.words[0] = { ...empty.words[0]!, text: "  " };
-    expect(draftErrors(empty, c)).toContain("Caption words cannot be empty.");
+    expect(draftErrors(empty, c)).toEqual([]);
     expect(draftErrors(draftFrom(c), c)).toEqual([]);
   });
 
@@ -149,13 +150,30 @@ describe("clip editor logic", () => {
     ]);
   });
 
-  it("groups words into lines", () => {
-    expect(
-      wordLines(
-        Array.from({ length: 7 }, (_, i) => ({ text: `${i}`, start: i, end: i })),
-        3,
-      ),
-    ).toEqual([[0, 1, 2], [3, 4, 5], [6]]);
+  it("removes cleared or deleted words when saving (D-055)", () => {
+    const c = clip();
+    const draft = draftFrom(c);
+    const second = draft.words[1]!;
+    draft.words[0] = { ...draft.words[0]!, text: " " };
+    expect(patchFrom(draft, c).words).toEqual([
+      { text: second.text, start: second.start, end: second.end },
+      ...c.words.slice(2),
+    ]);
+    const deleted = { ...draftFrom(c), words: draftFrom(c).words.slice(1) };
+    expect(patchFrom(deleted, c).words).toHaveLength(c.words.length - 1);
+    expect(keptWords([{ text: " hi ", start: 0, end: 1 }])).toEqual([
+      { text: "hi", start: 0, end: 1 },
+    ]);
+  });
+
+  it("finds the word playing at a time", () => {
+    const words = [
+      { text: "a", start: 0, end: 0.5 },
+      { text: "b", start: 1, end: 1.4 },
+    ];
+    expect(wordAt(words, 0.2)).toBe(0);
+    expect(wordAt(words, 0.7)).toBe(-1);
+    expect(wordAt(words, 1.39)).toBe(1);
   });
 });
 

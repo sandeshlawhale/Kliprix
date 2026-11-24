@@ -128,6 +128,7 @@ def more_clips(
     video.error_code = None
     video.error_message = None
     batch.status = "queued"
+    repo.touch_batch(batch)
     repo.add_job(db, "video_more_clips", video_id, repo.PRIORITY_USER, {"count": body.count})
     db.commit()
     runner.wake()
@@ -173,6 +174,7 @@ def retry_video(
     video.error_code = None
     video.error_message = None
     batch.status = "queued"
+    repo.touch_batch(batch)
     repo.add_job(db, kind, video_id, repo.PRIORITY_USER, payload)
     db.commit()
     logger.info("video resumed id=%s kind=%s stage=%s", video_id, kind, video.stage)

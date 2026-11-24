@@ -71,15 +71,41 @@ def get_batch(session: Session, batch_id: str) -> BatchRow | None:
 def list_batches(
     session: Session, limit: int, before: tuple[datetime, str] | None
 ) -> list[BatchRow]:
-    """Newest first; `before` = (created_at, id) of the last item already shown."""
-    query = select(BatchRow).order_by(BatchRow.created_at.desc(), BatchRow.id.desc())
+    """Latest activity first (D-055); `before` = (last_activity_at, id) of the last item
+    already shown."""
+    query = select(BatchRow).order_by(BatchRow.last_activity_at.desc(), BatchRow.id.desc())
     if before is not None:
-        created, batch_id = before
+        at, batch_id = before
         query = query.where(
-            (BatchRow.created_at < created)
-            | ((BatchRow.created_at == created) & (BatchRow.id < batch_id))
+            (BatchRow.last_activity_at < at)
+            | ((BatchRow.last_activity_at == at) & (BatchRow.id < batch_id))
         )
     return list(session.scalars(query.limit(limit)))
+
+
+def touch_batch(batch: BatchRow) -> None:
+    """The user started new work in this batch (More clips, Resume): it moves to the top
+    of the history (D-055)."""
+    batch.last_activity_at = utc_now()
+
+
+def working_batches(session: Session, batch_ids: Sequence[str]) -> set[str]:
+    """The batches with a queued or running job for one of their videos or clips (paused
+    jobs do not count): the sidebar marks them as working (D-055)."""
+    if not batch_ids:
+        return set()
+    active = JobRow.status.in_(("queued", "running"))
+    by_video = (
+        select(VideoRow.batch_id)
+        .join(JobRow, JobRow.ref_id == VideoRow.id)
+        .where(active, VideoRow.batch_id.in_(batch_ids))
+    )
+    by_clip = (
+        select(ClipRow.batch_id)
+        .join(JobRow, JobRow.ref_id == ClipRow.id)
+        .where(active, ClipRow.batch_id.in_(batch_ids))
+    )
+    return set(session.scalars(by_video.union(by_clip)))
 
 
 def batch_counts(session: Session, batch_ids: Sequence[str]) -> dict[str, tuple[int, int]]:

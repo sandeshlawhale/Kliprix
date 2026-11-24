@@ -32,7 +32,7 @@ Messages are human-readable and never contain keys, tokens, or full file-system 
 
 ## Batches (history)
 - `POST /api/batches` body `{ urls: string[] (1–3), style?: StyleOverrides }` → `201 { id }`. Requires LLM session, else `LLM_NOT_CONFIGURED`. Snapshots the style into the batch.
-- `GET /api/batches?cursor=&limit=` → `{ items: [BatchSummary], next_cursor }` where `BatchSummary = { id, created_at, status, title, video_count, clip_count }`
+- `GET /api/batches?cursor=&limit=` → `{ items: [BatchSummary], next_cursor }` where `BatchSummary = { id, created_at, last_activity_at, status, working, title, video_count, clip_count }`, ordered by `last_activity_at` (newest first). `last_activity_at` = creation, or the last More clips / Resume of one of its videos; `working` = a job of one of its videos or clips is queued or running (paused jobs do not count) (D-055)
 - `GET /api/batches/{id}` → `Batch = { id, created_at, status, style, videos: [Video] }`
   - `Video = { id, url, platform, title, channel, duration_s, thumbnail_url, has_chat, status, stage, progress, error?, note?, can_add_clips, add_clips_blocked?, checkpoints: [Checkpoint], clips: [ClipSummary] }` (`can_add_clips` / `add_clips_blocked`: whether more clips can start now, else why, D-034)
   - `Checkpoint = { key: "download"|"chat"|"signals"|"candidates"|"transcribe"|"select"|"edit", label, state: "pending"|"running"|"paused"|"done"|"skipped"|"failed", detail?: string, engine?: string }` (`engine`: Transcribe step only, the engine that runs, D-030 temporary) (`detail` examples: "skipped, no chat replay", "2/5", or the error message). Always returned in the fixed order above. `paused` (D-049): in a paused batch, the step that was stopped or is still running.

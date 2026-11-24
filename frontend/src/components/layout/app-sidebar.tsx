@@ -39,7 +39,9 @@ export function AppSidebar() {
   const pathname = usePathname();
   const history = useBatchHistory();
   const [toDelete, setToDelete] = useState<BatchSummary | null>(null);
-  const items = history.data?.pages.flatMap((page) => page.items) ?? [];
+  // Pages are cut by latest activity, so a batch that moved up can be in two pages: keep
+  // its first (newest) entry (D-055).
+  const items = uniqueById(history.data?.pages.flatMap((page) => page.items) ?? []);
 
   return (
     // Sticky so it stays put while the main area scrolls.
@@ -79,7 +81,7 @@ export function AppSidebar() {
           <p className="text-muted-foreground px-4 py-2 text-sm">No generations yet</p>
         )}
         {GROUPS.map((group) => {
-          const groupItems = items.filter((item) => historyGroup(item.created_at) === group);
+          const groupItems = items.filter((item) => historyGroup(item.last_activity_at) === group);
           if (groupItems.length === 0) return null;
           return (
             <SidebarGroup key={group}>
@@ -97,9 +99,12 @@ export function AppSidebar() {
                           className="before:bg-brand relative h-auto flex-col items-start gap-0.5 py-2 before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:opacity-0 before:transition-opacity data-active:before:opacity-100"
                         >
                           <Link href={href}>
-                            <span className="w-full truncate">
-                              {item.title}
-                              {more}
+                            <span className="flex w-full items-center gap-2">
+                              <span className="min-w-0 flex-1 truncate">
+                                {item.title}
+                                {more}
+                              </span>
+                              {item.working && <WorkingDot />}
                             </span>
                             <span className="text-muted-foreground text-xs">
                               {plural(item.video_count, "video")} ·{" "}
@@ -150,4 +155,20 @@ export function AppSidebar() {
       <DeleteBatchDialog batch={toDelete} onClose={() => setToDelete(null)} />
     </Sidebar>
   );
+}
+
+/** A batch with a download, clip pick or render queued or running (D-055). */
+function WorkingDot() {
+  return (
+    <span className="relative flex size-2 shrink-0" title="Working on clips">
+      <span className="bg-brand absolute inline-flex size-full animate-ping rounded-full opacity-60" />
+      <span className="bg-brand relative inline-flex size-2 rounded-full" />
+      <span className="sr-only">(working)</span>
+    </span>
+  );
+}
+
+function uniqueById(items: BatchSummary[]): BatchSummary[] {
+  const seen = new Set<string>();
+  return items.filter((item) => !seen.has(item.id) && Boolean(seen.add(item.id)));
 }

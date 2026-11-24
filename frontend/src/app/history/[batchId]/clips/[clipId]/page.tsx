@@ -100,6 +100,11 @@ function Workspace({ clip, view }: { clip: Clip; view: View }) {
             draft={draft}
             setDraft={setDraft}
             videoTime={() => video.current?.currentTime ?? time}
+            time={time}
+            onSeek={(to) => {
+              if (video.current) video.current.currentTime = to;
+              setTime(to);
+            }}
             selectedBox={selectedBox}
             onSelectBox={(index) => {
               setSelectedBox(index);

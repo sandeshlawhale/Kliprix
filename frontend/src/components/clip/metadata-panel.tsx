@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Copy } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -13,8 +13,8 @@ import { invalidateBatch, keys } from "@/hooks/queries";
 import { errorMessage, patchClip, type Clip, type ClipPatch } from "@/lib/api";
 import { TITLE_MAX } from "@/lib/clip-edit";
 
-type Field =
-  "title" | "youtube_title" | "youtube_description" | "hashtags" | "linkedin_post" | "reason";
+// The LinkedIn post is still generated and stored, but no longer shown (D-055).
+type Field = "title" | "youtube_title" | "youtube_description" | "hashtags" | "reason";
 
 const FIELDS: { key: Field; label: string; multiline: boolean; note?: string }[] = [
   {
@@ -26,7 +26,6 @@ const FIELDS: { key: Field; label: string; multiline: boolean; note?: string }[]
   { key: "youtube_title", label: "YouTube title", multiline: false },
   { key: "youtube_description", label: "YouTube description", multiline: true },
   { key: "hashtags", label: "Hashtags", multiline: false },
-  { key: "linkedin_post", label: "LinkedIn post", multiline: true },
   { key: "reason", label: "Why this moment", multiline: true },
 ];
 
@@ -39,7 +38,8 @@ function patchOf(key: Field, value: string): ClipPatch {
   return { [key]: value };
 }
 
-/** Metadata with Copy buttons. Text saves when a field loses focus (docs/02 C step 3). */
+/** Metadata fields, each with a copy icon in its top-right corner that shows on hover
+ * (D-055). Text saves when a field loses focus (docs/02 C step 3). */
 export function MetadataPanel({ clip }: { clip: Clip }) {
   const client = useQueryClient();
   const [drafts, setDrafts] = useState<Partial<Record<Field, string>>>({});
@@ -76,26 +76,19 @@ export function MetadataPanel({ clip }: { clip: Clip }) {
         };
         return (
           <div key={key} className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor={id}>{label}</Label>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  navigator.clipboard.writeText(value).then(
-                    () => toast.success(`${label} copied`),
-                    () => toast.error("Copy failed"),
-                  )
-                }
-              >
-                <Copy aria-hidden /> Copy
-              </Button>
+            <Label htmlFor={id}>{label}</Label>
+            <div className="group relative">
+              {multiline ? (
+                <Textarea rows={3} className="pr-10" {...props} />
+              ) : (
+                <Input
+                  maxLength={key === "title" ? TITLE_MAX : undefined}
+                  className="pr-10"
+                  {...props}
+                />
+              )}
+              <CopyButton label={label} value={value} />
             </div>
-            {multiline ? (
-              <Textarea rows={key === "linkedin_post" ? 5 : 3} {...props} />
-            ) : (
-              <Input maxLength={key === "title" ? TITLE_MAX : undefined} {...props} />
-            )}
             {key === "title" && (
               <span className="text-muted-foreground text-xs">
                 {value.length}/{TITLE_MAX} · {note}
@@ -105,5 +98,33 @@ export function MetadataPanel({ clip }: { clip: Clip }) {
         );
       })}
     </div>
+  );
+}
+
+function CopyButton({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label={`Copy ${label}`}
+      title="Copy"
+      // Shown on hover or keyboard focus of the field; never takes focus from typing.
+      className="text-muted-foreground hover:text-foreground absolute top-1 right-1 size-7 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={() =>
+        navigator.clipboard.writeText(value).then(
+          () => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+            toast.success(`${label} copied`);
+          },
+          () => toast.error("Copy failed"),
+        )
+      }
+    >
+      {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+    </Button>
   );
 }

@@ -64,7 +64,11 @@ export function useBatchHistory() {
     queryFn: ({ pageParam }) => api.listBatches(pageParam),
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.next_cursor,
-    refetchInterval: 10_000,
+    // Faster while a batch works, so its sidebar marker clears soon after it finishes.
+    refetchInterval: (query) =>
+      query.state.data?.pages.some((page) => page.items.some((item) => item.working))
+        ? 3_000
+        : 10_000,
   });
 }
 

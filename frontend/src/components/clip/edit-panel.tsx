@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, Trash2, TriangleAlert } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import { CaptionTimeline } from "@/components/clip/caption-timeline";
 import { CaptionStylePicker } from "@/components/style/caption-style-picker";
 import { invalidateBatch, keys } from "@/hooks/queries";
 import { errorMessage, patchClip, type Clip } from "@/lib/api";
@@ -23,10 +24,9 @@ import {
   patchFrom,
   playedLength,
   playedParts,
-  wordLines,
   type EditDraft,
 } from "@/lib/clip-edit";
-import { clock } from "@/lib/format";
+import { hms, parseTime } from "@/lib/format";
 
 /** Video-affecting edits are collected here and saved together with "Apply changes"; the
  * clip is then marked edited and needs a new preview (edits never re-render silently).
@@ -36,6 +36,8 @@ export function EditPanel({
   draft,
   setDraft,
   videoTime,
+  time,
+  onSeek,
   selectedBox,
   onSelectBox,
 }: {
@@ -43,6 +45,9 @@ export function EditPanel({
   draft: EditDraft;
   setDraft: Dispatch<SetStateAction<EditDraft>>;
   videoTime: () => number;
+  /** The player's current time (clip seconds) and a way to jump there. */
+  time: number;
+  onSeek: (time: number) => void;
   selectedBox: number | null;
   onSelectBox: (index: number | null) => void;
 }) {
@@ -89,25 +94,27 @@ export function EditPanel({
           aria-label="Trim range"
         />
         <div className="flex flex-wrap items-end gap-4">
-          <NumberField
-            label="Start (s)"
+          <TimeField
+            label="Start"
             id="trim-start"
             value={draft.start_s}
             onChange={(v) => set("start_s", v)}
           />
-          <NumberField
-            label="End (s)"
+          <TimeField
+            label="End"
             id="trim-end"
             value={draft.end_s}
             onChange={(v) => set("end_s", v)}
           />
           <span className="text-muted-foreground pb-2 text-sm">
-            Length <span className="font-mono">{length.toFixed(1)} s</span> · source{" "}
-            {clock(draft.start_s)}–{clock(draft.end_s)}
+            Length <span className="font-mono">{length.toFixed(1)} s</span>
           </span>
         </div>
         <p className="text-muted-foreground text-xs">
-          Available range {min.toFixed(1)}–{max.toFixed(1)} s
+          Times are positions in the source video (hh:mm:ss). Available range{" "}
+          <span className="font-mono">
+            {hms(min)}–{hms(max)}
+          </span>
           {max - min < 120
             ? " (the source video was deleted; trimming is limited to the saved handles)"
             : ""}
@@ -131,7 +138,7 @@ export function EditPanel({
             <p className="text-muted-foreground text-xs">
               {draft.montage && played.length > 1
                 ? `Plays ${played.length} parts and skips ${skipped.toFixed(0)} s where nothing is said or happens: ` +
-                  played.map(([start, end]) => `${clock(start)}–${clock(end)}`).join(", ") +
+                  played.map(([start, end]) => `${hms(start)}–${hms(end)}`).join(", ") +
                   "."
                 : "Plays the whole range without skipping."}
             </p>
@@ -149,39 +156,18 @@ export function EditPanel({
 
       <section className="flex flex-col gap-3">
         <h3 className="font-medium">Caption text</h3>
-        {draft.words.length === 0 ? (
+        {clip.words.length === 0 ? (
           <p className="text-muted-foreground text-sm">
             No speech was found in this clip, so it has no captions.
           </p>
         ) : (
-          <div className="flex max-h-72 flex-col gap-2 overflow-y-auto rounded-md border p-2">
-            {wordLines(draft.words).map((line) => (
-              <div key={line[0]} className="flex flex-wrap items-center gap-1">
-                <span className="text-muted-foreground w-12 font-mono text-xs">
-                  {draft.words[line[0] ?? 0]?.start.toFixed(1)}s
-                </span>
-                {line.map((index) => (
-                  <Input
-                    key={index}
-                    aria-label={`Caption word ${index + 1}`}
-                    value={draft.words[index]?.text ?? ""}
-                    onChange={(event) =>
-                      set(
-                        "words",
-                        draft.words.map((word, i) =>
-                          i === index ? { ...word, text: event.target.value } : word,
-                        ),
-                      )
-                    }
-                    className="h-7 w-auto min-w-0 px-1.5 text-sm"
-                    style={{
-                      width: `${Math.max(3, (draft.words[index]?.text.length ?? 0) + 2)}ch`,
-                    }}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
+          <CaptionTimeline
+            words={draft.words}
+            onChange={(words) => set("words", words)}
+            length={length}
+            time={time}
+            onSeek={onSeek}
+          />
         )}
       </section>
 
@@ -328,6 +314,48 @@ function BlurBoxes({
         </Button>
       </div>
     </section>
+  );
+}
+
+/** A source position typed as hh:mm:ss (also mm:ss or seconds); applied on Enter or when
+ * the field loses focus, so typing is not interrupted (D-055). */
+function TimeField({
+  label,
+  id,
+  value,
+  onChange,
+}: {
+  label: string;
+  id: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const [text, setText] = useState<string | null>(null);
+  const invalid = text !== null && parseTime(text) === null;
+  const commit = () => {
+    if (text === null) return;
+    const parsed = parseTime(text);
+    if (parsed !== null) onChange(parsed);
+    setText(null);
+  };
+  return (
+    <div className="flex flex-col gap-1">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        inputMode="numeric"
+        placeholder="hh:mm:ss"
+        aria-invalid={invalid}
+        className="w-28 font-mono"
+        value={text ?? (Number.isFinite(value) ? hms(value) : "")}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit();
+          if (event.key === "Escape") setText(null);
+        }}
+      />
+    </div>
   );
 }
 

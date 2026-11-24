@@ -13,7 +13,7 @@ Above every page a top bar of fixed height (D-038): the storage warning pill on 
 ### Sidebar (top to bottom)
 1. App name (text only).
 2. **+ New clips** button → `/` (clears the Home form).
-3. **History** list (scrollable). Item = first video title (1 line, truncated) + small text "3 videos · 12 clips". Active item highlighted. Right-click or "…" menu: Delete. Empty state: "No generations yet".
+3. **History** list (scrollable). Item = first video title (1 line, truncated) + small text "3 videos · 12 clips". Active item highlighted. Ordered by latest activity: a batch moves to the top (and into "Today") when it is created, gets More clips, or a failed video is resumed. A batch with a queued or running job (pipeline, More clips, render, preview, export) shows a small pulsing dot after its title (D-055). Right-click or "…" menu: Delete. Empty state: "No generations yet".
 4. Bottom **account area** (a button showing a small avatar circle with "L" and the text "Local workspace"). Clicking opens a menu **above** it with:
    - Edit video style → `/style`
    - Configure API → `/configure-api`
@@ -60,7 +60,7 @@ States: empty, inspecting, inspect-failed (error under the field), ready, starti
   - Each row shows a state icon: ☐ pending (muted), a small spinner while running (text slightly brighter), ✓ done, – skipped (e.g. "Fetch chat replay" when no chat exists, with the text "skipped, no chat replay"), ✕ failed (red, with the error message under it).
   - A step becomes ✓ only when the backend reports it finished. Never tick on a timer.
   - When everything for that video is finished (all steps done or skipped and all clips Done), the list **fades out and disappears**. If any step or clip failed, the list stays visible so the user sees what failed.
-  - Collapsed to a single line summary ("4 of 7 steps done") is NOT used in v1; always show the full list while processing.
+  - Only the current step is shown (the running, paused or failed one; between steps the next one), with its percentage, hint and "step N of 7". Hovering it shows a down arrow next to it; clicking the arrow shows all 7 steps, clicking again shows only the current one. The list moves to the next step as soon as the backend starts it (D-055).
 - Clip card: 9:16 thumbnail (real frame, or skeleton while not ready), on-video title, duration, status badge: **Queued / Processing (stage, %) / Done / Failed / Edited**. Failed shows the error and a Retry button. Done card click → clip detail.
 - Live updates via SSE; if SSE disconnects, fall back to polling every 3 s.
 - Queued clips show their position in the queue.
@@ -69,8 +69,8 @@ States: empty, inspecting, inspect-failed (error under the field), ready, starti
 Two columns.
 - **Left:** 9:16 video player (preview if available else export, else raw-cut message). Under it: Preview button, Export button, Download button (enabled only after export), status text.
 - **Right (tabs):**
-  - **Metadata:** on-video title, YouTube title, YouTube description, hashtags, LinkedIn post, "Why this moment". Each with a Copy button and editable text.
-  - **Edit:** trim start/end (two number inputs + slider, shows resulting length, warns outside 25–90 s; for a montage clip (D-051) a "Skip the quiet gaps (montage)" switch lists the parts that play and the seconds skipped, and the length is the played length), caption style (3 options with small visual examples), caption text editor (list of words/phrases, editable inline), background blur (slider), crop mode (Auto / Face / Full frame).
+  - **Metadata:** on-video title, YouTube title, YouTube description, hashtags, "Why this moment". Each is editable text with a copy icon in the field's top-right corner, shown while the field is hovered or focused. The LinkedIn post is not shown (D-055).
+  - **Edit:** trim start/end (two hh:mm:ss inputs, positions in the source video, + slider, shows resulting length, warns outside 25–90 s; for a montage clip (D-051) a "Skip the quiet gaps (montage)" switch lists the parts that play and the seconds skipped, and the length is the played length), caption style (3 options with small visual examples), caption text timeline (D-055: words on a time track in two rows with a ruler, zoom, and a playhead that follows the video; clicking a word jumps the video there and opens it for retyping; **Remove word**, the Delete key, or clearing its text removes it from the captions), background blur (slider), crop mode (Auto / Face / Full frame).
 - Unsaved/needs-preview state clearly shown. Edits never silently re-render.
 
 ## Edit video style `/style`

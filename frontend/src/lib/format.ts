@@ -27,6 +27,23 @@ export function clock(seconds: number): string {
   return `${h > 0 ? `${h}:` : ""}${mm}:${String(s).padStart(2, "0")}`;
 }
 
+/** 754.2 -> "00:12:34" (always hh:mm:ss, for source positions in the trim). */
+export function hms(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds + 1e-6));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(Math.floor(whole / 3600))}:${pad(Math.floor((whole % 3600) / 60))}:${pad(whole % 60)}`;
+}
+
+/** "1:02:05", "12:34.5", "75" -> seconds; null when it is not a time. */
+export function parseTime(text: string): number | null {
+  const parts = text.trim().split(":");
+  if (parts.length > 3 || parts.some((part) => !/^\d+(\.\d+)?$/.test(part))) return null;
+  const numbers = parts.map(Number);
+  if (numbers.slice(1).some((n) => n >= 60)) return null;
+  if (numbers.slice(0, -1).some((n) => !Number.isInteger(n))) return null;
+  return numbers.reduce((total, n) => total * 60 + n, 0);
+}
+
 export function localDateTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }

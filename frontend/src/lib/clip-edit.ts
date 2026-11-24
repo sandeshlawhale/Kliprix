@@ -75,7 +75,6 @@ export function draftErrors(draft: EditDraft, clip: Clip): string[] {
   if (length < EDIT_MIN_S || length > EDIT_MAX_S) {
     errors.push(`A clip must be ${EDIT_MIN_S}–${EDIT_MAX_S} s long.`);
   }
-  if (draft.words.some((word) => !word.text.trim())) errors.push("Caption words cannot be empty.");
   if (draft.blur_boxes.some((box) => !(box.start >= 0 && box.end > box.start))) {
     errors.push("Each blur box must end after it starts.");
   }
@@ -117,16 +116,12 @@ export function patchFrom(draft: EditDraft, clip: Clip): ClipPatch {
   if (draft.crop_mode !== clip.edit.crop_mode) patch.crop_mode = draft.crop_mode;
   if (draft.blur !== clip.edit.blur) patch.blur = draft.blur;
   if (draft.montage !== clip.edit.montage) patch.montage = draft.montage;
+  // A word cleared to nothing is removed from the captions (D-055).
+  const words = keptWords(draft.words);
   const wordsChanged =
-    draft.words.length !== clip.words.length ||
-    draft.words.some((word, index) => word.text.trim() !== clip.words[index]?.text);
-  if (wordsChanged) {
-    patch.words = draft.words.map((word) => ({
-      text: word.text.trim(),
-      start: word.start,
-      end: word.end,
-    }));
-  }
+    words.length !== clip.words.length ||
+    words.some((word, index) => word.text !== clip.words[index]?.text);
+  if (wordsChanged) patch.words = words;
   const boxes = draft.blur_boxes.map(roundBox);
   if (JSON.stringify(boxes) !== JSON.stringify(clip.edit.blur_boxes.map(roundBox))) {
     patch.blur_boxes = boxes;
@@ -138,14 +133,18 @@ export function isDirty(draft: EditDraft, clip: Clip): boolean {
   return Object.keys(patchFrom(draft, clip)).length > 0;
 }
 
-/** Group words into short lines for the caption text editor. */
-export function wordLines(words: Word[], perLine = 6): number[][] {
-  const lines: number[][] = [];
-  words.forEach((_, index) => {
-    if (index % perLine === 0) lines.push([]);
-    lines[lines.length - 1]?.push(index);
-  });
-  return lines;
+/** The caption words to save: trimmed, without the ones cleared to nothing (D-055). */
+export function keptWords(words: Word[]): Word[] {
+  return words
+    .map((word) => ({ text: word.text.trim(), start: word.start, end: word.end }))
+    .filter((word) => word.text.length > 0);
+}
+
+/** Index of the word playing at `time` (clip seconds), or -1 between words. */
+export function wordAt(words: Word[], time: number): number {
+  return words.findIndex(
+    (word) => time >= word.start && time < Math.max(word.end, word.start + 0.05),
+  );
 }
 
 /** A new box in the middle of the video from `at_s` for 3 s (cut at the clip end). */

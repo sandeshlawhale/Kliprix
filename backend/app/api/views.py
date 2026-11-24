@@ -91,7 +91,9 @@ class Batch(BaseModel):
 class BatchSummary(BaseModel):
     id: str
     created_at: datetime
+    last_activity_at: datetime
     status: str
+    working: bool
     title: str
     video_count: int
     clip_count: int

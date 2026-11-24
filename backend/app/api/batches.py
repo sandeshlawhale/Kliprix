@@ -68,8 +68,8 @@ class BatchPage(BaseModel):
     next_cursor: str | None
 
 
-def _encode_cursor(created_at: datetime, batch_id: str) -> str:
-    raw = f"{created_at.isoformat()}|{batch_id}".encode()
+def _encode_cursor(at: datetime, batch_id: str) -> str:
+    raw = f"{at.isoformat()}|{batch_id}".encode()
     return base64.urlsafe_b64encode(raw).decode("ascii")
 
 
@@ -120,11 +120,12 @@ def list_batches(
     cursor: str | None = None,
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE)] = DEFAULT_PAGE,
 ) -> BatchPage:
-    """History, newest first, with an opaque cursor."""
+    """History, latest activity first (D-055), with an opaque cursor."""
     before = _decode_cursor(cursor) if cursor else None
     rows = repo.list_batches(db, limit + 1, before)
     page, more = rows[:limit], len(rows) > limit
     counts = repo.batch_counts(db, [b.id for b in page])
+    working = repo.working_batches(db, [b.id for b in page])
     items = []
     for batch in page:
         videos = repo.videos_of(db, batch.id)
@@ -138,13 +139,15 @@ def list_batches(
             BatchSummary(
                 id=batch.id,
                 created_at=batch.created_at,
+                last_activity_at=batch.last_activity_at,
                 status=batch.status,
+                working=batch.id in working,
                 title=title,
                 video_count=video_count,
                 clip_count=clip_count,
             )
         )
-    next_cursor = _encode_cursor(page[-1].created_at, page[-1].id) if more and page else None
+    next_cursor = _encode_cursor(page[-1].last_activity_at, page[-1].id) if more and page else None
     return BatchPage(items=items, next_cursor=next_cursor)
 
 

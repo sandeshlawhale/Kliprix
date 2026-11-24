@@ -301,7 +301,7 @@ export interface paths {
         };
         /**
          * List Batches
-         * @description History, newest first, with an opaque cursor.
+         * @description History, latest activity first (D-055), with an opaque cursor.
          */
         get: operations["list_batches_api_batches_get"];
         put?: never;
@@ -640,8 +640,15 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Last Activity At
+             * Format: date-time
+             */
+            last_activity_at: string;
             /** Status */
             status: string;
+            /** Working */
+            working: boolean;
             /** Title */
             title: string;
             /** Video Count */

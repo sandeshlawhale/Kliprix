@@ -25,7 +25,7 @@ settings(key TEXT PK, value_json TEXT)
 llm_credentials(id INT PK (always 1), provider, model, base_url, api_key_enc TEXT, saved_at)
   api_key_enc: Fernet token; the encryption key is DATA_DIR/secret.key (DPAPI-wrapped on Windows) (D-053)
 
-batches(id PK, created_at, status, title, style_json)
+batches(id PK, created_at, status, title, style_json, last_activity_at)   (last_activity_at: D-055, set on create, More clips and Resume; history order)
   status: queued | running | paused | done | partial | failed | cancelled   (paused: D-049)
 
 videos(id PK, batch_id FK, position INT, url, platform, source_id, title, channel,

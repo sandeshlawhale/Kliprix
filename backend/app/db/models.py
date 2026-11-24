@@ -77,6 +77,11 @@ class BatchRow(Base):
     status: Mapped[str] = mapped_column(String)
     title: Mapped[str | None] = mapped_column(String)
     style_json: Mapped[str] = mapped_column(Text)
+    # When the user last started work in this batch (created, More clips, Resume). The
+    # sidebar history is ordered by it, newest first (D-055).
+    last_activity_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, default=utc_now, server_default="1970-01-01 00:00:00"
+    )
 
 
 class VideoRow(Base):

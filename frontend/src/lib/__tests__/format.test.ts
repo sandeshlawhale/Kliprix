@@ -1,9 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { bytes, clock, historyGroup, plural, styleSummary } from "@/lib/format";
+import { bytes, clock, historyGroup, hms, parseTime, plural, styleSummary } from "@/lib/format";
 import { isSupportedLink } from "@/lib/links";
 
 describe("format helpers", () => {
+  it("formats and reads hh:mm:ss (D-055)", () => {
+    expect(hms(754.2)).toBe("00:12:34");
+    expect(hms(3725)).toBe("01:02:05");
+    expect(hms(-3)).toBe("00:00:00");
+    expect(parseTime("01:02:05")).toBe(3725);
+    expect(parseTime("12:34.5")).toBe(754.5);
+    expect(parseTime(" 75 ")).toBe(75);
+    expect(parseTime("1:75")).toBeNull();
+    expect(parseTime("1.5:10")).toBeNull();
+    expect(parseTime("abc")).toBeNull();
+    expect(parseTime("")).toBeNull();
+  });
+
   it("formats clocks and sizes", () => {
     expect(clock(754.2)).toBe("12:34");
     expect(clock(3725)).toBe("1:02:05");
