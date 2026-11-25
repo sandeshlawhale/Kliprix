@@ -447,7 +447,7 @@ function Player({
           viewBox="0 0 9 16"
           width={1080}
           height={1920}
-          className="block h-full w-auto max-w-[min(420px,40vw)]"
+          className="block h-full w-auto max-w-[min(300px,26vw)]"
           aria-hidden
         />
         {kind ? (
