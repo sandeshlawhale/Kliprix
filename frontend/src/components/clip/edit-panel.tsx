@@ -1,7 +1,8 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Trash2, TriangleAlert } from "lucide-react";
+import { ChevronLeft, ChevronRight, Scissors, Trash2, TriangleAlert } from "lucide-react";
 import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { toast } from "sonner";
 
 import { EditTimeline, type Selection } from "@/components/clip/edit-timeline";
 import { CaptionStylePicker } from "@/components/style/caption-style-picker";
@@ -13,12 +14,21 @@ import { Switch } from "@/components/ui/switch";
 import { type BlurBox, type Clip, type Word } from "@/lib/api";
 import {
   draftErrors,
+  draftEnd,
+  draftStart,
   lengthWarning,
   MAX_BLUR_BOXES,
+  MIN_PART_S,
+  movePartEdge,
   newBlurBox,
+  normalized,
   playedLength,
-  playedParts,
+  splitAt,
   timelineParts,
+  withMontage,
+  withoutPart,
+  withTrim,
+  type Part,
   TITLE_MAX,
   type EditDraft,
 } from "@/lib/clip-edit";
@@ -50,7 +60,7 @@ export function EditPanel({
 }) {
   const errors = draftErrors(draft, clip);
   const canDraw = clip.has_preview || clip.has_export;
-  const length = playedLength(draft, clip.edit.parts);
+  const length = playedLength(draft);
 
   const setBoxes = (boxes: BlurBox[]) => setDraft((current) => ({ ...current, blur_boxes: boxes }));
   const setWords = (words: Word[]) => setDraft((current) => ({ ...current, words }));
@@ -71,9 +81,35 @@ export function EditPanel({
     setBoxes([...draft.blur_boxes, box]);
     onSelect({ kind: "blur", index: draft.blur_boxes.length });
   };
+  // Cut tools (D-059): split the part under the playhead, delete a part.
+  const split = () => {
+    const result = splitAt(draft, videoTime());
+    if (!result) {
+      toast.error(`Each piece must stay at least ${MIN_PART_S} s long.`);
+      return;
+    }
+    setDraft(result.draft);
+    onSelect({ kind: "part", index: result.index });
+  };
+  const removePart = (index: number) => {
+    if (draft.parts.length < 2) return;
+    setDraft((current) => withoutPart(current, index));
+    onSelect({ kind: "part", index: Math.max(0, index - 1) });
+  };
+  const setParts = (parts: Part[]) => setDraft((current) => ({ ...current, parts }));
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4">
+    <div
+      className="flex h-full min-h-0 flex-col gap-4"
+      onKeyDown={(event) => {
+        // S splits at the playhead, like video editors; not while typing.
+        const target = event.target as HTMLElement;
+        if (event.key.toLowerCase() !== "s" || event.ctrlKey || event.metaKey) return;
+        if (target.closest("input, textarea, [contenteditable=true]")) return;
+        event.preventDefault();
+        split();
+      }}
+    >
       <section
         aria-label="Selected item"
         className="min-h-0 flex-1 overflow-y-auto rounded-md border p-4"
@@ -91,11 +127,17 @@ export function EditPanel({
           onRemoveBox={removeBox}
           onAddBox={addBox}
           canDraw={canDraw}
+          onSplit={split}
+          onRemovePart={removePart}
         />
       </section>
 
       <EditTimeline
-        parts={timelineParts(draft, clip.edit.parts)}
+        parts={timelineParts(draft)}
+        onPartsChange={setParts}
+        bounds={clip.source_bounds}
+        onSplit={split}
+        onRemovePart={removePart}
         title={draft.title}
         words={draft.words}
         boxes={draft.blur_boxes}
@@ -135,6 +177,8 @@ function Inspector({
   onRemoveBox,
   onAddBox,
   canDraw,
+  onSplit,
+  onRemovePart,
 }: {
   clip: Clip;
   draft: EditDraft;
@@ -148,13 +192,85 @@ function Inspector({
   onRemoveBox: (index: number) => void;
   onAddBox: () => void;
   canDraw: boolean;
+  onSplit: () => void;
+  onRemovePart: (index: number) => void;
 }) {
   const set = <K extends keyof EditDraft>(key: K, value: EditDraft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
   switch (selection.kind) {
     case "video":
-      return <VideoInspector clip={clip} draft={draft} setDraft={setDraft} length={length} />;
+      return (
+        <VideoInspector
+          clip={clip}
+          draft={draft}
+          setDraft={setDraft}
+          length={length}
+          onSplit={onSplit}
+        />
+      );
+
+    case "part": {
+      const index = selection.index;
+      const part = draft.parts[index];
+      if (!part) {
+        return (
+          <VideoInspector
+            clip={clip}
+            draft={draft}
+            setDraft={setDraft}
+            length={length}
+            onSplit={onSplit}
+          />
+        );
+      }
+      const update = (edge: "start" | "end", value: number) => {
+        const delta = value - (edge === "start" ? part[0] : part[1]);
+        setDraft((current) => ({
+          ...current,
+          parts: movePartEdge(current.parts, index, edge, delta, clip.source_bounds),
+        }));
+      };
+      return (
+        <Panel
+          title={`Part ${index + 1} of ${draft.parts.length}`}
+          subtitle={`Plays ${(part[1] - part[0]).toFixed(1)} s of the source. Drag its ends on the timeline to shorten or extend it.`}
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={draft.parts.length < 2}
+              title={draft.parts.length < 2 ? "Split the clip first (S)" : undefined}
+              onClick={() => onRemovePart(index)}
+            >
+              <Trash2 aria-hidden /> Delete part
+            </Button>
+          }
+        >
+          <div className="flex flex-wrap items-end gap-4">
+            <TimeField
+              label="From"
+              id={`part-${index}-start`}
+              value={part[0]}
+              onChange={(v) => update("start", v)}
+            />
+            <TimeField
+              label="To"
+              id={`part-${index}-end`}
+              value={part[1]}
+              onChange={(v) => update("end", v)}
+            />
+            <Button variant="outline" size="sm" className="mb-0.5" onClick={onSplit}>
+              <Scissors aria-hidden /> Split at playhead
+            </Button>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Times are positions in the source video. Captions and blur boxes move to the new timing
+            when you apply.
+          </p>
+        </Panel>
+      );
+    }
 
     case "title":
       return (
@@ -337,58 +453,55 @@ function Inspector({
   }
 }
 
-/** Trim and montage, in source time (the Video track). */
+/** Trim, cut and montage, in source time (the Video track). */
 function VideoInspector({
   clip,
   draft,
   setDraft,
   length,
+  onSplit,
 }: {
   clip: Clip;
   draft: EditDraft;
   setDraft: Dispatch<SetStateAction<EditDraft>>;
   length: number;
+  onSplit: () => void;
 }) {
-  const set = <K extends keyof EditDraft>(key: K, value: EditDraft[K]) =>
-    setDraft((current) => ({ ...current, [key]: value }));
   const { min_start_s: min, max_end_s: max } = clip.source_bounds;
-  const warning = lengthWarning(draft, clip.edit.parts);
-  const hasParts = clip.edit.parts.length > 1;
-  const played = playedParts(draft, clip.edit.parts);
-  const skipped = draft.end_s - draft.start_s - length;
+  const start = draftStart(draft);
+  const end = draftEnd(draft);
+  const warning = lengthWarning(draft);
+  const planned = clip.edit.parts as Part[];
+  const hasPlanned = planned.length > 1;
+  const montage = normalized(draft.parts).length > 1;
+  const skipped = end - start - length;
+  const trim = (from: number, to: number) => setDraft((current) => withTrim(current, from, to));
 
   return (
-    <Panel title="Video" subtitle="Trim the clip. Times are positions in the source video.">
+    <Panel
+      title="Video"
+      subtitle="Trim the clip, or split it at the playhead (S) and delete a part. Times are positions in the source video."
+      action={
+        <Button variant="outline" size="sm" onClick={onSplit}>
+          <Scissors aria-hidden /> Split at playhead
+        </Button>
+      }
+    >
       <Slider
         min={min}
         max={max}
         step={0.1}
         minStepsBetweenThumbs={50}
-        value={[draft.start_s, draft.end_s]}
-        onValueChange={([start, end]) =>
-          setDraft((current) => ({
-            ...current,
-            start_s: start ?? current.start_s,
-            end_s: end ?? current.end_s,
-          }))
-        }
+        value={[start, end]}
+        onValueChange={([from, to]) => trim(from ?? start, to ?? end)}
         aria-label="Trim range"
       />
       <div className="flex flex-wrap items-end gap-4">
-        <TimeField
-          label="Start"
-          id="trim-start"
-          value={draft.start_s}
-          onChange={(v) => set("start_s", v)}
-        />
-        <TimeField
-          label="End"
-          id="trim-end"
-          value={draft.end_s}
-          onChange={(v) => set("end_s", v)}
-        />
+        <TimeField label="Start" id="trim-start" value={start} onChange={(v) => trim(v, end)} />
+        <TimeField label="End" id="trim-end" value={end} onChange={(v) => trim(start, v)} />
         <span className="text-muted-foreground pb-2 text-sm">
           Length <span className="font-mono">{length.toFixed(1)} s</span>
+          {montage && ` · ${normalized(draft.parts).length} parts, ${skipped.toFixed(1)} s cut`}
         </span>
       </div>
       <p className="text-muted-foreground text-xs">
@@ -406,20 +519,24 @@ function VideoInspector({
           <TriangleAlert className="size-4" aria-hidden /> {warning}
         </p>
       )}
-      {hasParts && (
+      {hasPlanned && (
         <div className="flex flex-col gap-2 rounded-md border p-3">
           <div className="flex items-center gap-3">
             <Switch
               id="montage"
-              checked={draft.montage}
-              onCheckedChange={(checked) => set("montage", checked)}
+              checked={montage}
+              onCheckedChange={(checked) =>
+                setDraft((current) => withMontage(current, checked, planned))
+              }
             />
-            <Label htmlFor="montage">Skip the quiet gaps (montage)</Label>
+            <Label htmlFor="montage">Play only the parts (skip the gaps)</Label>
           </div>
           <p className="text-muted-foreground text-xs">
-            {draft.montage && played.length > 1
-              ? `Plays ${played.length} parts and skips ${skipped.toFixed(0)} s where nothing is said or happens: ` +
-                played.map(([start, end]) => `${hms(start)}–${hms(end)}`).join(", ") +
+            {montage
+              ? `Plays ${normalized(draft.parts).length} parts and skips ${skipped.toFixed(0)} s: ` +
+                normalized(draft.parts)
+                  .map(([a, b]) => `${hms(a)}–${hms(b)}`)
+                  .join(", ") +
                 "."
               : "Plays the whole range without skipping."}
           </p>

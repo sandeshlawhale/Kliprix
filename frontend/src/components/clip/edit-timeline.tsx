@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, ZoomIn, ZoomOut } from "lucide-react";
+import { Plus, Scissors, Trash2, ZoomIn, ZoomOut } from "lucide-react";
 import {
   useEffect,
   useRef,
@@ -12,13 +12,21 @@ import {
 
 import { Button } from "@/components/ui/button";
 import type { BlurBox, Word } from "@/lib/api";
-import { moveBoxTime, resizeBoxTime, wordAt, type TimelinePart } from "@/lib/clip-edit";
+import {
+  moveBoxTime,
+  movePartEdge,
+  resizeBoxTime,
+  wordAt,
+  type Part,
+  type TimelinePart,
+} from "@/lib/clip-edit";
 import { clock, hms } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** What the inspector above the timeline shows (D-056). */
 export type Selection =
   | { kind: "video" }
+  | { kind: "part"; index: number }
   | { kind: "title" }
   | { kind: "captions" }
   | { kind: "word"; index: number }
@@ -48,6 +56,13 @@ function chipWidth(words: Word[], index: number, px: number): number {
   return Math.max(14, spoken, Math.min(text, room));
 }
 
+interface PartDrag {
+  index: number;
+  edge: "start" | "end";
+  pointerX: number;
+  parts: Part[];
+}
+
 interface BoxDrag {
   index: number;
   mode: "move" | "start" | "end";
@@ -73,6 +88,10 @@ export function EditTimeline({
   onRemoveBox,
   onAddBox,
   canAddBox,
+  onPartsChange,
+  bounds,
+  onSplit,
+  onRemovePart,
 }: {
   parts: TimelinePart[];
   title: string;
@@ -88,12 +107,19 @@ export function EditTimeline({
   onRemoveBox: (index: number) => void;
   onAddBox: () => void;
   canAddBox: boolean;
+  /** Cut tools (D-059): new source ranges after an edge drag, split, delete. */
+  onPartsChange: (parts: Part[]) => void;
+  bounds: { min_start_s: number; max_end_s: number };
+  onSplit: () => void;
+  onRemovePart: (index: number) => void;
 }) {
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const px = ZOOMS[zoom]!;
   const scroller = useRef<HTMLDivElement>(null);
   const chips = useRef<(HTMLButtonElement | null)[]>([]);
   const drag = useRef<BoxDrag | null>(null);
+  const partDrag = useRef<PartDrag | null>(null);
+  const selectedPart = selection.kind === "part" ? selection.index : null;
   const end = Math.max(length, words.at(-1)?.end ?? 0, 1);
   const width = Math.ceil(end * px) + 24;
   const playing = wordAt(words, time);
@@ -158,6 +184,34 @@ export function EditTimeline({
     if (current && !current.moved) onSeek(current.box.start);
   };
 
+  // Dragging a part's end changes its source range (D-059): shorter, or longer into the
+  // source video around it (extend), never into the next part.
+  const startPartDrag = (
+    event: PointerEvent<HTMLElement>,
+    index: number,
+    edge: "start" | "end",
+  ) => {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    partDrag.current = {
+      index,
+      edge,
+      pointerX: event.clientX,
+      parts: parts.map((part) => [...part.source] as Part),
+    };
+    onSelect({ kind: "part", index });
+  };
+  const movePartDrag = (event: PointerEvent<HTMLElement>) => {
+    const current = partDrag.current;
+    if (!current) return;
+    const delta = (event.clientX - current.pointerX) / px;
+    onPartsChange(movePartEdge(current.parts, current.index, current.edge, delta, bounds));
+  };
+  const endPartDrag = () => {
+    partDrag.current = null;
+  };
+
   const seekFromRuler = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     onSeek(Math.min(length, Math.max(0, (event.clientX - rect.left) / px)));
@@ -170,7 +224,27 @@ export function EditTimeline({
           {hms(time)} / {hms(length)}
         </span>
         <div className="flex items-center gap-1">
-          <span className="text-muted-foreground mr-1 text-xs">{px} px/s</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7"
+            title="Split the clip at the playhead (S)"
+            onClick={onSplit}
+          >
+            <Scissors aria-hidden /> Split
+          </Button>
+          {selectedPart !== null && parts.length > 1 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7"
+              title="Delete the selected part (Delete)"
+              onClick={() => onRemovePart(selectedPart)}
+            >
+              <Trash2 aria-hidden /> Delete part
+            </Button>
+          )}
+          <span className="text-muted-foreground mx-1 text-xs">{px} px/s</span>
           <Button
             variant="ghost"
             size="icon"
@@ -279,33 +353,74 @@ export function EditTimeline({
               ))}
             </div>
 
-            {/* Video: the played parts, end to end; a montage shows a cut mark at each join. */}
+            {/* Video: the played parts, end to end; a cut shows a mark at each join. Click a
+                part to pick it, drag its ends to shorten or extend it (D-059). */}
             <Row height={ROWS.video}>
               {parts.map((part, index) => (
-                <button
+                <div
                   key={index}
-                  type="button"
-                  onClick={() => onSelect({ kind: "video" })}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={index === selectedPart}
+                  aria-label={`Part ${index + 1}, source ${hms(part.source[0])} to ${hms(part.source[1])}`}
+                  onClick={() => onSelect({ kind: "part", index })}
+                  onKeyDown={(event) => {
+                    if (event.key === "Delete" || event.key === "Backspace") {
+                      event.preventDefault();
+                      onRemovePart(index);
+                    } else if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelect({ kind: "part", index });
+                    }
+                  }}
                   title={`Source ${hms(part.source[0])}–${hms(part.source[1])}`}
                   className={cn(
-                    "bg-secondary text-secondary-foreground absolute top-1.5 bottom-1.5 truncate rounded border px-2 text-left text-xs",
-                    selection.kind === "video" && "border-brand ring-brand ring-1",
+                    "bg-secondary text-secondary-foreground absolute top-1.5 bottom-1.5 cursor-pointer rounded border text-xs select-none",
+                    "focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none",
+                    (index === selectedPart || selection.kind === "video") &&
+                      "border-brand ring-brand z-10 ring-1",
                   )}
                   style={{ left: part.start * px + 1, width: (part.end - part.start) * px - 2 }}
                 >
-                  {parts.length > 1 ? `Part ${index + 1} · ` : ""}
-                  {hms(part.source[0])}–{hms(part.source[1])}
-                </button>
+                  <span className="pointer-events-none absolute inset-y-0 right-3 left-3 flex items-center truncate">
+                    {parts.length > 1 ? `Part ${index + 1} · ` : ""}
+                    {hms(part.source[0])}–{hms(part.source[1])}
+                  </span>
+                  <span
+                    aria-hidden
+                    title="Drag to shorten or extend the start"
+                    className="bg-foreground/25 hover:bg-brand absolute inset-y-0 left-0 w-2 cursor-ew-resize touch-none rounded-l"
+                    onPointerDown={(event) => startPartDrag(event, index, "start")}
+                    onPointerMove={movePartDrag}
+                    onPointerUp={endPartDrag}
+                    onPointerCancel={endPartDrag}
+                    onClick={(event) => event.stopPropagation()}
+                  />
+                  <span
+                    aria-hidden
+                    title="Drag to shorten or extend the end"
+                    className="bg-foreground/25 hover:bg-brand absolute inset-y-0 right-0 w-2 cursor-ew-resize touch-none rounded-r"
+                    onPointerDown={(event) => startPartDrag(event, index, "end")}
+                    onPointerMove={movePartDrag}
+                    onPointerUp={endPartDrag}
+                    onPointerCancel={endPartDrag}
+                    onClick={(event) => event.stopPropagation()}
+                  />
+                </div>
               ))}
-              {parts.slice(1).map((part, index) => (
-                <div
-                  key={`cut-${index}`}
-                  className="border-muted-foreground pointer-events-none absolute inset-y-0.5 border-l-2 border-dashed"
-                  style={{ left: part.start * px - 1 }}
-                  title="Skipped gap"
-                  aria-hidden
-                />
-              ))}
+              {parts
+                .slice(1)
+                .map((part, index) =>
+                  part.source[0] - parts[index]!.source[1] > 0.05 ? (
+                    <div
+                      key={`cut-${index}`}
+                      className="border-brand pointer-events-none absolute inset-y-0.5 z-20 border-l-2 border-dashed"
+                      style={{ left: part.start * px - 1 }}
+                      title={`${(part.source[0] - parts[index]!.source[1]).toFixed(1)} s cut`}
+                      aria-hidden
+                    />
+                  ) : null,
+                )}
             </Row>
 
             {/* Title: on the video for the whole clip. */}
@@ -416,8 +531,9 @@ export function EditTimeline({
         </div>
       </div>
       <p className="text-muted-foreground text-xs">
-        Click an item to change it above. Drag a blur bar to move it, its ends to make it shorter or
-        longer. Delete removes the picked word or box; arrow keys move between words.
+        Click an item to change it above. S splits the clip at the playhead; drag a part&apos;s ends
+        to shorten or extend it; Delete removes the picked part, word or box. Drag a blur bar to
+        move it, its ends to make it shorter or longer.
       </p>
     </div>
   );

@@ -796,6 +796,11 @@ export interface components {
             blur_boxes?: components["schemas"]["BlurBox"][] | null;
             /** Montage */
             montage?: boolean | null;
+            /** Parts */
+            parts?: [
+                number,
+                number
+            ][] | null;
         };
         /** ClipSummary */
         ClipSummary: {

@@ -36,7 +36,15 @@ from app.pipeline.clip_render import (
     CropInfo,
     load_base,
 )
-from app.pipeline.parts import Part, effective, is_montage, to_source, total, words_for
+from app.pipeline.parts import (
+    Part,
+    effective,
+    is_montage,
+    normalized,
+    to_source,
+    total,
+    words_for,
+)
 from app.pipeline.select import TITLE_MAX_CHARS, all_words, words_between
 from app.pipeline.transcribe import Word
 from app.pipeline.transcribe import load_cached as load_transcript
@@ -54,6 +62,9 @@ VIDEO_FIELDS = (
 MEDIA_TYPES = {
     "preview": "video/mp4", "export": "video/mp4", "base": "video/mp4", "thumbnail": "image/jpeg",
 }  # fmt: skip
+# Editor parts (D-059): at most this many, each at least this long.
+MAX_PARTS = 20
+MIN_PART_S = 0.5
 # Two played ranges match when their edges are within this (stored times are rounded).
 BASE_MATCH_S = 0.01
 
@@ -87,6 +98,11 @@ class ClipPatch(BaseModel):
     blur_boxes: list[BlurBox] | None = Field(default=None, max_length=MAX_BLUR_BOXES)
     # Montage on/off (D-051): play only the planned parts, or the whole range.
     montage: bool | None = None
+    # The source ranges to play (D-059: split, delete and extend in the editor). Replaces
+    # start_s/end_s/montage: one range = a plain trim, several = a montage of them.
+    parts: list[tuple[float, float]] | None = Field(
+        default=None, min_length=1, max_length=MAX_PARTS
+    )
 
 
 class Accepted(BaseModel):
@@ -137,6 +153,17 @@ def _live(ctx: JobContext, clip: ClipRow, base: BaseInfo | None) -> LiveBase | N
         title_y=base.title_y, caption_y=base.caption_y, show_title=base.show_title,
         version=version,
     )  # fmt: skip
+
+
+def _requested_parts(raw: list[tuple[float, float]]) -> tuple[Part, ...]:
+    """The editor's parts (D-059), sorted and merged where they touch. Errors:
+    VALIDATION_ERROR for a part that ends before it starts or is shorter than 0.5 s."""
+    if any(end <= start or start < 0 for start, end in raw):
+        raise AppError(ErrorCode.VALIDATION_ERROR, "Each part must end after it starts.")
+    parts = normalized(raw)
+    if not parts or any(end - start < MIN_PART_S - 0.01 for start, end in parts):
+        raise AppError(ErrorCode.VALIDATION_ERROR, "Each part must be at least 0.5 s long.")
+    return tuple((round(a, 2), round(b, 2)) for a, b in parts)
 
 
 def _length_warning(length: float) -> str | None:
@@ -214,17 +241,22 @@ def _retimed_words(ctx: JobContext, clip: ClipRow, new_start: float, new_end: fl
 
 
 def _montage_words(
-    ctx: JobContext, clip: ClipRow, old: tuple[Part, ...], new: tuple[Part, ...]
+    ctx: JobContext,
+    clip: ClipRow,
+    old: tuple[Part, ...],
+    new: tuple[Part, ...],
+    edited: list[Word] | None = None,
 ) -> list[Word]:
     """Words for a montage change (D-051): the clip's (possibly edited) words mapped back to
-    source time, plus transcript words of newly played ranges, in the new clip's time."""
+    source time, plus transcript words of newly played ranges, in the new clip's time.
+    `edited` (D-059) are words sent with the change, still in the old clip's time."""
     kept = [
         Word(
             text=w.text,
             start=to_source(w.start, old),
             end=to_source(w.start, old) + w.end - w.start,
         )
-        for w in clip_words(clip)
+        for w in (edited if edited is not None else clip_words(clip))
     ]
     transcript = load_transcript(ctx.video_dir(clip.video_id))
     for word in all_words(transcript):
@@ -248,19 +280,33 @@ def patch_clip(clip_id: str, body: ClipPatch, db: DbDep, ctx: CtxDep) -> Clip:
     changes: dict[str, Any] = body.model_dump(exclude_unset=True)
     if any(value is None for value in changes.values()):
         raise AppError(ErrorCode.VALIDATION_ERROR, "Fields cannot be set to null.")
-    video_changed = any(key in changes for key in (*VIDEO_FIELDS, "words", "blur_boxes")) or (
-        "title" in changes and changes["title"] != (clip.title or "")
-    )
+    video_changed = any(
+        key in changes for key in (*VIDEO_FIELDS, "words", "blur_boxes", "parts")
+    ) or ("title" in changes and changes["title"] != (clip.title or ""))
     if video_changed and clip.status == "running":
         raise AppError(ErrorCode.CONFLICT, "Wait until the current render finishes.")
-    new_start = changes.get("start_s", clip.start_s)
-    new_end = changes.get("end_s", clip.end_s)
-    planned = stored_parts(clip)
-    if changes.get("montage") and not planned:
-        raise AppError(ErrorCode.VALIDATION_ERROR, "This clip has no montage parts.")
     old_parts = played_parts(clip)
-    montage_on = changes.get("montage", bool(clip.montage)) and bool(planned)
-    new_parts = effective(new_start, new_end, planned) if montage_on else ((new_start, new_end),)
+    if "parts" in changes:
+        new_parts = _requested_parts(changes.pop("parts"))
+        changes.pop("montage", None)
+        new_start, new_end = new_parts[0][0], new_parts[-1][1]
+        changes["start_s"], changes["end_s"] = new_start, new_end
+        if is_montage(new_parts):
+            clip.parts_json = json.dumps([list(part) for part in new_parts])
+            clip.montage = 1
+        else:
+            # A single range keeps the planned parts, so the montage switch can bring them back.
+            clip.montage = 0
+    else:
+        new_start = changes.get("start_s", clip.start_s)
+        new_end = changes.get("end_s", clip.end_s)
+        planned = stored_parts(clip)
+        if changes.get("montage") and not planned:
+            raise AppError(ErrorCode.VALIDATION_ERROR, "This clip has no montage parts.")
+        montage_on = changes.get("montage", bool(clip.montage)) and bool(planned)
+        new_parts = (
+            effective(new_start, new_end, planned) if montage_on else ((new_start, new_end),)
+        )
     played = total(new_parts)
     if "start_s" in changes or "end_s" in changes or "montage" in changes:
         video = repo.get_video(db, clip.video_id)
@@ -275,13 +321,15 @@ def patch_clip(clip_id: str, body: ClipPatch, db: DbDep, ctx: CtxDep) -> Clip:
             )
         if played < EDIT_MIN_S or played > CLIP_EXTENDED_MAX_S:
             raise AppError(ErrorCode.VALIDATION_ERROR, "A clip must be 5-90 seconds long.")
-        if "words" not in changes:
-            words = (
-                _montage_words(ctx, clip, old_parts, new_parts)
-                if is_montage(old_parts) or is_montage(new_parts)
-                else _retimed_words(ctx, clip, new_start, new_end)
-            )
-            clip.words_json = json.dumps([w.model_dump() for w in words])
+        if "words" in changes:
+            # Words edited together with a cut (D-059) are in the old clip's time: map them.
+            sent = [Word(**w) for w in changes.pop("words")]
+            words = _montage_words(ctx, clip, old_parts, new_parts, edited=sent)
+        elif is_montage(old_parts) or is_montage(new_parts):
+            words = _montage_words(ctx, clip, old_parts, new_parts)
+        else:
+            words = _retimed_words(ctx, clip, new_start, new_end)
+        clip.words_json = json.dumps([w.model_dump() for w in words])
     if "words" in changes:
         words = [Word(**w) for w in changes.pop("words")]
         if any(w.end < w.start or w.start > played + 0.01 for w in words):

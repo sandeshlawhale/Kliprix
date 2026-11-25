@@ -12,19 +12,21 @@ export const MIN_BOX_SIDE = 0.02;
 const NEW_BOX_S = 3;
 /** Shortest blur box the timeline lets you drag to (D-056). */
 export const MIN_BOX_S = 0.2;
+/** Shortest part of the clip after a split or a drag (D-059, same as the backend). */
+export const MIN_PART_S = 0.5;
+export const MAX_PARTS = 20;
 
 export interface EditDraft {
   /** On-video title (D-056: edited in the editor, saved with Apply). */
   title: string;
-  start_s: number;
-  end_s: number;
+  /** The source ranges the clip plays, in order (D-059): one for a plain trim, several
+   * after a cut or for a montage. Split pieces that touch merge again when saved. */
+  parts: Part[];
   caption_style: Clip["edit"]["caption_style"];
   crop_mode: Clip["edit"]["crop_mode"];
   blur: number;
   words: Word[];
   blur_boxes: BlurBox[];
-  /** Montage (D-051): play only the clip's planned parts. */
-  montage: boolean;
 }
 
 export type Part = [number, number];
@@ -32,34 +34,142 @@ export type Part = [number, number];
 export function draftFrom(clip: Clip): EditDraft {
   return {
     title: clip.metadata.title,
-    start_s: clip.edit.start_s,
-    end_s: clip.edit.end_s,
+    parts: savedParts(clip),
     caption_style: clip.edit.caption_style,
     crop_mode: clip.edit.crop_mode,
     blur: clip.edit.blur,
     words: clip.words.map((word) => ({ ...word })),
     blur_boxes: clip.edit.blur_boxes.map((box) => ({ ...box })),
-    montage: clip.edit.montage,
   };
 }
 
-/** The source ranges the draft plays (mirrors the backend's `effective`): the planned parts
- * inside the trim, the first and last moved to the trim edges, or the whole range when
- * montage is off or fewer than two parts remain. */
-export function playedParts(draft: EditDraft, parts: Part[]): Part[] {
-  if (!draft.montage) return [[draft.start_s, draft.end_s]];
-  const kept: Part[] = parts
-    .filter(([start, end]) => end > draft.start_s && start < draft.end_s)
-    .map(([start, end]) => [Math.max(start, draft.start_s), Math.min(end, draft.end_s)]);
-  if (kept.length < 2) return [[draft.start_s, draft.end_s]];
-  kept[0] = [draft.start_s, kept[0]![1]];
-  kept[kept.length - 1] = [kept[kept.length - 1]![0], draft.end_s];
+/** The source ranges a trim plays with planned parts (mirrors the backend's `effective`):
+ * the parts inside [start, end], the first and last moved to those edges, or the single
+ * range when fewer than two parts remain. */
+export function effective(start: number, end: number, planned: Part[]): Part[] {
+  const kept: Part[] = normalized(
+    planned
+      .filter(([a, b]) => b > start && a < end)
+      .map(([a, b]) => [Math.max(a, start), Math.min(b, end)]),
+  );
+  if (kept.length < 2) return [[start, end]];
+  kept[0] = [start, kept[0]![1]];
+  kept[kept.length - 1] = [kept[kept.length - 1]![0], end];
   return kept;
 }
 
-/** Seconds the draft plays (the parts' total for a montage). */
-export function playedLength(draft: EditDraft, parts: Part[]): number {
-  return playedParts(draft, parts).reduce((sum, [start, end]) => sum + end - start, 0);
+/** Sorted parts, merged where they touch (within 0.05 s), without empty ones. */
+export function normalized(parts: Part[]): Part[] {
+  const merged: Part[] = [];
+  for (const [a, b] of [...parts].sort((x, y) => x[0] - y[0])) {
+    if (b - a < 0.05) continue;
+    const last = merged[merged.length - 1];
+    if (last && a <= last[1] + 0.05) last[1] = Math.max(last[1], b);
+    else merged.push([a, b]);
+  }
+  return merged;
+}
+
+/** What the saved clip plays. */
+export function savedParts(clip: Clip): Part[] {
+  const { start_s, end_s, montage, parts } = clip.edit;
+  return montage ? effective(start_s, end_s, parts as Part[]) : [[start_s, end_s]];
+}
+
+export const draftStart = (draft: EditDraft) => draft.parts[0]?.[0] ?? 0;
+export const draftEnd = (draft: EditDraft) => draft.parts[draft.parts.length - 1]?.[1] ?? 0;
+
+/** The source ranges the draft plays. */
+export function playedParts(draft: EditDraft): Part[] {
+  return draft.parts;
+}
+
+/** Seconds the draft plays. */
+export function playedLength(draft: EditDraft): number {
+  return draft.parts.reduce((sum, [start, end]) => sum + end - start, 0);
+}
+
+/** The draft trimmed to [start, end] (source seconds): parts outside are dropped, the first
+ * and last are cut or extended to the new edges. */
+export function withTrim(draft: EditDraft, start: number, end: number): EditDraft {
+  if (!(end > start)) return draft;
+  const kept: Part[] = draft.parts
+    .filter(([a, b]) => b > start && a < end)
+    .map(([a, b]) => [Math.max(a, start), Math.min(b, end)]);
+  if (kept.length === 0) return { ...draft, parts: [[start, end]] };
+  kept[0] = [start, kept[0]![1]];
+  kept[kept.length - 1] = [kept[kept.length - 1]![0], end];
+  return { ...draft, parts: kept };
+}
+
+/** Montage switch (D-051): the planned parts inside the trim, or the whole range. */
+export function withMontage(draft: EditDraft, on: boolean, planned: Part[]): EditDraft {
+  const start = draftStart(draft);
+  const end = draftEnd(draft);
+  return { ...draft, parts: on ? effective(start, end, planned) : [[start, end]] };
+}
+
+/** The draft with the part under clip time `at` split in two there (D-059), and the index
+ * of the second piece; null when a piece would be shorter than MIN_PART_S. */
+export function splitAt(draft: EditDraft, at: number): { draft: EditDraft; index: number } | null {
+  if (draft.parts.length >= MAX_PARTS) return null;
+  let offset = 0;
+  for (let i = 0; i < draft.parts.length; i++) {
+    const [a, b] = draft.parts[i]!;
+    if (at < offset + (b - a)) {
+      const cut = round(a + Math.max(0, at - offset));
+      if (cut - a < MIN_PART_S || b - cut < MIN_PART_S) return null;
+      const parts = [...draft.parts];
+      parts.splice(i, 1, [a, cut], [cut, b]);
+      return { draft: { ...draft, parts }, index: i + 1 };
+    }
+    offset += b - a;
+  }
+  return null;
+}
+
+/** The draft without part `index` (the last part is never removed). */
+export function withoutPart(draft: EditDraft, index: number): EditDraft {
+  if (draft.parts.length < 2) return draft;
+  return { ...draft, parts: draft.parts.filter((_, i) => i !== index) };
+}
+
+/** Part `index` with one edge moved by `delta` source seconds (D-059): a part stays at least
+ * MIN_PART_S long, never runs into its neighbours, and stays inside the source bounds. */
+export function movePartEdge(
+  parts: Part[],
+  index: number,
+  edge: "start" | "end",
+  delta: number,
+  bounds: { min_start_s: number; max_end_s: number },
+): Part[] {
+  const part = parts[index];
+  if (!part) return parts;
+  const [a, b] = part;
+  const next: Part =
+    edge === "start"
+      ? [
+          round(
+            Math.min(
+              Math.max(a + delta, index > 0 ? parts[index - 1]![1] : bounds.min_start_s),
+              b - MIN_PART_S,
+            ),
+          ),
+          b,
+        ]
+      : [
+          a,
+          round(
+            Math.max(
+              Math.min(
+                b + delta,
+                index < parts.length - 1 ? parts[index + 1]![0] : bounds.max_end_s,
+              ),
+              a + MIN_PART_S,
+            ),
+          ),
+        ];
+  return parts.map((old, i) => (i === index ? next : old));
 }
 
 const round = (value: number) => Math.round(value * 100) / 100;
@@ -72,14 +182,17 @@ export function draftErrors(draft: EditDraft, clip: Clip): string[] {
     errors.push(`The on-video title must be at most ${TITLE_MAX} characters.`);
   }
   const { min_start_s: min, max_end_s: max } = clip.source_bounds;
-  if (!Number.isFinite(draft.start_s) || !Number.isFinite(draft.end_s)) {
+  if (draft.parts.some(([a, b]) => !Number.isFinite(a) || !Number.isFinite(b))) {
     errors.push("Start and end must be numbers.");
     return errors;
   }
-  if (draft.start_s < min - 0.01 || draft.end_s > max + 0.01) {
+  if (draftStart(draft) < min - 0.01 || draftEnd(draft) > max + 0.01) {
     errors.push(`Trim must stay between ${round(min)} s and ${round(max)} s.`);
   }
-  const length = playedLength(draft, clip.edit.parts);
+  if (draft.parts.some(([a, b]) => b - a < MIN_PART_S - 0.01)) {
+    errors.push(`Each part must be at least ${MIN_PART_S} s long.`);
+  }
+  const length = playedLength(draft);
   if (length < EDIT_MIN_S || length > EDIT_MAX_S) {
     errors.push(`A clip must be ${EDIT_MIN_S}–${EDIT_MAX_S} s long.`);
   }
@@ -96,8 +209,8 @@ export function draftErrors(draft: EditDraft, clip: Clip): string[] {
 }
 
 /** A soft warning outside 15–90 s (still allowed, D-035). */
-export function lengthWarning(draft: EditDraft, parts: Part[] = []): string | null {
-  const length = playedLength(draft, parts);
+export function lengthWarning(draft: EditDraft): string | null {
+  const length = playedLength(draft);
   if (length >= EDIT_MIN_S && length < GOOD_MIN_S) {
     return `${length.toFixed(1)} s is very short; 15–90 s works best.`;
   }
@@ -115,16 +228,19 @@ function roundBox(box: BlurBox): BlurBox {
   };
 }
 
-/** Only the changed fields. Trim without word edits lets the backend re-sync the words. */
+const roundParts = (parts: Part[]): Part[] =>
+  normalized(parts).map(([a, b]) => [round(a), round(b)]);
+
+/** Only the changed fields. A cut or trim (D-059: `parts`) without word edits lets the
+ * backend re-sync the words; edited words are sent in the saved clip's time. */
 export function patchFrom(draft: EditDraft, clip: Clip): ClipPatch {
   const patch: ClipPatch = {};
   if (draft.title !== clip.metadata.title) patch.title = draft.title;
-  if (round(draft.start_s) !== round(clip.edit.start_s)) patch.start_s = round(draft.start_s);
-  if (round(draft.end_s) !== round(clip.edit.end_s)) patch.end_s = round(draft.end_s);
+  const parts = roundParts(draft.parts);
+  if (JSON.stringify(parts) !== JSON.stringify(roundParts(savedParts(clip)))) patch.parts = parts;
   if (draft.caption_style !== clip.edit.caption_style) patch.caption_style = draft.caption_style;
   if (draft.crop_mode !== clip.edit.crop_mode) patch.crop_mode = draft.crop_mode;
   if (draft.blur !== clip.edit.blur) patch.blur = draft.blur;
-  if (draft.montage !== clip.edit.montage) patch.montage = draft.montage;
   // A word cleared to nothing is removed from the captions (D-055).
   const words = keptWords(draft.words);
   const wordsChanged =
@@ -142,7 +258,7 @@ export function patchFrom(draft: EditDraft, clip: Clip): ClipPatch {
  * those show only after the next preview render. */
 export function layoutChanged(draft: EditDraft, clip: Clip): boolean {
   const patch = patchFrom(draft, clip);
-  return "start_s" in patch || "end_s" in patch || "montage" in patch;
+  return "parts" in patch;
 }
 
 export function isDirty(draft: EditDraft, clip: Clip): boolean {
@@ -203,9 +319,9 @@ export interface TimelinePart {
 }
 
 /** The played parts laid end to end from 0, as the timeline's Video track shows them. */
-export function timelineParts(draft: EditDraft, parts: Part[]): TimelinePart[] {
+export function timelineParts(draft: EditDraft): TimelinePart[] {
   let at = 0;
-  return playedParts(draft, parts).map((source) => {
+  return draft.parts.map((source) => {
     const part = { start: at, end: at + source[1] - source[0], source };
     at = part.end;
     return part;

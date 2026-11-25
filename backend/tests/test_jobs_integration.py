@@ -287,6 +287,37 @@ def test_edit_preview_export_download(client: TestClient) -> None:
     assert again["metadata"]["youtube_title"] == "New YT title"
 
 
+def test_editor_parts_split_delete_and_extend(client: TestClient) -> None:
+    """D-059: the editor sends the played parts; a cut makes a montage, one part a trim."""
+    batch_id = client.post("/api/batches", json={"urls": [url("aaaaaaaaaaa")]}).json()["id"]
+    batch = wait_for(client, batch_id, finished)
+    clip_id = batch["videos"][0]["clips"][0]["id"]
+    clip = client.get(f"/api/clips/{clip_id}").json()
+    start, end = clip["start_s"], clip["end_s"]
+    # Cut out 2 s in the middle (split twice, delete the piece).
+    middle = round((start + end) / 2, 2)
+    cut = client.patch(
+        f"/api/clips/{clip_id}", json={"parts": [[start, middle - 1], [middle + 1, end]]}
+    ).json()
+    assert cut["edit"]["montage"] is True
+    assert cut["edit"]["parts"] == [[start, middle - 1], [middle + 1, end]]
+    assert abs(cut["duration_s"] - (end - start - 2)) < 0.02
+    assert cut["edited"] is True
+    assert all(w["end"] <= cut["duration_s"] + 0.01 for w in cut["words"])
+    # Touching parts merge into one; extending the start by 3 s is a plain trim.
+    whole = client.patch(
+        f"/api/clips/{clip_id}", json={"parts": [[start - 3, middle], [middle, end]]}
+    ).json()
+    assert whole["edit"]["montage"] is False
+    assert (whole["start_s"], whole["end_s"]) == (start - 3, end)
+    too_short = client.patch(
+        f"/api/clips/{clip_id}", json={"parts": [[start, start + 0.2], [middle, end]]}
+    )
+    assert too_short.json()["error"]["code"] == "VALIDATION_ERROR"
+    outside = client.patch(f"/api/clips/{clip_id}", json={"parts": [[start, LENGTH + 5]]})
+    assert outside.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
 def test_cancel_stops_running_download(client: TestClient, app: Any) -> None:
     source: FakeSource = app.state.job_context.adapters[0]
     source.release.clear()

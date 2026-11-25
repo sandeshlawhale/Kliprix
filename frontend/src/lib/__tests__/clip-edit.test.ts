@@ -14,6 +14,13 @@ import {
   playedParts,
   keptWords,
   moveBoxTime,
+  movePartEdge,
+  normalized,
+  splitAt,
+  withMontage,
+  withoutPart,
+  withTrim,
+  type Part,
   resizeBoxTime,
   timelineParts,
   wordAt,
@@ -70,10 +77,10 @@ describe("clip editor logic", () => {
     expect(patchFrom(draftFrom(c), c)).toEqual({});
   });
 
-  it("sends only changed fields, trim without words", () => {
+  it("sends only changed fields, trim as parts without words", () => {
     const c = clip();
-    const draft = { ...draftFrom(c), start_s: 95.123, blur: 10 };
-    expect(patchFrom(draft, c)).toEqual({ start_s: 95.12, blur: 10 });
+    const draft = { ...withTrim(draftFrom(c), 95.123, 150), blur: 10 };
+    expect(patchFrom(draft, c)).toEqual({ parts: [[95.12, 150]], blur: 10 });
   });
 
   it("sends all words when one is fixed", () => {
@@ -88,13 +95,13 @@ describe("clip editor logic", () => {
 
   it("validates bounds and length", () => {
     const c = clip();
-    expect(draftErrors({ ...draftFrom(c), end_s: 700 }, c)).toContain(
+    expect(draftErrors(withTrim(draftFrom(c), 100, 700), c)).toContain(
       "Trim must stay between 0 s and 600 s.",
     );
-    expect(draftErrors({ ...draftFrom(c), end_s: 102 }, c)).toContain(
+    expect(draftErrors(withTrim(draftFrom(c), 100, 102), c)).toContain(
       "A clip must be 5–90 s long.",
     );
-    expect(draftErrors({ ...draftFrom(c), end_s: 200 }, c)).toContain(
+    expect(draftErrors(withTrim(draftFrom(c), 100, 200), c)).toContain(
       "A clip must be 5–90 s long.",
     );
     const empty = draftFrom(c);
@@ -105,7 +112,7 @@ describe("clip editor logic", () => {
 
   it("warns for short clips", () => {
     const c = clip();
-    expect(lengthWarning({ ...draftFrom(c), end_s: 110 })).toMatch(/short/);
+    expect(lengthWarning(withTrim(draftFrom(c), 100, 110))).toMatch(/short/);
     expect(lengthWarning(draftFrom(c))).toBeNull();
   });
 
@@ -201,38 +208,39 @@ describe("montage clips (D-051)", () => {
   it("plays only the parts and counts their length", () => {
     const c = montageClip();
     const draft = draftFrom(c);
-    expect(playedParts(draft, c.edit.parts)).toEqual([
+    expect(playedParts(draft)).toEqual([
       [100, 110],
       [120, 130],
       [140, 150],
     ]);
-    expect(playedLength(draft, c.edit.parts)).toBe(30);
+    expect(playedLength(draft)).toBe(30);
     expect(isDirty(draft, c)).toBe(false);
   });
 
   it("moves the outer parts with the trim and keeps the inner cuts", () => {
     const c = montageClip();
-    const draft = { ...draftFrom(c), start_s: 104, end_s: 145 };
-    expect(playedParts(draft, c.edit.parts)).toEqual([
+    const draft = withTrim(draftFrom(c), 104, 145);
+    expect(playedParts(draft)).toEqual([
       [104, 110],
       [120, 130],
       [140, 145],
     ]);
-    expect(playedLength(draft, c.edit.parts)).toBe(21);
+    expect(playedLength(draft)).toBe(21);
   });
 
-  it("switches montage off as its own change", () => {
+  it("switches montage off and on again", () => {
     const c = montageClip();
-    const draft = { ...draftFrom(c), montage: false };
-    expect(playedLength(draft, c.edit.parts)).toBe(50);
-    expect(patchFrom(draft, c)).toEqual({ montage: false });
+    const off = withMontage(draftFrom(c), false, c.edit.parts as Part[]);
+    expect(playedLength(off)).toBe(50);
+    expect(patchFrom(off, c)).toEqual({ parts: [[100, 150]] });
+    expect(playedLength(withMontage(off, true, c.edit.parts as Part[]))).toBe(30);
   });
 
   it("checks the played length, not the range", () => {
     const c = montageClip();
-    const draft = { ...draftFrom(c), start_s: 107, end_s: 142 };
+    const draft = withTrim(draftFrom(c), 107, 142);
     // Plays 3 + 10 + 2 = 15 s although the range is 35 s.
-    expect(playedLength(draft, c.edit.parts)).toBe(15);
+    expect(playedLength(draft)).toBe(15);
     expect(draftErrors(draft, c)).toEqual([]);
   });
 });
@@ -251,16 +259,19 @@ describe("timeline editor (D-056)", () => {
 
   it("lays the whole range from 0 when there is no montage", () => {
     const c = clip();
-    expect(timelineParts(draftFrom(c), [])).toEqual([{ start: 0, end: 50, source: [100, 150] }]);
+    expect(timelineParts(draftFrom(c))).toEqual([{ start: 0, end: 50, source: [100, 150] }]);
   });
 
   it("lays montage parts end to end in clip time", () => {
     const c = clip();
-    const draft = { ...draftFrom(c), montage: true };
-    const parts = timelineParts(draft, [
-      [100, 110],
-      [120, 150],
-    ]);
+    const draft = {
+      ...draftFrom(c),
+      parts: [
+        [100, 110],
+        [120, 150],
+      ] as Part[],
+    };
+    const parts = timelineParts(draft);
     expect(parts).toEqual([
       { start: 0, end: 10, source: [100, 110] },
       { start: 10, end: 40, source: [120, 150] },
@@ -278,5 +289,74 @@ describe("timeline editor (D-056)", () => {
     expect(resizeBoxTime(box, "start", 10, 20)).toMatchObject({ start: 4.8, end: 5 });
     expect(resizeBoxTime(box, "end", 30, 20)).toMatchObject({ start: 2, end: 20 });
     expect(resizeBoxTime(box, "end", -10, 20)).toMatchObject({ start: 2, end: 2.2 });
+  });
+});
+
+describe("cut, delete and extend (D-059)", () => {
+  const bounds = { min_start_s: 0, max_end_s: 600 };
+
+  it("splits the part under the playhead; touching pieces save as one", () => {
+    const c = clip();
+    const result = splitAt(draftFrom(c), 20);
+    expect(result?.index).toBe(1);
+    expect(result?.draft.parts).toEqual([
+      [100, 120],
+      [120, 150],
+    ]);
+    expect(isDirty(result!.draft, c)).toBe(false);
+    expect(splitAt(draftFrom(c), 0.2)).toBeNull();
+  });
+
+  it("deleting a split piece cuts it out of the clip", () => {
+    const c = clip();
+    const first = splitAt(draftFrom(c), 20)!.draft;
+    const second = splitAt(first, 30)!.draft;
+    const cut = withoutPart(second, 1);
+    expect(cut.parts).toEqual([
+      [100, 120],
+      [130, 150],
+    ]);
+    expect(playedLength(cut)).toBe(40);
+    expect(patchFrom(cut, c)).toEqual({
+      parts: [
+        [100, 120],
+        [130, 150],
+      ],
+    });
+    expect(withoutPart(draftFrom(c), 0).parts).toEqual([[100, 150]]);
+  });
+
+  it("drags a part's ends: shorter, longer into the source, never into a neighbour", () => {
+    const parts: Part[] = [
+      [100, 120],
+      [130, 150],
+    ];
+    expect(movePartEdge(parts, 0, "start", -30, bounds)[0]).toEqual([70, 120]);
+    expect(movePartEdge(parts, 0, "end", 50, bounds)[0]).toEqual([100, 130]);
+    expect(movePartEdge(parts, 1, "start", -50, bounds)[1]).toEqual([120, 150]);
+    expect(movePartEdge(parts, 1, "end", 900, bounds)[1]).toEqual([130, 600]);
+    expect(movePartEdge(parts, 0, "start", -500, bounds)[0]).toEqual([0, 120]);
+    expect(movePartEdge(parts, 0, "end", -100, bounds)[0]).toEqual([100, 100.5]);
+  });
+
+  it("trims across a cut and merges touching parts", () => {
+    const draft = {
+      ...draftFrom(clip()),
+      parts: [
+        [100, 120],
+        [130, 150],
+      ] as Part[],
+    };
+    expect(withTrim(draft, 125, 160).parts).toEqual([[125, 160]]);
+    expect(
+      normalized([
+        [130, 150],
+        [100, 120],
+        [120, 125],
+      ]),
+    ).toEqual([
+      [100, 125],
+      [130, 150],
+    ]);
   });
 });
