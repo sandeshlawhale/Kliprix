@@ -17,7 +17,7 @@ interface Rect {
 }
 
 /** Where the 9:16 picture sits inside the <video> element (object-contain may letterbox). */
-function useContentRect(video: RefObject<HTMLVideoElement | null>): Rect | null {
+export function useContentRect(video: RefObject<HTMLVideoElement | null>): Rect | null {
   const [rect, setRect] = useState<Rect | null>(null);
   useEffect(() => {
     const element = video.current;

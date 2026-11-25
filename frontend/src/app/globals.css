@@ -156,3 +156,33 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Caption and title fonts of the renderer, for the editor's live preview (D-057). */
+@font-face {
+  font-family: "Kliprix Title";
+  src: url("/fonts/Anton-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Kliprix Caption";
+  src: url("/fonts/Montserrat-ExtraBold.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Kliprix Devanagari";
+  src: url("/fonts/NotoSansDevanagari-Bold.ttf") format("truetype");
+  font-display: swap;
+}
+
+/* A new caption group pops in like the renderer's "pop" style: 70% -> 108% -> 100%. */
+@keyframes kliprix-pop {
+  0% {
+    transform: scale(0.7);
+  }
+  70% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}

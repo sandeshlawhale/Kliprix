@@ -56,6 +56,10 @@ from app.render.layout import (
 logger = logging.getLogger(__name__)
 
 CROP_INFO_FILE_NAME = "crop.json"
+# The editor's live preview (D-057): the layout without blur boxes, title and captions,
+# written by preview renders, and what it was rendered for.
+BASE_FILE_NAME = "base.mp4"
+BASE_INFO_FILE_NAME = "base.json"
 # Called with the clip stage name when it starts: cut, face_crop, captions, render.
 StageCallback = Callable[[str], None]
 
@@ -77,6 +81,33 @@ class CropInfo(BaseModel):
     gaming: bool = False
     cam: list[int] | None = None
     face: list[float] | None = None
+
+
+class BaseInfo(BaseModel):
+    """What `base.mp4` shows: the played source ranges, crop choice and blur it was made
+    with, and where the renderer puts the title and captions (canvas pixels)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1] = 1
+    parts: list[tuple[float, float]]
+    crop: CropChoice
+    blur: int
+    duration_s: float
+    title_y: int
+    caption_y: int
+    show_title: bool
+
+
+def load_base(work_dir: Path) -> BaseInfo | None:
+    """The saved base description when both files exist, else None."""
+    info = work_dir / BASE_INFO_FILE_NAME
+    if not info.is_file() or not (work_dir / BASE_FILE_NAME).is_file():
+        return None
+    try:
+        return BaseInfo.model_validate_json(info.read_text(encoding="utf-8"))
+    except (ValidationError, ValueError):
+        return None
 
 
 @dataclass(frozen=True)
@@ -316,8 +347,10 @@ def render_clip(
     memory: MemoryInfo,
     cancel: threading.Event | None = None,
     on_stage: StageCallback | None = None,
+    base: bool = False,
 ) -> RenderResult:
-    """Render `spec` to `out`. Stages are cached in `work_dir` where possible.
+    """Render `spec` to `out`. Stages are cached in `work_dir` where possible. With `base`,
+    also write `base.mp4` + `base.json` for the editor's live preview (D-057).
 
     Raises:
         AppError: FFMPEG_MISSING, DISK_FULL, RENDER_FAILED.
@@ -352,15 +385,30 @@ def render_clip(
         panels=layout_panels(crop, cut.width, cut.height),
     )
     stage("render")
-    output = render(job, out, quality, ffmpeg_path=ffmpeg_path, memory=memory, cancel=cancel)
+    # The old base and its description stay valid (and playable) until the new base
+    # replaces them, so the live view keeps working while a preview renders.
+    base_out = work_dir / BASE_FILE_NAME if base else None
+    output = render(
+        job, out, quality, ffmpeg_path=ffmpeg_path, memory=memory, cancel=cancel,
+        base_out=base_out,
+    )  # fmt: skip
+    if base and base_out is not None and base_out.is_file():
+        info = BaseInfo(
+            parts=list(spec.parts) if spec.parts else [(spec.start_s, spec.end_s)],
+            crop=spec.crop, blur=spec.blur, duration_s=round(spec.length_s, 3),
+            title_y=layout.title_y, caption_y=layout.caption_y, show_title=spec.show_title,
+        )  # fmt: skip
+        write_json_atomic(work_dir / BASE_INFO_FILE_NAME, info)
     return RenderResult(output=output, crop=crop)
 
 
 __all__ = [
+    "BaseInfo",
     "ClipSpec",
     "CropInfo",
     "RenderResult",
     "SourceVideo",
+    "load_base",
     "make_thumbnail",
     "render_clip",
 ]

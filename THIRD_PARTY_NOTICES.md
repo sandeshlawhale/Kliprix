@@ -13,7 +13,7 @@ regenerate when dependencies change.
 | Node.js | MIT | Runs the frontend and is yt-dlp's JavaScript runtime |
 | Python | PSF-2.0 | Runs the backend |
 
-## Fonts (bundled in `backend/app/assets/fonts/`, license files next to them)
+## Fonts (bundled in `backend/app/assets/fonts/`, license files next to them; the same files are copied to `frontend/public/fonts/` for the editor's live preview, D-057)
 | Font | License | Source |
 |---|---|---|
 | Anton Regular | SIL Open Font License 1.1 (`OFL-Anton.txt`) | github.com/googlefonts/AntonFont via google/fonts |

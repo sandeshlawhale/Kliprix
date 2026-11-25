@@ -134,6 +134,18 @@ class SourceBounds(BaseModel):
     max_end_s: float
 
 
+class LiveBase(BaseModel):
+    """The editor's live preview (D-057): `media/base` shows the clip's current layout
+    without blur boxes, title and captions; the editor draws those itself at these canvas
+    positions (1080x1920 pixels)."""
+
+    title_y: int
+    caption_y: int
+    show_title: bool
+    # Changes when a new base is rendered; the editor reloads the video with it.
+    version: str
+
+
 class Clip(ClipSummary):
     video_id: str
     batch_id: str
@@ -144,6 +156,8 @@ class Clip(ClipSummary):
     # Notes about the last render, e.g. "No face was found, so the crop is centered." (AA-047)
     warning: str | None = None
     length_warning: str | None = None
+    # None until a preview render made a base for the clip's current trim, crop and blur.
+    live: LiveBase | None = None
 
 
 def error_of(code: str | None, message: str | None) -> ErrorBody | None:

@@ -79,9 +79,10 @@ def write_ass(job: RenderJob) -> Path:
     return path
 
 
-def filter_graph(job: RenderJob, quality: Quality) -> str:
+def filter_graph(job: RenderJob, quality: Quality, base: bool = False) -> str:
     """The filter_complex for one render (input 0 = cut for background and audio, input 1 =
-    the foreground source)."""
+    the foreground source). With `base` (D-057) the layout is also split off before the blur
+    boxes, title and captions into a 540x960 [b] for the editor's live preview."""
     small_w = lc.CANVAS_W // lc.BG_BLUR_DOWNSCALE
     small_h = lc.CANVAS_H // lc.BG_BLUR_DOWNSCALE
     radius = blur_radius(job.blur)
@@ -97,9 +98,17 @@ def filter_graph(job: RenderJob, quality: Quality) -> str:
     layers = foreground_layers(job)
     boxes = box_blur_chain(job.blur_boxes, "[base]", "[boxed]")
     finish = f"fps={lc.FPS},format=yuv420p"
+    steps = [background, *layers]
+    start = f"[over]{finish}"
+    if base:
+        steps += [
+            f"[over]{finish},split[main][plain]",
+            f"[plain]scale={lc.PREVIEW_W}:{lc.PREVIEW_H}[b]",
+        ]
+        start = "[main]null"
     if not boxes:
-        return ";".join([background, *layers, f"[over]{finish},{tail}[v]"])
-    return ";".join([background, *layers, f"[over]{finish}[base]", *boxes, f"[boxed]{tail}[v]"])
+        return ";".join([*steps, f"{start},{tail}[v]"])
+    return ";".join([*steps, f"{start}[base]", *boxes, f"[boxed]{tail}[v]"])
 
 
 def foreground_layers(job: RenderJob) -> list[str]:
@@ -178,8 +187,11 @@ def render(
     ffmpeg_path: str | None,
     memory: MemoryInfo,
     cancel: threading.Event | None = None,
+    base_out: Path | None = None,
 ) -> Path:
-    """Render the clip to `out` (written to a temp name, then renamed).
+    """Render the clip to `out` (written to a temp name, then renamed). With `base_out`, the
+    same ffmpeg run also writes the layout without blur boxes, title and captions there at
+    540x960 (D-057, the editor's live preview).
 
     Raises:
         AppError: FFMPEG_MISSING, DISK_FULL, or RENDER_FAILED.
@@ -199,11 +211,14 @@ def render(
     spans = bleep_spans(job.words, job.duration_s)
     if spans and probe_streams(job.work_dir / "cut.mp4", ffmpeg_path).audio_s is None:
         spans = []
-    graph = filter_graph(job, quality)
-    audio_map = "0:a:0?"
+    graph = filter_graph(job, quality, base=base_out is not None)
+    audio_map = base_audio = "0:a:0?"
     if spans:
         graph += ";" + bleep_graph(spans, job.duration_s)
         audio_map = "[a]"
+        if base_out is not None:
+            graph += ";[a]asplit=2[a1][a2]"
+            audio_map, base_audio = "[a1]", "[a2]"
         logger.info("bleeping %d bad-word spans", len(spans))
     crf, preset = (
         (lc.FINAL_CRF, lc.FINAL_PRESET)
@@ -211,6 +226,16 @@ def render(
         else (lc.PREVIEW_CRF, lc.PREVIEW_PRESET)
     )
     temp = out.with_name(out.stem + ".part.mp4")
+    base_temp = base_out.with_name(base_out.stem + ".part.mp4") if base_out else None
+    extra: list[str] = []
+    if base_out is not None and base_temp is not None:
+        base_out.parent.mkdir(parents=True, exist_ok=True)
+        extra = [
+            "-map", "[b]", "-map", base_audio,
+            "-c:v", "libx264", "-preset", lc.PREVIEW_PRESET, "-crf", str(lc.PREVIEW_CRF),
+            "-pix_fmt", "yuv420p", "-r", str(lc.FPS), "-c:a", "aac", "-b:a", lc.AUDIO_BITRATE,
+            "-movflags", "+faststart", "-t", f"{job.duration_s:.3f}", str(base_temp.resolve()),
+        ]  # fmt: skip
     seek = ["-ss", f"{job.offset_s:.3f}", "-t", f"{job.duration_s:.3f}"]
     args = [
         ffmpeg, "-hide_banner", "-nostdin", "-y", "-loglevel", "error",
@@ -221,19 +246,35 @@ def render(
         "-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-pix_fmt", "yuv420p",
         "-r", str(lc.FPS), "-c:a", "aac", "-b:a", lc.AUDIO_BITRATE,
         "-movflags", "+faststart", "-t", f"{job.duration_s:.3f}", str(temp.resolve()),
+        *extra,
     ]  # fmt: skip
     timeout = RENDER_TIMEOUT_BASE_S + job.duration_s * RENDER_TIMEOUT_PER_CLIP_S
     try:
         result = run_command(args, timeout, cancel, cwd=job.work_dir)
     except CommandError:
-        temp.unlink(missing_ok=True)
+        _remove(temp, base_temp)
         raise
     if result.returncode != 0:
-        temp.unlink(missing_ok=True)
+        _remove(temp, base_temp)
         logger.error("render failed: %s", result.stderr[-2000:])
         raise AppError(ErrorCode.RENDER_FAILED, "Rendering the clip failed.")
     temp.replace(out)
+    if base_out is not None and base_temp is not None:
+        try:
+            base_temp.replace(base_out)
+        except OSError as exc:
+            # Windows refuses to replace a file the editor is streaming right now; the
+            # preview itself is fine, only the live view stays off until the next preview.
+            logger.warning("could not replace the live-preview base: %s", exc)
+            base_temp.unlink(missing_ok=True)
+            base_out.unlink(missing_ok=True)
     return out
+
+
+def _remove(*paths: Path | None) -> None:
+    for path in paths:
+        if path is not None:
+            path.unlink(missing_ok=True)
 
 
 def make_thumbnail(

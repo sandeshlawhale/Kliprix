@@ -264,6 +264,17 @@ def test_edit_preview_export_download(client: TestClient) -> None:
     media = client.get(f"/api/clips/{clip_id}/media/preview", headers={"Range": "bytes=0-99"})
     assert media.status_code == 206
     assert len(media.content) == 100
+    # D-057: the preview render also made the live-preview base, which survives edits the
+    # editor draws itself (title, words, blur boxes) and goes away with a layout change.
+    live = client.get(f"/api/clips/{clip_id}").json()["live"]
+    assert live is not None and live["caption_y"] > live["title_y"]
+    assert client.get(f"/api/clips/{clip_id}/media/base").status_code == 200
+    drawn = client.patch(f"/api/clips/{clip_id}", json={"title": "Live", "blur_boxes": []})
+    assert drawn.json()["live"] == live
+    layout = client.patch(f"/api/clips/{clip_id}", json={"blur": 12}).json()
+    assert layout["live"] is None
+    assert client.get(f"/api/clips/{clip_id}/media/base").json()["error"]["code"] == "NOT_FOUND"
+    client.patch(f"/api/clips/{clip_id}", json={"title": "Fake LLM pick", "blur_boxes": [box]})
     assert client.post(f"/api/clips/{clip_id}/render").status_code == 202
     wait_for(client, batch_id, lambda b: b["videos"][0]["clips"][0]["has_export"])
     download = client.get(f"/api/clips/{clip_id}/download")

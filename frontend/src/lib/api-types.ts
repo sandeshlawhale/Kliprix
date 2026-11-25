@@ -520,8 +520,8 @@ export interface paths {
         };
         /**
          * Clip Media
-         * @description The preview, export, or thumbnail (HTTP Range supported). Only DB-known files under
-         *     DATA_DIR are served.
+         * @description The preview, export, live-preview base (D-057), or thumbnail (HTTP Range supported).
+         *     Only DB-known files under DATA_DIR, and a base that still matches the clip, are served.
          */
         get: operations["clip_media_api_clips__clip_id__media__kind__get"];
         put?: never;
@@ -759,6 +759,7 @@ export interface components {
             warning?: string | null;
             /** Length Warning */
             length_warning?: string | null;
+            live?: components["schemas"]["LiveBase"] | null;
         };
         /**
          * ClipPatch
@@ -974,6 +975,22 @@ export interface components {
             ok: boolean;
             video?: components["schemas"]["VideoMeta"] | null;
             error?: components["schemas"]["ErrorBody"] | null;
+        };
+        /**
+         * LiveBase
+         * @description The editor's live preview (D-057): `media/base` shows the clip's current layout
+         *     without blur boxes, title and captions; the editor draws those itself at these canvas
+         *     positions (1080x1920 pixels).
+         */
+        LiveBase: {
+            /** Title Y */
+            title_y: number;
+            /** Caption Y */
+            caption_y: number;
+            /** Show Title */
+            show_title: boolean;
+            /** Version */
+            version: string;
         };
         /** Metadata */
         Metadata: {
@@ -2225,7 +2242,7 @@ export interface operations {
             header?: never;
             path: {
                 clip_id: string;
-                kind: "preview" | "export" | "thumbnail";
+                kind: "preview" | "export" | "base" | "thumbnail";
             };
             cookie?: never;
         };

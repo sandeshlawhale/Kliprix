@@ -171,7 +171,11 @@ export const exportClip = (id: string) =>
   request<Schemas["Accepted"]>(`/clips/${encodeURIComponent(id)}/render`, { method: "POST" });
 export const retryClip = (id: string) =>
   request<Schemas["Accepted"]>(`/clips/${encodeURIComponent(id)}/retry`, { method: "POST" });
-export const clipMediaUrl = (id: string, kind: "preview" | "export" | "thumbnail", version = "") =>
+export const clipMediaUrl = (
+  id: string,
+  kind: "preview" | "export" | "base" | "thumbnail",
+  version = "",
+) =>
   `/api/clips/${encodeURIComponent(id)}/media/${kind}${version ? `?v=${encodeURIComponent(version)}` : ""}`;
 export const clipDownloadUrl = (id: string) => `/api/clips/${encodeURIComponent(id)}/download`;
 

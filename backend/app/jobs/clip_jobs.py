@@ -122,6 +122,7 @@ class ClipJob:
                 "preview" if self.preview else "final",
                 models_dir=self.ctx.data_dir / "models", ffmpeg_path=self.ctx.config.ffmpeg_path,
                 memory=self.ctx.memory(), cancel=self.cancel, on_stage=on_stage,
+                base=self.preview,
             )  # fmt: skip
         thumbnail = make_thumbnail(
             result.output, self.ctx.data_dir / "thumbnails" / f"{self.clip_id}.jpg",

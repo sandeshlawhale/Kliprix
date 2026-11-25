@@ -15,6 +15,7 @@ from app.api.deps import DbDep
 from app.api.views import (
     Clip,
     EditState,
+    LiveBase,
     Metadata,
     WordOut,
     clip_summary,
@@ -28,7 +29,13 @@ from app.db.models import ClipRow
 from app.db.repositories import batches as repo
 from app.jobs.clip_jobs import clip_blur_boxes, clip_words, played_parts, stored_parts
 from app.jobs.context import JobContext
-from app.pipeline.clip_render import CROP_INFO_FILE_NAME, CropInfo
+from app.pipeline.clip_render import (
+    BASE_FILE_NAME,
+    CROP_INFO_FILE_NAME,
+    BaseInfo,
+    CropInfo,
+    load_base,
+)
 from app.pipeline.parts import Part, effective, is_montage, to_source, total, words_for
 from app.pipeline.select import TITLE_MAX_CHARS, all_words, words_between
 from app.pipeline.transcribe import Word
@@ -44,7 +51,11 @@ _UNSAFE_FILENAME = re.compile(r"[^A-Za-z0-9 ._-]+")
 VIDEO_FIELDS = (
     "caption_style", "caption_language", "crop_mode", "blur", "start_s", "end_s", "montage",
 )  # fmt: skip
-MEDIA_TYPES = {"preview": "video/mp4", "export": "video/mp4", "thumbnail": "image/jpeg"}
+MEDIA_TYPES = {
+    "preview": "video/mp4", "export": "video/mp4", "base": "video/mp4", "thumbnail": "image/jpeg",
+}  # fmt: skip
+# Two played ranges match when their edges are within this (stored times are rounded).
+BASE_MATCH_S = 0.01
 
 
 class WordIn(BaseModel):
@@ -99,6 +110,35 @@ def _crop_warning(ctx: JobContext, clip: ClipRow) -> str | None:
         return None
 
 
+def current_base(ctx: JobContext, clip: ClipRow) -> BaseInfo | None:
+    """The live-preview base (D-057) when it still shows this clip: rendered for the same
+    played ranges, crop choice and blur. Words, title, style and blur boxes do not matter,
+    the editor draws those."""
+    base = load_base(ctx.clip_work_dir(clip.id))
+    if base is None or base.crop != clip.crop_mode or base.blur != clip.blur:
+        return None
+    played = played_parts(clip)
+    if len(played) != len(base.parts):
+        return None
+    for (a, b), (c, d) in zip(played, base.parts, strict=True):
+        if abs(a - c) > BASE_MATCH_S or abs(b - d) > BASE_MATCH_S:
+            return None
+    return base
+
+
+def _live(ctx: JobContext, clip: ClipRow, base: BaseInfo | None) -> LiveBase | None:
+    if base is None:
+        return None
+    try:
+        version = str((ctx.clip_work_dir(clip.id) / BASE_FILE_NAME).stat().st_mtime_ns)
+    except OSError:
+        return None
+    return LiveBase(
+        title_y=base.title_y, caption_y=base.caption_y, show_title=base.show_title,
+        version=version,
+    )  # fmt: skip
+
+
 def _length_warning(length: float) -> str | None:
     if length < CLIP_MIN_S or length > CLIP_EXTENDED_MAX_S:
         return f"This clip is {length:.0f} s long; 25-90 s works best for shorts."
@@ -110,6 +150,7 @@ def clip_view(ctx: JobContext, db: DbDep, clip: ClipRow) -> Clip:
     if video is None:
         raise AppError(ErrorCode.NOT_FOUND, "This clip's video does not exist.")
     summary = clip_summary(ctx, clip, repo.queued_clip_positions(db))
+    base = current_base(ctx, clip)
     return Clip(
         **summary.model_dump(),
         video_id=clip.video_id,
@@ -138,6 +179,7 @@ def clip_view(ctx: JobContext, db: DbDep, clip: ClipRow) -> Clip:
         warning=_crop_warning(ctx, clip)
         or (clip.error_message if clip.status != "failed" else None),
         length_warning=_length_warning(total(played_parts(clip))),
+        live=_live(ctx, clip, base),
     )
 
 
@@ -306,11 +348,19 @@ def retry_clip(clip_id: str, db: DbDep, runner: RunnerDep) -> Accepted:
 
 @router.get("/{clip_id}/media/{kind}", response_class=FileResponse)
 def clip_media(
-    clip_id: str, kind: Literal["preview", "export", "thumbnail"], db: DbDep, ctx: CtxDep
+    clip_id: str,
+    kind: Literal["preview", "export", "base", "thumbnail"],
+    db: DbDep,
+    ctx: CtxDep,
 ) -> FileResponse:
-    """The preview, export, or thumbnail (HTTP Range supported). Only DB-known files under
-    DATA_DIR are served."""
+    """The preview, export, live-preview base (D-057), or thumbnail (HTTP Range supported).
+    Only DB-known files under DATA_DIR, and a base that still matches the clip, are served."""
     clip = _require(db, clip_id)
+    if kind == "base":
+        if current_base(ctx, clip) is None:
+            raise AppError(ErrorCode.NOT_FOUND, "Make a preview to edit this clip live.")
+        base_path = (ctx.clip_work_dir(clip.id) / BASE_FILE_NAME).resolve()
+        return FileResponse(base_path, media_type="video/mp4", content_disposition_type="inline")
     stored = {"preview": clip.preview_path, "export": clip.export_path,
               "thumbnail": clip.thumbnail_path}[kind]  # fmt: skip
     if not file_exists(ctx, stored):

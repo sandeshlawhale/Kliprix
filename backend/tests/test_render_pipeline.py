@@ -218,3 +218,34 @@ def test_montage_plays_only_its_parts_and_reuses_its_cut(source: Path, tmp_path:
             no_source, work, other, tmp_path / "other.mp4", "preview",
             models_dir=tmp_path / "models", ffmpeg_path=None, memory=MEMORY,
         )  # fmt: skip
+
+
+@needs_ffmpeg
+def test_preview_writes_a_base_without_boxes_title_and_captions(
+    source: Path, tmp_path: Path
+) -> None:
+    """D-057: the same run writes base.mp4 (540x960, no blur box) and base.json."""
+    from app.pipeline.clip_render import BASE_FILE_NAME, load_base
+    from app.render.censor import BlurBox
+
+    box = BlurBox(start=0.0, end=6.0, x=0.1, y=0.3, w=0.8, h=0.25)
+    clip = ClipSpec(
+        start_s=6.0, end_s=12.0, title="Base test", show_title=True, style="pop", crop="full",
+        blur=30, words=[Word(text="hello", start=0.5, end=1.5)], blur_boxes=[box],
+    )  # fmt: skip
+    work = tmp_path / "work"
+    out = tmp_path / "preview.mp4"
+    render_clip(
+        SourceVideo(source, LENGTH, SRC_W, SRC_H), work, clip, out, "preview",
+        models_dir=tmp_path / "models", ffmpeg_path=None, memory=MEMORY, base=True,
+    )  # fmt: skip
+    base = work / BASE_FILE_NAME
+    info = load_base(work)
+    assert info is not None
+    assert info.parts == [(6.0, 12.0)] and info.crop == "full" and info.blur == 30
+    assert info.show_title and info.caption_y > info.title_y
+    streams = probe_streams(base, None)
+    assert (streams.width, streams.height) == (540, 960)
+    assert abs(streams.video_s - 6.0) < 0.2
+    region = (100, 350, 300, 150)  # inside the box, on the 540x960 frame
+    assert _detail(out, 2.0, *region) < _detail(base, 2.0, *region) / 5

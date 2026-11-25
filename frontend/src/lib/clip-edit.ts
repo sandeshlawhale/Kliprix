@@ -138,6 +138,13 @@ export function patchFrom(draft: EditDraft, clip: Clip): ClipPatch {
   return patch;
 }
 
+/** True when the draft changes what the live-preview base shows (trim or montage, D-057):
+ * those show only after the next preview render. */
+export function layoutChanged(draft: EditDraft, clip: Clip): boolean {
+  const patch = patchFrom(draft, clip);
+  return "start_s" in patch || "end_s" in patch || "montage" in patch;
+}
+
 export function isDirty(draft: EditDraft, clip: Clip): boolean {
   return Object.keys(patchFrom(draft, clip)).length > 0;
 }
