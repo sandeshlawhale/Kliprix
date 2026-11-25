@@ -359,11 +359,16 @@ class ContextEngine:
     ) -> list[Placed]:
         """The best `count` clips: editorial group first, then score; no overlap, no clip
         within the minimum gap of another or of `taken`, no duplicates, no clip under
-        CLIP_SCORE_MIN (unless it would be the only one)."""
+        CLIP_SCORE_MIN (unless it would be the only one). Clips the reviewer dropped fill
+        the slots still open, so the user gets the count they asked for (D-060)."""
         chosen: list[Placed] = []
         for groups in ((0, 1), (2,)):
-            if chosen:
+            if len(chosen) >= count:
                 break
+            if groups == (2,) and chosen:
+                logger.info(
+                    "context filling %d slots from reviewer-dropped drafts", count - len(chosen)
+                )
             pool = sorted(
                 (p for p in placed if p.moment.group in groups),
                 key=lambda p: (p.moment.group, -p.score, p.moment.key),

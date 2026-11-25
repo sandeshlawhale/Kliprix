@@ -198,3 +198,15 @@ def test_the_review_names_the_moment_by_id_and_the_backend_builds_the_clip() -> 
     assert clip.moment_type == "clutch"
     assert clip.title == "I caught all three"
     assert any("core from the LLM's ids" in note for note in clip.quality)
+
+
+def test_reviewer_dropped_drafts_fill_the_open_slots() -> None:
+    """D-060: the user gets the count they asked for; kept drafts still come first."""
+    engine = clutch_engine()
+    moments = [
+        Moment(key=0, start=100.0, end=118.0, llm_score=0.6, limits=LIMITS, group=0),
+        Moment(key=1, start=300.0, end=320.0, llm_score=0.9, limits=LIMITS, group=2),
+        Moment(key=2, start=400.0, end=420.0, llm_score=0.8, limits=LIMITS, group=2),
+    ]
+    assert [p.moment.key for p in engine.select(moments, 1)] == [0]
+    assert [p.moment.key for p in engine.select(moments, 3)] == [0, 1, 2]
