@@ -13,6 +13,9 @@ import {
   playedLength,
   playedParts,
   keptWords,
+  savedParts,
+  shownWords,
+  wordsOn,
   moveBoxTime,
   movePartEdge,
   normalized,
@@ -77,10 +80,13 @@ describe("clip editor logic", () => {
     expect(patchFrom(draftFrom(c), c)).toEqual({});
   });
 
-  it("sends only changed fields, trim as parts without words", () => {
+  it("sends only changed fields; a trim sends parts and the words in the new timing", () => {
     const c = clip();
     const draft = { ...withTrim(draftFrom(c), 95.123, 150), blur: 10 };
-    expect(patchFrom(draft, c)).toEqual({ parts: [[95.12, 150]], blur: 10 });
+    const patch = patchFrom(draft, c);
+    expect(patch).toMatchObject({ parts: [[95.12, 150]], blur: 10 });
+    expect(patch.words?.[0]).toEqual({ text: "hello", start: 5.38, end: 5.78 });
+    expect(patchFrom({ ...draftFrom(c), blur: 10 }, c)).toEqual({ blur: 10 });
   });
 
   it("sends all words when one is fixed", () => {
@@ -165,10 +171,9 @@ describe("clip editor logic", () => {
     const draft = draftFrom(c);
     const second = draft.words[1]!;
     draft.words[0] = { ...draft.words[0]!, text: " " };
-    expect(patchFrom(draft, c).words).toEqual([
-      { text: second.text, start: second.start, end: second.end },
-      ...c.words.slice(2),
-    ]);
+    // Draft words are in source seconds (D-062); the patch sends clip seconds.
+    expect(patchFrom(draft, c).words).toEqual([{ ...c.words[1]! }, ...c.words.slice(2)]);
+    expect(second.start).toBe(101);
     const deleted = { ...draftFrom(c), words: draftFrom(c).words.slice(1) };
     expect(patchFrom(deleted, c).words).toHaveLength(c.words.length - 1);
     expect(keptWords([{ text: " hi ", start: 0, end: 1 }])).toEqual([
@@ -232,7 +237,7 @@ describe("montage clips (D-051)", () => {
     const c = montageClip();
     const off = withMontage(draftFrom(c), false, c.edit.parts as Part[]);
     expect(playedLength(off)).toBe(50);
-    expect(patchFrom(off, c)).toEqual({ parts: [[100, 150]] });
+    expect(patchFrom(off, c)).toMatchObject({ parts: [[100, 150]] });
     expect(playedLength(withMontage(off, true, c.edit.parts as Part[]))).toBe(30);
   });
 
@@ -317,7 +322,7 @@ describe("cut, delete and extend (D-059)", () => {
       [130, 150],
     ]);
     expect(playedLength(cut)).toBe(40);
-    expect(patchFrom(cut, c)).toEqual({
+    expect(patchFrom(cut, c)).toMatchObject({
       parts: [
         [100, 120],
         [130, 150],
@@ -357,6 +362,59 @@ describe("cut, delete and extend (D-059)", () => {
     ).toEqual([
       [100, 125],
       [130, 150],
+    ]);
+  });
+});
+
+describe("captions follow cuts (D-062)", () => {
+  it("moves words with the cut and hides the ones in the removed range", () => {
+    const c = clip(); // words: hello 0.5-0.9, world 1.0-1.4 (source 100.5, 101.0)
+    const cut = {
+      ...draftFrom(c),
+      parts: [
+        [100, 100.95],
+        [101.0, 150],
+      ] as Part[],
+    };
+    const [hello, world] = shownWords(cut);
+    expect([hello?.text, hello?.start, hello?.source]).toEqual(["hello", 0.5, 0]);
+    expect(hello?.end).toBeCloseTo(0.9);
+    expect([world?.text, world?.source]).toEqual(["world", 1]);
+    expect(world?.start).toBeCloseTo(0.95);
+    expect(world?.end).toBeCloseTo(1.35);
+    const without = {
+      ...draftFrom(c),
+      parts: [
+        [100, 100.8],
+        [101.6, 150],
+      ] as Part[],
+    };
+    expect(shownWords(without).map((w) => w.text)).toEqual(["hello"]);
+    // The hidden word is still in the draft: dragging the cut back shows it again.
+    expect(without.words).toHaveLength(2);
+  });
+
+  it("sends the words in the new timing with a cut", () => {
+    const c = clip();
+    const cut = {
+      ...draftFrom(c),
+      parts: [
+        [100, 100.8],
+        [101.0, 150],
+      ] as Part[],
+    };
+    expect(patchFrom(cut, c).words).toEqual([
+      { text: "hello", start: 0.5, end: 0.8 },
+      { text: "world", start: 0.8, end: 1.2 },
+    ]);
+  });
+
+  it("keeps saved times when only a word's text changes", () => {
+    const c = clip();
+    const draft = draftFrom(c);
+    expect(wordsOn(draft.words, savedParts(c)).map((w) => [w.start, w.end])).toEqual([
+      [0.5, expect.closeTo(0.9, 5)],
+      [1.0, expect.closeTo(1.4, 5)],
     ]);
   });
 });

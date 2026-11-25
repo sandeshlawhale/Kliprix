@@ -23,6 +23,7 @@ import {
   newBlurBox,
   normalized,
   playedLength,
+  shownWords,
   splitAt,
   timelineParts,
   withMontage,
@@ -63,13 +64,17 @@ export function EditPanel({
   const length = playedLength(draft);
 
   const setBoxes = (boxes: BlurBox[]) => setDraft((current) => ({ ...current, blur_boxes: boxes }));
+  const shown = shownWords(draft);
   const setWords = (words: Word[]) => setDraft((current) => ({ ...current, words }));
+  // `index` is the word's place on the timeline; the draft keeps all words (D-062).
   const removeWord = (index: number) => {
-    setWords(draft.words.filter((_, i) => i !== index));
+    const word = shown[index];
+    if (!word) return;
+    setWords(draft.words.filter((_, i) => i !== word.source));
     onSelect(
-      draft.words.length <= 1
+      shown.length <= 1
         ? { kind: "captions" }
-        : { kind: "word", index: Math.min(index, draft.words.length - 2) },
+        : { kind: "word", index: Math.min(index, shown.length - 2) },
     );
   };
   const removeBox = (index: number) => {
@@ -139,7 +144,7 @@ export function EditPanel({
         onSplit={split}
         onRemovePart={removePart}
         title={draft.title}
-        words={draft.words}
+        words={shown}
         boxes={draft.blur_boxes}
         length={length}
         time={time}
@@ -265,8 +270,8 @@ function Inspector({
             </Button>
           </div>
           <p className="text-muted-foreground text-xs">
-            Times are positions in the source video. Captions and blur boxes move to the new timing
-            when you apply.
+            Times are positions in the source video. Captions move with the cut at once; blur boxes
+            keep their times on the clip, so check them after a cut.
           </p>
         </Panel>
       );
@@ -297,7 +302,7 @@ function Inspector({
           subtitle={
             clip.words.length === 0
               ? "No speech was found in this clip, so it has no captions."
-              : `${draft.words.length} words. Click a word on the timeline to change it.`
+              : `${shownWords(draft).length} words. Click a word on the timeline to change it.`
           }
         >
           <div className="flex flex-col gap-2">
@@ -312,17 +317,18 @@ function Inspector({
 
     case "word": {
       const index = selection.index;
-      const word = draft.words[index];
+      const shown = shownWords(draft);
+      const word = shown[index];
       if (!word) return <Empty>Click a word on the timeline to change it.</Empty>;
       const pick = (to: number) => {
-        const target = draft.words[to];
+        const target = shown[to];
         if (!target) return;
         onSelect({ kind: "word", index: to });
         onSeek(target.start);
       };
       return (
         <Panel
-          title={`Caption word ${index + 1} of ${draft.words.length}`}
+          title={`Caption word ${index + 1} of ${shown.length}`}
           subtitle={`Spoken ${word.start.toFixed(2)}–${word.end.toFixed(2)} s`}
         >
           <div className="flex flex-wrap items-center gap-2">
@@ -341,7 +347,9 @@ function Inspector({
               onChange={(event) =>
                 set(
                   "words",
-                  draft.words.map((w, i) => (i === index ? { ...w, text: event.target.value } : w)),
+                  draft.words.map((w, i) =>
+                    i === word.source ? { ...w, text: event.target.value } : w,
+                  ),
                 )
               }
               onBlur={(event) => {
@@ -355,7 +363,7 @@ function Inspector({
               variant="ghost"
               size="icon"
               aria-label="Next word"
-              disabled={index >= draft.words.length - 1}
+              disabled={index >= shown.length - 1}
               onClick={() => pick(index + 1)}
             >
               <ChevronRight aria-hidden />

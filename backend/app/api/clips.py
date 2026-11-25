@@ -246,15 +246,18 @@ def _montage_words(
     old: tuple[Part, ...],
     new: tuple[Part, ...],
     edited: list[Word] | None = None,
+    edited_parts: tuple[Part, ...] | None = None,
 ) -> list[Word]:
     """Words for a montage change (D-051): the clip's (possibly edited) words mapped back to
     source time, plus transcript words of newly played ranges, in the new clip's time.
-    `edited` (D-059) are words sent with the change, still in the old clip's time."""
+    `edited` are words sent with the change, timed over `edited_parts` (D-062: the editor
+    sends them in the new clip's time)."""
+    timing = edited_parts if edited_parts is not None else old
     kept = [
         Word(
             text=w.text,
-            start=to_source(w.start, old),
-            end=to_source(w.start, old) + w.end - w.start,
+            start=to_source(w.start, timing),
+            end=to_source(w.start, timing) + w.end - w.start,
         )
         for w in (edited if edited is not None else clip_words(clip))
     ]
@@ -322,9 +325,12 @@ def patch_clip(clip_id: str, body: ClipPatch, db: DbDep, ctx: CtxDep) -> Clip:
         if played < EDIT_MIN_S or played > CLIP_EXTENDED_MAX_S:
             raise AppError(ErrorCode.VALIDATION_ERROR, "A clip must be 5-90 seconds long.")
         if "words" in changes:
-            # Words edited together with a cut (D-059) are in the old clip's time: map them.
+            # Words sent with a cut are in the new clip's time (D-062); transcript words of
+            # newly played ranges (an extend) are added.
             sent = [Word(**w) for w in changes.pop("words")]
-            words = _montage_words(ctx, clip, old_parts, new_parts, edited=sent)
+            words = _montage_words(
+                ctx, clip, old_parts, new_parts, edited=sent, edited_parts=new_parts
+            )
         elif is_montage(old_parts) or is_montage(new_parts):
             words = _montage_words(ctx, clip, old_parts, new_parts)
         else:

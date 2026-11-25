@@ -313,6 +313,15 @@ def test_editor_parts_split_delete_and_extend(client: TestClient) -> None:
     assert abs(cut["duration_s"] - (end - start - 2)) < 0.02
     assert cut["edited"] is True
     assert all(w["end"] <= cut["duration_s"] + 0.01 for w in cut["words"])
+    # D-062: words sent with a cut are in the new clip's time and are kept as sent.
+    sent = client.patch(
+        f"/api/clips/{clip_id}",
+        json={
+            "parts": [[start, middle - 2], [middle + 1, end]],
+            "words": [{"text": "synced", "start": 1.0, "end": 1.5}],
+        },
+    ).json()
+    assert {"text": "synced", "start": 1.0, "end": 1.5} in sent["words"]
     # Touching parts merge into one; extending the start by 3 s is a plain trim.
     whole = client.patch(
         f"/api/clips/{clip_id}", json={"parts": [[start - 3, middle], [middle, end]]}

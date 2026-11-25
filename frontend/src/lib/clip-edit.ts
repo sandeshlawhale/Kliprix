@@ -25,6 +25,8 @@ export interface EditDraft {
   caption_style: Clip["edit"]["caption_style"];
   crop_mode: Clip["edit"]["crop_mode"];
   blur: number;
+  /** Caption words in SOURCE seconds (D-062), so a cut, delete or extend moves them with the
+   * video at once; `shownWords` places them on the clip's timeline. */
   words: Word[];
   blur_boxes: BlurBox[];
 }
@@ -38,7 +40,7 @@ export function draftFrom(clip: Clip): EditDraft {
     caption_style: clip.edit.caption_style,
     crop_mode: clip.edit.crop_mode,
     blur: clip.edit.blur,
-    words: clip.words.map((word) => ({ ...word })),
+    words: toSourceWords(clip.words, savedParts(clip)),
     blur_boxes: clip.edit.blur_boxes.map((box) => ({ ...box })),
   };
 }
@@ -228,6 +230,56 @@ function roundBox(box: BlurBox): BlurBox {
   };
 }
 
+/** Source time of clip time `t` over `parts` (clamped to the clip). */
+export function toSource(t: number, parts: Part[]): number {
+  let offset = 0;
+  for (const [a, b] of parts) {
+    if (t <= offset + (b - a) + 1e-6) return a + Math.max(0, t - offset);
+    offset += b - a;
+  }
+  return parts[parts.length - 1]?.[1] ?? t;
+}
+
+/** Clip-time words of the saved clip in source seconds (D-062). */
+export function toSourceWords(words: Word[], parts: Part[]): Word[] {
+  return words.map((word) => {
+    const start = toSource(word.start, parts);
+    return { text: word.text, start, end: start + (word.end - word.start) };
+  });
+}
+
+/** A caption word on the clip's timeline, with its index in the draft's words. */
+export interface ShownWord extends Word {
+  source: number;
+}
+
+/** Words (source seconds) placed on the timeline of `parts`: a word plays when its middle is
+ * inside a part; it is moved to clip seconds and clamped to that part. Words in a cut-out
+ * range are hidden, not deleted, so dragging the cut back brings them back. */
+export function wordsOn(words: Word[], parts: Part[]): ShownWord[] {
+  const shown: ShownWord[] = [];
+  words.forEach((word, index) => {
+    const middle = (word.start + word.end) / 2;
+    let offset = 0;
+    for (const [a, b] of parts) {
+      if (middle >= a && middle < b) {
+        shown.push({
+          text: word.text,
+          start: offset + Math.max(word.start, a) - a,
+          end: offset + Math.min(word.end, b) - a,
+          source: index,
+        });
+        return;
+      }
+      offset += b - a;
+    }
+  });
+  return shown;
+}
+
+/** The draft's caption words on its own (edited) timeline. */
+export const shownWords = (draft: EditDraft): ShownWord[] => wordsOn(draft.words, draft.parts);
+
 const roundParts = (parts: Part[]): Part[] =>
   normalized(parts).map(([a, b]) => [round(a), round(b)]);
 
@@ -241,9 +293,15 @@ export function patchFrom(draft: EditDraft, clip: Clip): ClipPatch {
   if (draft.caption_style !== clip.edit.caption_style) patch.caption_style = draft.caption_style;
   if (draft.crop_mode !== clip.edit.crop_mode) patch.crop_mode = draft.crop_mode;
   if (draft.blur !== clip.edit.blur) patch.blur = draft.blur;
-  // A word cleared to nothing is removed from the captions (D-055).
-  const words = keptWords(draft.words);
+  // A word cleared to nothing is removed from the captions (D-055). After a cut the words
+  // are always sent, in the new clip's time (D-062).
+  const words = keptWords(shownWords(draft)).map((word) => ({
+    text: word.text,
+    start: round(word.start),
+    end: round(word.end),
+  }));
   const wordsChanged =
+    "parts" in patch ||
     words.length !== clip.words.length ||
     words.some((word, index) => word.text !== clip.words[index]?.text);
   if (wordsChanged) patch.words = words;

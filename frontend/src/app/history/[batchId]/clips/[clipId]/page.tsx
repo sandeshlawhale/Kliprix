@@ -44,6 +44,8 @@ import {
   isDirty,
   layoutChanged,
   patchFrom,
+  savedParts,
+  wordsOn,
   type EditDraft,
 } from "@/lib/clip-edit";
 
@@ -163,7 +165,8 @@ function Editor({
                     video={video}
                     live={live}
                     title={draft.title}
-                    words={draft.words}
+                    // The base plays the saved timing until the next preview (D-057).
+                    words={wordsOn(draft.words, savedParts(clip))}
                     style={draft.caption_style}
                     time={time}
                     duration={clip.duration_s}
