@@ -5,6 +5,7 @@ import { useState, type Dispatch, type ReactNode, type SetStateAction } from "re
 import { toast } from "sonner";
 
 import { EditTimeline, type Selection } from "@/components/clip/edit-timeline";
+import { Hint } from "@/components/clip/hint";
 import { CaptionStylePicker } from "@/components/style/caption-style-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -239,7 +240,8 @@ function Inspector({
       return (
         <Panel
           title={`Part ${index + 1} of ${draft.parts.length}`}
-          subtitle={`Plays ${(part[1] - part[0]).toFixed(1)} s of the source. Drag its ends on the timeline to shorten or extend it.`}
+          meta={`${(part[1] - part[0]).toFixed(1)} s`}
+          hint="Drag its ends on the timeline to shorten or extend it. Times are in the source video. Blur boxes keep their times after a cut."
           action={
             <Button
               variant="outline"
@@ -269,17 +271,17 @@ function Inspector({
               <Scissors aria-hidden /> Split at playhead
             </Button>
           </div>
-          <p className="text-muted-foreground text-xs">
-            Times are positions in the source video. Captions move with the cut at once; blur boxes
-            keep their times on the clip, so check them after a cut.
-          </p>
         </Panel>
       );
     }
 
     case "title":
       return (
-        <Panel title="On-video title" subtitle="Shown at the top of the video for the whole clip.">
+        <Panel
+          title="On-video title"
+          meta={`${draft.title.length}/${TITLE_MAX}`}
+          hint="Shown at the top of the video for the whole clip."
+        >
           <div className="flex flex-col gap-1">
             <Label htmlFor="edit-title">Title</Label>
             <Input
@@ -288,9 +290,6 @@ function Inspector({
               maxLength={TITLE_MAX}
               onChange={(event) => set("title", event.target.value)}
             />
-            <span className="text-muted-foreground text-xs">
-              {draft.title.length}/{TITLE_MAX} characters
-            </span>
           </div>
         </Panel>
       );
@@ -299,11 +298,8 @@ function Inspector({
       return (
         <Panel
           title="Captions"
-          subtitle={
-            clip.words.length === 0
-              ? "No speech was found in this clip, so it has no captions."
-              : `${shownWords(draft).length} words. Click a word on the timeline to change it.`
-          }
+          meta={clip.words.length === 0 ? "no speech" : `${shownWords(draft).length} words`}
+          hint="Click a word on the timeline to change or remove it."
         >
           <div className="flex flex-col gap-2">
             <Label>Caption style</Label>
@@ -328,8 +324,9 @@ function Inspector({
       };
       return (
         <Panel
-          title={`Caption word ${index + 1} of ${shown.length}`}
-          subtitle={`Spoken ${word.start.toFixed(2)}–${word.end.toFixed(2)} s`}
+          title={`Word ${index + 1}/${shown.length}`}
+          meta={`${word.start.toFixed(2)}–${word.end.toFixed(2)} s`}
+          hint="Retype it, or remove it. Clearing the text removes it too."
         >
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -388,13 +385,10 @@ function Inspector({
         return (
           <Panel
             title="Blur boxes"
-            subtitle="Hide part of the video, such as a scene that is not fine for YouTube. Captions and the title stay on top."
+            meta={`${draft.blur_boxes.length}/${MAX_BLUR_BOXES}`}
+            hint="Hide part of the video for a while. Play to the moment and add a box, then drag it on the video. Captions and the title stay on top."
           >
-            <p className="text-muted-foreground text-sm">
-              {canDraw
-                ? `${draft.blur_boxes.length} of ${MAX_BLUR_BOXES} boxes. Play the video to the moment and add a box, or click a bar on the timeline.`
-                : "Make a preview first to draw boxes on it."}
-            </p>
+            {!canDraw && <p className="text-muted-foreground text-sm">Make a preview first.</p>}
             <div>
               <Button
                 variant="outline"
@@ -416,7 +410,7 @@ function Inspector({
       return (
         <Panel
           title={`Blur box ${index + 1}`}
-          subtitle="Drag it on the video to move it, pull its corner to resize it."
+          hint="Drag it on the video to move it; pull its corner to resize it."
           action={
             <Button
               variant="ghost"
@@ -452,7 +446,7 @@ function Inspector({
           </div>
           {length > 0 && box.end > length && (
             <p className="text-muted-foreground text-xs">
-              The clip ends at {length.toFixed(1)} s; the box stops there.
+              Stops at the clip end ({length.toFixed(1)} s).
             </p>
           )}
         </Panel>
@@ -488,7 +482,8 @@ function VideoInspector({
   return (
     <Panel
       title="Video"
-      subtitle="Trim the clip, or split it at the playhead (S) and delete a part. Times are positions in the source video."
+      meta={`${length.toFixed(1)} s`}
+      hint="Trim with the slider or the times (positions in the source video). Split at the playhead (S), then delete a part to cut it out."
       action={
         <Button variant="outline" size="sm" onClick={onSplit}>
           <Scissors aria-hidden /> Split at playhead
@@ -507,28 +502,23 @@ function VideoInspector({
       <div className="flex flex-wrap items-end gap-4">
         <TimeField label="Start" id="trim-start" value={start} onChange={(v) => trim(v, end)} />
         <TimeField label="End" id="trim-end" value={end} onChange={(v) => trim(start, v)} />
-        <span className="text-muted-foreground pb-2 text-sm">
-          Length <span className="font-mono">{length.toFixed(1)} s</span>
-          {montage && ` · ${normalized(draft.parts).length} parts, ${skipped.toFixed(1)} s cut`}
+        <span className="text-muted-foreground inline-flex items-center gap-1 pb-2 font-mono text-xs">
+          {montage && `${normalized(draft.parts).length} parts · ${skipped.toFixed(1)} s cut · `}
+          range {hms(min)}–{hms(max)}
+          {max - min < 120 && (
+            <Hint label="Why the range is short">
+              The source video was deleted, so trimming is limited to the saved handles.
+            </Hint>
+          )}
         </span>
       </div>
-      <p className="text-muted-foreground text-xs">
-        Available range{" "}
-        <span className="font-mono">
-          {hms(min)}–{hms(max)}
-        </span>
-        {max - min < 120
-          ? " (the source video was deleted; trimming is limited to the saved handles)"
-          : ""}
-        .
-      </p>
       {warning && (
         <p className="text-foreground flex items-center gap-2 text-sm">
           <TriangleAlert className="size-4" aria-hidden /> {warning}
         </p>
       )}
       {hasPlanned && (
-        <div className="flex flex-col gap-2 rounded-md border p-3">
+        <div className="flex flex-col gap-2 rounded-md border px-3 py-2">
           <div className="flex items-center gap-3">
             <Switch
               id="montage"
@@ -537,40 +527,43 @@ function VideoInspector({
                 setDraft((current) => withMontage(current, checked, planned))
               }
             />
-            <Label htmlFor="montage">Play only the parts (skip the gaps)</Label>
+            <Label htmlFor="montage">Skip the gaps</Label>
+            <Hint label="About skipping the gaps">
+              {montage
+                ? `Plays ${normalized(draft.parts).length} parts: ` +
+                  normalized(draft.parts)
+                    .map(([a, b]) => `${hms(a)}–${hms(b)}`)
+                    .join(", ")
+                : "Plays the whole range without skipping."}
+            </Hint>
           </div>
-          <p className="text-muted-foreground text-xs">
-            {montage
-              ? `Plays ${normalized(draft.parts).length} parts and skips ${skipped.toFixed(0)} s: ` +
-                normalized(draft.parts)
-                  .map(([a, b]) => `${hms(a)}–${hms(b)}`)
-                  .join(", ") +
-                "."
-              : "Plays the whole range without skipping."}
-          </p>
         </div>
       )}
     </Panel>
   );
 }
 
+/** One inspector section: title, a short fact next to it, help behind an info icon (D-063). */
 function Panel({
   title,
-  subtitle,
+  meta,
+  hint,
   action,
   children,
 }: {
   title: string;
-  subtitle?: string;
+  meta?: string;
+  hint?: ReactNode;
   action?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex flex-col gap-0.5">
+      <div className="flex min-h-8 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
           <h3 className="font-medium">{title}</h3>
-          {subtitle && <p className="text-muted-foreground text-sm">{subtitle}</p>}
+          {meta && <span className="text-muted-foreground font-mono text-xs">{meta}</span>}
+          {hint && <Hint label={`About ${title}`}>{hint}</Hint>}
         </div>
         {action}
       </div>

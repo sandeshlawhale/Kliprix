@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { ShortcutsHint } from "@/components/clip/hint";
 import { Button } from "@/components/ui/button";
 import type { BlurBox, Word } from "@/lib/api";
 import {
@@ -244,7 +245,7 @@ export function EditTimeline({
               <Trash2 aria-hidden /> Delete part
             </Button>
           )}
-          <span className="text-muted-foreground mx-1 text-xs">{px} px/s</span>
+          <ShortcutsHint />
           <Button
             variant="ghost"
             size="icon"
@@ -530,11 +531,6 @@ export function EditTimeline({
           </div>
         </div>
       </div>
-      <p className="text-muted-foreground text-xs">
-        Click an item to change it above. S splits the clip at the playhead; drag a part&apos;s ends
-        to shorten or extend it; Delete removes the picked part, word or box. Drag a blur bar to
-        move it, its ends to make it shorter or longer.
-      </p>
     </div>
   );
 }

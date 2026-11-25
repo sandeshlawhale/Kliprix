@@ -20,6 +20,7 @@ import { clipStatusText } from "@/components/batch/clip-card";
 import { BlurBoxOverlay } from "@/components/clip/blur-box-overlay";
 import { EditPanel } from "@/components/clip/edit-panel";
 import type { Selection } from "@/components/clip/edit-timeline";
+import { Hint } from "@/components/clip/hint";
 import { LiveOverlay } from "@/components/clip/live-overlay";
 import { MetadataPanel } from "@/components/clip/metadata-panel";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -231,15 +232,19 @@ function LiveSwitch({
 }) {
   if (!clip.live) {
     return (
-      <p className="text-muted-foreground text-xs">
-        Click Preview once to edit live: the title, captions and blur boxes then change on the video
-        as you edit.
-      </p>
+      <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
+        Live editing off
+        <Hint label="About live editing">
+          Click Preview once: the title, captions and blur boxes then change on the video as you
+          edit.
+        </Hint>
+      </span>
     );
   }
+  const stale = layoutChanged(draft, clip);
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex gap-1" role="group" aria-label="Player shows">
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-1" role="group" aria-label="Player shows">
         <Button
           size="sm"
           variant={screen === "live" ? "secondary" : "ghost"}
@@ -257,13 +262,13 @@ function LiveSwitch({
         >
           Rendered
         </Button>
+        <Hint label="About the live view">
+          Live shows your edits at once. Cuts and trims, and the stars and beeps on bad words, show
+          in the rendered preview.
+        </Hint>
       </div>
-      {screen === "live" && (
-        <p className="text-muted-foreground text-xs">
-          {layoutChanged(draft, clip)
-            ? `Trim and montage changes show after Preview; the live view plays the saved ${clip.duration_s.toFixed(1)} s.`
-            : "Edits show at once. Bad words get their stars and beeps in the rendered preview."}
-        </p>
+      {screen === "live" && stale && (
+        <span className="text-xs text-amber-600 dark:text-amber-400">Cuts show after Preview</span>
       )}
     </div>
   );
