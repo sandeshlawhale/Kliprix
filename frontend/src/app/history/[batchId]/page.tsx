@@ -6,6 +6,7 @@ import { use } from "react";
 import { CheckpointList } from "@/components/batch/checkpoint-list";
 import { ClipCard } from "@/components/batch/clip-card";
 import { ElapsedTimer } from "@/components/batch/elapsed-timer";
+import { CustomClip } from "@/components/batch/custom-clip";
 import { MoreClips } from "@/components/batch/more-clips";
 import { ResumeVideo } from "@/components/batch/resume-video";
 import { SourcePolicyPrompt } from "@/components/batch/source-policy-prompt";
@@ -105,7 +106,10 @@ function VideoSection({
         </div>
         {/* Only for videos that got past the download (D-034). */}
         {video.checkpoints[0]?.state === "done" && (
-          <MoreClips video={video} batchId={batchId} defaultCount={defaultCount} />
+          <div className="flex shrink-0 items-center gap-2">
+            <CustomClip video={video} batchId={batchId} />
+            <MoreClips video={video} batchId={batchId} defaultCount={defaultCount} />
+          </div>
         )}
       </div>
       {video.status === "running" && (

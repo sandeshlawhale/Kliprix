@@ -381,6 +381,34 @@ def _all_rendered(clips: int) -> Callable[[dict[str, Any]], bool]:
     return check
 
 
+def test_custom_clip_from_a_picked_range(config: AppConfig, media: Path) -> None:
+    """D-061: a range picked by hand becomes one more clip, rendered like the others."""
+    app = build(config, media)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        client.put("/api/llm/session", json={"provider": "gemini", "model": "m", "api_key": KEY})
+        client.put("/api/settings", json={"style_defaults": {"clips_per_video": 1}})
+        batch_id = client.post("/api/batches", json={"urls": [url("aaaaaaaaaaa")]}).json()["id"]
+        video = wait_for(client, batch_id, _all_rendered(1))["videos"][0]
+        source = client.get(f"/api/videos/{video['id']}/source", headers={"Range": "bytes=0-99"})
+        assert source.status_code == 206 and len(source.content) == 100
+        short = client.post(f"/api/videos/{video['id']}/custom-clip",
+                            json={"start_s": 10, "end_s": 12})  # fmt: skip
+        assert short.json()["error"]["code"] == "VALIDATION_ERROR"
+        past = client.post(f"/api/videos/{video['id']}/custom-clip",
+                           json={"start_s": LENGTH - 10, "end_s": LENGTH + 20})  # fmt: skip
+        assert past.json()["error"]["code"] == "VALIDATION_ERROR"
+        queued = client.post(f"/api/videos/{video['id']}/custom-clip",
+                             json={"start_s": 20, "end_s": 45.5})  # fmt: skip
+        assert queued.status_code == 202
+        done = wait_for(client, batch_id, _all_rendered(2))["videos"][0]
+        custom = done["clips"][1]
+        assert (custom["start_s"], custom["end_s"]) == (20, 45.5)
+        assert custom["index"] == 1 and custom["title"]
+        assert "a clip you picked" in (done["note"] or "")
+        detail = client.get(f"/api/clips/{custom['id']}").json()
+        assert all(0 <= w["start"] <= 25.5 for w in detail["words"])
+
+
 def test_more_clips_reuse_the_download(config: AppConfig, media: Path) -> None:
     app = build(config, media)
     ctx = app.state.job_context

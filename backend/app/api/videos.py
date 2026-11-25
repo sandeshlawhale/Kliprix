@@ -7,6 +7,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.batches import CtxDep, RunnerDep
@@ -19,11 +20,14 @@ from app.db.repositories import batches as repo
 from app.jobs.state import more_clips_blocker
 from app.jobs.video_pipeline import PROGRESS_AT
 from app.llm.session import LlmSessionStore
-from app.sources.base import SourceAdapter, VideoMeta
+from app.sources.base import SOURCE_FILE_NAME, SourceAdapter, VideoMeta
 from app.sources.inspect_cache import InspectCache
 from app.sources.registry import resolve
 
 logger = logging.getLogger(__name__)
+# A custom clip (D-061): the same length rule as an edited clip.
+CUSTOM_MIN_S = 5.0
+CUSTOM_MAX_S = 90.0
 
 router = APIRouter(prefix="/api/videos", tags=["videos"], responses=ERROR_RESPONSES)
 
@@ -90,6 +94,81 @@ class MoreClipsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     count: int = Field(ge=MIN_CLIPS_PER_VIDEO, le=MAX_CLIPS_PER_VIDEO)
+
+
+class CustomClipRequest(BaseModel):
+    """A clip range picked by hand on the batch page (D-061), source seconds."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    start_s: float = Field(ge=0)
+    end_s: float = Field(gt=0)
+
+
+@router.post("/{video_id}/custom-clip", status_code=202)
+def custom_clip(
+    video_id: str,
+    body: CustomClipRequest,
+    request: Request,
+    db: DbDep,
+    ctx: CtxDep,
+    runner: RunnerDep,
+) -> Batch:
+    """Queue one clip for a range the user picked from the saved download (D-061): the range
+    is transcribed where needed, the AI model writes its title and metadata, and it renders
+    like the other clips. Returns the batch.
+
+    Errors: NOT_FOUND, LLM_NOT_CONFIGURED, CONFLICT (the video is still being processed, or
+    its download was deleted), VALIDATION_ERROR (length outside 5-90 s or beyond the video).
+    """
+    video = repo.get_video(db, video_id)
+    batch = repo.get_batch(db, video.batch_id) if video is not None else None
+    if video is None or batch is None:
+        raise AppError(ErrorCode.NOT_FOUND, "This video does not exist.")
+    length = body.end_s - body.start_s
+    if length < CUSTOM_MIN_S or length > CUSTOM_MAX_S:
+        raise AppError(ErrorCode.VALIDATION_ERROR, "A clip must be 5-90 seconds long.")
+    if video.duration_s and body.end_s > video.duration_s + 0.5:
+        raise AppError(ErrorCode.VALIDATION_ERROR, "The range goes past the end of the video.")
+    store: LlmSessionStore = request.app.state.llm_session
+    if store.get() is None:
+        raise AppError(
+            ErrorCode.LLM_NOT_CONFIGURED, "Configure the AI model first (Configure API)."
+        )
+    blocked = more_clips_blocker(video, ctx.video_dir(video_id))
+    if blocked is None and repo.active_video_job(db, video_id) is not None:
+        blocked = "Wait until this video has finished."
+    if blocked is not None:
+        raise AppError(ErrorCode.CONFLICT, blocked)
+    video.status = "queued"
+    video.stage = "transcribe"
+    video.error_code = None
+    video.error_message = None
+    batch.status = "queued"
+    repo.touch_batch(batch)
+    repo.add_job(
+        db, "video_custom_clip", video_id, repo.PRIORITY_USER,
+        {"start_s": round(body.start_s, 2), "end_s": round(body.end_s, 2)},
+    )  # fmt: skip
+    db.commit()
+    runner.wake()
+    ctx.publish(video.batch_id, "video", id=video.id, status=video.status, stage=video.stage,
+                progress=video.progress)  # fmt: skip
+    ctx.publish(video.batch_id, "batch", status="queued")
+    return batch_view(ctx, db, batch)
+
+
+@router.get("/{video_id}/source", response_class=FileResponse)
+def video_source(video_id: str, db: DbDep, ctx: CtxDep) -> FileResponse:
+    """The saved download (HTTP Range supported), for picking a custom clip's range (D-061).
+    Errors: NOT_FOUND when the video or its download does not exist."""
+    video = repo.get_video(db, video_id)
+    if video is None:
+        raise AppError(ErrorCode.NOT_FOUND, "This video does not exist.")
+    path = (ctx.video_dir(video_id) / SOURCE_FILE_NAME).resolve()
+    if not path.is_file() or not path.is_relative_to(ctx.data_dir.resolve()):
+        raise AppError(ErrorCode.NOT_FOUND, "The downloaded video was deleted.")
+    return FileResponse(path, media_type="video/mp4", content_disposition_type="inline")
 
 
 @router.post("/{video_id}/more-clips", status_code=202)

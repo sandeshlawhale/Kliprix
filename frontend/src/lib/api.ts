@@ -158,6 +158,18 @@ export const retryVideo = (videoId: string) =>
   request<Batch>(`/videos/${encodeURIComponent(videoId)}/retry`, { method: "POST" });
 export const moreClips = (videoId: string, count: number) =>
   request<Batch>(`/videos/${encodeURIComponent(videoId)}/more-clips`, json("POST", { count }));
+/** One clip from a range picked by hand (D-061), source seconds. */
+export const customClip = (videoId: string, start_s: number, end_s: number) =>
+  request<Batch>(
+    `/videos/${encodeURIComponent(videoId)}/custom-clip`,
+    json("POST", {
+      start_s: Math.round(start_s * 100) / 100,
+      end_s: Math.round(end_s * 100) / 100,
+    }),
+  );
+/** The saved download, for picking a custom clip's range (D-061). */
+export const videoSourceUrl = (videoId: string) =>
+  `/api/videos/${encodeURIComponent(videoId)}/source`;
 /** URL of the batch's Server-Sent Events stream (opened by the SSE hook). */
 export const batchEventsUrl = (id: string) => `/api/batches/${encodeURIComponent(id)}/events`;
 

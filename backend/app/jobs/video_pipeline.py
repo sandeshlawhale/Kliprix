@@ -29,6 +29,7 @@ from app.db.repositories import batches as repo
 from app.db.repositories.settings import load_settings
 from app.jobs.context import JobContext
 from app.llm.client import LlmClient
+from app.llm.prompts import clock
 from app.llm.transliterate import transliterate_words
 from app.pipeline.audio import AUDIO_FILE_NAME, ensure_audio_wav, run_audio
 from app.pipeline.candidates import Candidate, find_candidates, run_candidates
@@ -48,9 +49,11 @@ from app.pipeline.select import (
     SelectionClip,
     VideoFacts,
     all_words,
+    fallback_title,
     run_select,
     select_more,
     words_between,
+    write_titles,
 )
 from app.pipeline.signals import (
     SignalFile,
@@ -352,6 +355,63 @@ class VideoPipeline:
             else "No new moments were found that do not overlap the clips you have."
         )
         self._finish_with_clips(chosen, words, style, client, f"{MORE_NOTE_PREFIX} {found}")
+
+    def run_custom(self, start: float, end: float) -> None:
+        """One clip from a range the user picked on the batch page (D-061).
+
+        The download, signals and chat are reused; the range is transcribed where it never
+        was; the AI model writes the title and metadata (the plain "Highlight at mm:ss"
+        stays if that call fails); the clip gets the next index and is rendered like the
+        others.
+
+        Raises:
+            AppError: VALIDATION_ERROR when the download is gone or the range is outside the
+            video; LLM and transcribe errors.
+        """
+        with self.ctx.session_factory() as session:
+            video = repo.get_video(session, self.video_id)
+            if video is None:
+                return
+            batch = repo.get_batch(session, video.batch_id)
+            style: dict[str, Any] = json.loads(batch.style_json) if batch else {}
+            settings = load_settings(session)
+            title, channel = video.title or "", video.channel
+            has_chat = bool(video.has_chat)
+        memory = self.ctx.memory()
+        video_dir = self.ctx.video_dir(self.video_id)
+        info = load_download(video_dir, self.ctx.config.ffmpeg_path)
+        if info is None:
+            raise AppError(ErrorCode.VALIDATION_ERROR, SOURCE_GONE_MESSAGE)
+        duration = info.probed_duration_s
+        if not 0 <= start < end <= duration + 0.01:
+            raise AppError(ErrorCode.VALIDATION_ERROR, "The range is outside the video.")
+        end = min(end, duration)
+
+        self._stage("transcribe")
+        language = str(style.get("caption_language", "en"))
+        ensure_audio_wav(video_dir, duration, ffmpeg_path=self.ctx.config.ffmpeg_path,
+                         memory=memory, cancel=self.cancel)  # fmt: skip
+        spans = plan_spans([(start, end)], duration, thorough=settings.thorough_mode)
+        transcript = self._transcribe(settings, language, spans, memory, extend=True)
+
+        self._stage("select")
+        client = self._llm_client()
+        replay = load_chat(video_dir) if has_chat else None
+        picked = SelectionClip(
+            start=round(start, 2), end=round(end, 2), title=fallback_title(start),
+            youtube_title="", youtube_description="", hashtags=[], linkedin_post="",
+            reason="Picked by hand.", score=1.0, from_llm=False, moment_type="custom",
+        )  # fmt: skip
+        clips = write_titles(
+            [picked], VideoFacts(title, channel, duration), transcript,
+            Evidence(chat=replay.items if replay else ()), client,
+        )  # fmt: skip
+        logger.info("custom clip video=%s range=%.1f-%.1f", self.video_id, start, end)
+        self._stage("clips")
+        self._finish_with_clips(
+            clips, all_words(transcript), style, client,
+            f"{MORE_NOTE_PREFIX} a clip you picked ({clock(start)} to {clock(end)}) was added.",
+        )  # fmt: skip
 
     def _finish_with_clips(
         self,

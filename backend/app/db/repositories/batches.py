@@ -21,9 +21,12 @@ from app.sources.base import VideoMeta
 PRIORITY_BACKGROUND = 0
 PRIORITY_USER = 10
 # Jobs whose ref is a video: the pipeline, and "more clips" from its download (D-034).
-VIDEO_JOB_KINDS = ("video_pipeline", "video_more_clips")
+VIDEO_JOB_KINDS = ("video_pipeline", "video_more_clips", "video_custom_clip")
 # Order of job kinds inside one video: the pipeline first, then its clips.
-KIND_ORDER = {"video_pipeline": 0, "video_more_clips": 0, "clip_render": 1, "clip_preview": 1}
+KIND_ORDER = {
+    "video_pipeline": 0, "video_more_clips": 0, "video_custom_clip": 0,
+    "clip_render": 1, "clip_preview": 1,
+}  # fmt: skip
 
 
 def new_id() -> str:

@@ -127,6 +127,11 @@ class JobRunner:
                 payload = json.loads(job.payload_json or "{}")
                 count = int(payload.get("count", 1))
                 VideoPipeline(self.ctx, job.ref_id, token.event).run_more(count)
+            elif job.kind == "video_custom_clip":
+                payload = json.loads(job.payload_json or "{}")
+                VideoPipeline(self.ctx, job.ref_id, token.event).run_custom(
+                    float(payload["start_s"]), float(payload["end_s"])
+                )
             else:
                 ClipJob(self.ctx, job.ref_id, job.kind == "clip_preview", token.event).run()
             self._finish(job, "done", None)

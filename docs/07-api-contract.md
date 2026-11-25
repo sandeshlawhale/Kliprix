@@ -52,6 +52,8 @@ Messages are human-readable and never contain keys, tokens, or full file-system 
 - `POST /api/clips/{id}/preview` → `202` (queues a preview render)
 - `POST /api/clips/{id}/render` → `202` (queues the full-quality export)
 - `POST /api/clips/{id}/retry` → `202`
+- `POST /api/videos/{id}/custom-clip` body `{ start_s, end_s }` (D-061) → `202 Batch`: one clip from a range picked by hand (5-90 s). Errors as More clips plus VALIDATION_ERROR for the length or a range past the end.
+- `GET /api/videos/{id}/source` (D-061) → the saved download, video/mp4 with HTTP Range; `404 NOT_FOUND` when it was deleted.
 - `GET /api/clips/{id}/media/{kind}` where kind ∈ `preview | export | base | thumbnail` → video/image with HTTP Range support. `404 NOT_FOUND` if not rendered. `base` (D-057) is the editor's live-preview video: the clip's layout at 540x960 without blur boxes, title and captions, written by every preview render; served only while it still matches the clip's trim, montage, crop and blur.
 - `Clip.live` (D-057): `{ title_y, caption_y, show_title, version } | null`, non-null while `media/base` matches the clip. `title_y`/`caption_y` are the renderer's centers on the 1080x1920 canvas; `version` changes when a new base is rendered.
 - `GET /api/clips/{id}/download` → the export file with `Content-Disposition: attachment; filename="<safe title>.mp4"`. `409 CONFLICT` if no current export.

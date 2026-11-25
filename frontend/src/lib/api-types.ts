@@ -239,6 +239,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/videos/{video_id}/custom-clip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Custom Clip
+         * @description Queue one clip for a range the user picked from the saved download (D-061): the range
+         *     is transcribed where needed, the AI model writes its title and metadata, and it renders
+         *     like the other clips. Returns the batch.
+         *
+         *     Errors: NOT_FOUND, LLM_NOT_CONFIGURED, CONFLICT (the video is still being processed, or
+         *     its download was deleted), VALIDATION_ERROR (length outside 5-90 s or beyond the video).
+         */
+        post: operations["custom_clip_api_videos__video_id__custom_clip_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/videos/{video_id}/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Video Source
+         * @description The saved download (HTTP Range supported), for picking a custom clip's range (D-061).
+         *     Errors: NOT_FOUND when the video or its download does not exist.
+         */
+        get: operations["video_source_api_videos__video_id__source_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/videos/{video_id}/more-clips": {
         parameters: {
             query?: never;
@@ -849,6 +895,16 @@ export interface components {
         CreatedBatch: {
             /** Id */
             id: string;
+        };
+        /**
+         * CustomClipRequest
+         * @description A clip range picked by hand on the batch page (D-061), source seconds.
+         */
+        CustomClipRequest: {
+            /** Start S */
+            start_s: number;
+            /** End S */
+            end_s: number;
         };
         /**
          * DownloaderUpdate
@@ -1755,6 +1811,70 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["InspectResponse"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    custom_clip_api_videos__video_id__custom_clip_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                video_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomClipRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Batch"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    video_source_api_videos__video_id__source_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                video_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

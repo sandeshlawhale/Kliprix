@@ -65,6 +65,8 @@ States: empty, inspecting, inspect-failed (error under the field), ready, starti
 - Live updates via SSE; if SSE disconnects, fall back to polling every 3 s.
 - Queued clips show their position in the queue.
 
+- (D-061) Next to More clips: **Custom clip** opens a dialog with the saved download, a range slider, Start/End (hh:mm:ss, = now), Play the range and Make clip (5-90 s); the new clip is made like the others.
+
 ## Clip detail `/history/[batchId]/clips/[clipId]`
 Two columns.
 - **Left:** 9:16 video player (preview if available else export, else raw-cut message), as wide as the video (D-058). Top bar: Back to batch; in Edit with unsaved changes "Unsaved changes", Discard, Apply changes; then Metadata/Edit, Preview, Download (D-058: no Export button; Download renders the final video first when needed, then downloads).
