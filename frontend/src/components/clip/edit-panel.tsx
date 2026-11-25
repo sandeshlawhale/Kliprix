@@ -1,9 +1,7 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Loader2, Trash2, TriangleAlert } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2, TriangleAlert } from "lucide-react";
 import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
-import { toast } from "sonner";
 
 import { EditTimeline, type Selection } from "@/components/clip/edit-timeline";
 import { CaptionStylePicker } from "@/components/style/caption-style-picker";
@@ -12,16 +10,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { invalidateBatch, keys } from "@/hooks/queries";
-import { errorMessage, patchClip, type BlurBox, type Clip, type Word } from "@/lib/api";
+import { type BlurBox, type Clip, type Word } from "@/lib/api";
 import {
   draftErrors,
-  draftFrom,
-  isDirty,
   lengthWarning,
   MAX_BLUR_BOXES,
   newBlurBox,
-  patchFrom,
   playedLength,
   playedParts,
   timelineParts,
@@ -54,22 +48,9 @@ export function EditPanel({
   selection: Selection;
   onSelect: (selection: Selection) => void;
 }) {
-  const client = useQueryClient();
   const errors = draftErrors(draft, clip);
-  const dirty = isDirty(draft, clip);
-  const busy = clip.status === "running" || clip.status === "queued";
   const canDraw = clip.has_preview || clip.has_export;
   const length = playedLength(draft, clip.edit.parts);
-  const save = useMutation({
-    mutationFn: () => patchClip(clip.id, patchFrom(draft, clip)),
-    onSuccess: (updated) => {
-      client.setQueryData(keys.clip(clip.id), updated);
-      invalidateBatch(client, clip.batch_id);
-      setDraft(draftFrom(updated));
-      toast.success("Changes applied. Make a preview to see them.");
-    },
-    onError: (error) => toast.error(errorMessage(error)),
-  });
 
   const setBoxes = (boxes: BlurBox[]) => setDraft((current) => ({ ...current, blur_boxes: boxes }));
   const setWords = (words: Word[]) => setDraft((current) => ({ ...current, words }));
@@ -137,24 +118,6 @@ export function EditPanel({
           ))}
         </ul>
       )}
-      <div className="flex items-center gap-3 border-t pt-3">
-        <Button
-          disabled={!dirty || errors.length > 0 || save.isPending || busy}
-          onClick={() => save.mutate()}
-        >
-          {save.isPending && <Loader2 className="animate-spin" aria-hidden />}
-          Apply changes
-        </Button>
-        <Button variant="ghost" disabled={!dirty} onClick={() => setDraft(draftFrom(clip))}>
-          Discard
-        </Button>
-        {dirty && <span className="text-muted-foreground text-sm">Unsaved changes</span>}
-        {busy && (
-          <span className="text-muted-foreground text-sm">
-            Wait for the current render to finish.
-          </span>
-        )}
-      </div>
     </div>
   );
 }

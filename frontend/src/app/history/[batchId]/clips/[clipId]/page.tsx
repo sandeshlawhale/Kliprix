@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   Fragment,
   use,
+  useEffect,
   useRef,
   useState,
   type Dispatch,
@@ -55,7 +56,22 @@ export default function ClipPage({ params }: PageProps<"/history/[batchId]/clips
   const clip = useClip(clipId);
   const [view, setView] = useState<View>("metadata");
   const [selection, setSelection] = useState<Selection>({ kind: "video" });
+  const [download, setDownload] = useState(false);
   useBatchEvents(batchId, [clipId]);
+  const ready = clip.data?.has_export ?? false;
+  const failed = clip.data?.status === "failed";
+  const loadedId = clip.data?.id;
+  // A download waits for its final render, then starts by itself (D-058).
+  useEffect(() => {
+    if (!download || !loadedId || !(ready || failed)) return;
+    // Outside the effect body: the state update and the click happen once, after render.
+    const timer = window.setTimeout(() => {
+      setDownload(false);
+      if (ready) triggerDownload(loadedId);
+      else toast.error("The final render failed, so there is nothing to download.");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [download, ready, failed, loadedId]);
 
   if (clip.isPending) return <Skeleton className="h-[640px] w-full" />;
   if (clip.isError)
@@ -70,7 +86,7 @@ export default function ClipPage({ params }: PageProps<"/history/[batchId]/clips
   const data = clip.data;
   return (
     <Editor
-      // A fresh draft only when the saved edits change (Apply, Preview, Export), not on every
+      // A fresh draft only when the saved edits change (Apply, Preview, Download), not on every
       // render progress update, so editing while a preview renders keeps the draft.
       key={JSON.stringify(draftFrom(data))}
       clip={data}
@@ -79,6 +95,8 @@ export default function ClipPage({ params }: PageProps<"/history/[batchId]/clips
       setView={setView}
       selection={selection}
       setSelection={setSelection}
+      download={download}
+      onDownload={() => setDownload(true)}
     />
   );
 }
@@ -94,6 +112,8 @@ function Editor({
   setView,
   selection,
   setSelection,
+  download,
+  onDownload,
 }: {
   clip: Clip;
   batchId: string;
@@ -101,6 +121,8 @@ function Editor({
   setView: (view: View) => void;
   selection: Selection;
   setSelection: Dispatch<SetStateAction<Selection>>;
+  download: boolean;
+  onDownload: () => void;
 }) {
   const [draft, setDraft] = useState<EditDraft>(() => draftFrom(clip));
   const [time, setTime] = useState(0);
@@ -120,9 +142,12 @@ function Editor({
       <Toolbar
         clip={clip}
         draft={draft}
+        setDraft={setDraft}
         batchId={batchId}
         view={view}
         onToggleView={() => setView(view === "edit" ? "metadata" : "edit")}
+        download={download}
+        onDownload={onDownload}
       />
       <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-5">
         <Player
@@ -244,43 +269,74 @@ function LiveSwitch({
 function Toolbar({
   clip,
   draft,
+  setDraft,
   batchId,
   view,
   onToggleView,
+  download,
+  onDownload,
 }: {
   clip: Clip;
   draft: EditDraft;
+  setDraft: Dispatch<SetStateAction<EditDraft>>;
   batchId: string;
   view: View;
   onToggleView: () => void;
+  /** A download waits for its final render (kept above the editor, which remounts). */
+  download: boolean;
+  onDownload: () => void;
 }) {
   const client = useQueryClient();
   const refresh = () => {
     void client.invalidateQueries({ queryKey: keys.clip(clip.id) });
     invalidateBatch(client, clip.batch_id);
   };
-  // Preview and Export use what is on screen: unsaved edits are saved first (D-057).
-  const saveThen = async (start: (id: string) => Promise<unknown>) => {
+  // Preview and Download use what is on screen: unsaved edits are saved first (D-057).
+  const save = async () => {
     const errors = draftErrors(draft, clip);
     if (errors.length > 0) throw new Error(errors[0]);
     if (isDirty(draft, clip)) {
       const updated = await patchClip(clip.id, patchFrom(draft, clip));
       client.setQueryData(keys.clip(clip.id), updated);
+      return updated;
     }
-    return start(clip.id);
+    return clip;
   };
+  const apply = useMutation({
+    mutationFn: save,
+    onSuccess: () => {
+      refresh();
+      toast.success("Changes applied.");
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
   const preview = useMutation({
-    mutationFn: () => saveThen(previewClip),
+    mutationFn: async () => {
+      await save();
+      return previewClip(clip.id);
+    },
     onSuccess: refresh,
     onError: (error) => toast.error(errorMessage(error)),
   });
-  const render = useMutation({
-    mutationFn: () => saveThen(exportClip),
-    onSuccess: refresh,
+  // Download (D-058): the final file when it is current, else render it first and download
+  // when it is ready.
+  const prepare = useMutation({
+    mutationFn: async () => {
+      const saved = await save();
+      if (!saved.has_export) await exportClip(clip.id);
+      return saved.has_export;
+    },
+    onSuccess: (ready) => {
+      refresh();
+      if (ready) triggerDownload(clip.id);
+      else onDownload();
+    },
     onError: (error) => toast.error(errorMessage(error)),
   });
   const busy = clip.status === "queued" || clip.status === "running";
   const dirty = isDirty(draft, clip);
+  const errors = draftErrors(draft, clip);
+  const editing = view === "edit";
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -290,8 +346,25 @@ function Toolbar({
         </Link>
       </Button>
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" onClick={onToggleView} aria-pressed={view === "edit"}>
-          {view === "edit" ? (
+        {editing && dirty && (
+          <>
+            <span className="text-muted-foreground text-sm">Unsaved changes</span>
+            <Button variant="ghost" onClick={() => setDraft(draftFrom(clip))}>
+              Discard
+            </Button>
+            <Button
+              variant="outline"
+              disabled={errors.length > 0 || apply.isPending || busy}
+              title={busy ? "Wait for the current render to finish." : errors[0]}
+              onClick={() => apply.mutate()}
+            >
+              {apply.isPending && <Loader2 className="animate-spin" aria-hidden />}
+              Apply changes
+            </Button>
+          </>
+        )}
+        <Button variant="outline" onClick={onToggleView} aria-pressed={editing}>
+          {editing ? (
             <>
               <FileText aria-hidden /> Metadata
             </>
@@ -311,28 +384,35 @@ function Toolbar({
           Preview
         </Button>
         <Button
-          variant="outline"
-          disabled={busy || render.isPending}
-          onClick={() => render.mutate()}
-          title={dirty ? "Saves your changes, then exports" : undefined}
+          variant="brand"
+          disabled={download || prepare.isPending || (busy && !clip.has_export)}
+          onClick={() => prepare.mutate()}
+          title={
+            dirty || !clip.has_export
+              ? "Saves your changes, renders the final video, then downloads it"
+              : undefined
+          }
         >
-          {render.isPending && <Loader2 className="animate-spin" aria-hidden />}
-          Export
+          {download || prepare.isPending ? (
+            <Loader2 className="animate-spin" aria-hidden />
+          ) : (
+            <Download aria-hidden />
+          )}
+          {download ? "Preparing download…" : "Download"}
         </Button>
-        {clip.has_export ? (
-          <Button variant="brand" asChild>
-            <a href={clipDownloadUrl(clip.id)} download>
-              <Download aria-hidden /> Download
-            </a>
-          </Button>
-        ) : (
-          <Button variant="brand" disabled>
-            <Download aria-hidden /> Download
-          </Button>
-        )}
       </div>
     </div>
   );
+}
+
+/** Start the browser download of the clip's final video. */
+function triggerDownload(clipId: string) {
+  const link = document.createElement("a");
+  link.href = clipDownloadUrl(clipId);
+  link.download = "";
+  document.body.append(link);
+  link.click();
+  link.remove();
 }
 
 function Player({

@@ -67,7 +67,7 @@ States: empty, inspecting, inspect-failed (error under the field), ready, starti
 
 ## Clip detail `/history/[batchId]/clips/[clipId]`
 Two columns.
-- **Left:** 9:16 video player (preview if available else export, else raw-cut message). Under it: Preview button, Export button, Download button (enabled only after export), status text.
+- **Left:** 9:16 video player (preview if available else export, else raw-cut message), as wide as the video (D-058). Top bar: Back to batch; in Edit with unsaved changes "Unsaved changes", Discard, Apply changes; then Metadata/Edit, Preview, Download (D-058: no Export button; Download renders the final video first when needed, then downloads).
 - **Right (tabs):**
   - **Metadata:** on-video title, YouTube title, YouTube description, hashtags, "Why this moment". Each is editable text with a copy icon in the field's top-right corner, shown while the field is hovered or focused. The LinkedIn post is not shown (D-055).
   - **Edit:** trim start/end (two hh:mm:ss inputs, positions in the source video, + slider, shows resulting length, warns outside 25–90 s; for a montage clip (D-051) a "Skip the quiet gaps (montage)" switch lists the parts that play and the seconds skipped, and the length is the played length), caption style (3 options with small visual examples), caption text timeline (D-055: words on a time track in two rows with a ruler, zoom, and a playhead that follows the video; clicking a word jumps the video there and opens it for retyping; **Remove word**, the Delete key, or clearing its text removes it from the captions), background blur (slider), crop mode (Auto / Face / Full frame).
