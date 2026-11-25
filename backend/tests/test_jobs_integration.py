@@ -231,9 +231,18 @@ def test_three_links_run_unattended_and_failure_is_isolated(
     assert KEY.encode() not in (config.logs_dir / "app.log").read_bytes()
 
 
+def settled(batch: dict[str, Any]) -> bool:
+    """Finished and no clip still rendering (edits are refused while a clip renders)."""
+    return finished(batch) and all(
+        clip["status"] not in ("queued", "running")
+        for video in batch["videos"]
+        for clip in video["clips"]
+    )
+
+
 def test_edit_preview_export_download(client: TestClient) -> None:
     batch_id = client.post("/api/batches", json={"urls": [url("aaaaaaaaaaa")]}).json()["id"]
-    batch = wait_for(client, batch_id, finished)
+    batch = wait_for(client, batch_id, settled)
     clip_id = batch["videos"][0]["clips"][0]["id"]
     clip = client.get(f"/api/clips/{clip_id}").json()
     assert clip["source_bounds"] == {"min_start_s": 0.0, "max_end_s": LENGTH}
@@ -260,7 +269,7 @@ def test_edit_preview_export_download(client: TestClient) -> None:
     assert edited["words"][0]["start"] >= 0
     assert client.get(f"/api/clips/{clip_id}/download").json()["error"]["code"] == "CONFLICT"
     assert client.post(f"/api/clips/{clip_id}/preview").status_code == 202
-    wait_for(client, batch_id, lambda b: b["videos"][0]["clips"][0]["has_preview"])
+    wait_for(client, batch_id, lambda b: b["videos"][0]["clips"][0]["has_preview"] and settled(b))
     media = client.get(f"/api/clips/{clip_id}/media/preview", headers={"Range": "bytes=0-99"})
     assert media.status_code == 206
     assert len(media.content) == 100
@@ -290,7 +299,7 @@ def test_edit_preview_export_download(client: TestClient) -> None:
 def test_editor_parts_split_delete_and_extend(client: TestClient) -> None:
     """D-059: the editor sends the played parts; a cut makes a montage, one part a trim."""
     batch_id = client.post("/api/batches", json={"urls": [url("aaaaaaaaaaa")]}).json()["id"]
-    batch = wait_for(client, batch_id, finished)
+    batch = wait_for(client, batch_id, settled)
     clip_id = batch["videos"][0]["clips"][0]["id"]
     clip = client.get(f"/api/clips/{clip_id}").json()
     start, end = clip["start_s"], clip["end_s"]
