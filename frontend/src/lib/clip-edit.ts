@@ -10,8 +10,12 @@ export const GOOD_MIN_S = 15;
 export const MAX_BLUR_BOXES = 20;
 export const MIN_BOX_SIDE = 0.02;
 const NEW_BOX_S = 3;
+/** Shortest blur box the timeline lets you drag to (D-056). */
+export const MIN_BOX_S = 0.2;
 
 export interface EditDraft {
+  /** On-video title (D-056: edited in the editor, saved with Apply). */
+  title: string;
   start_s: number;
   end_s: number;
   caption_style: Clip["edit"]["caption_style"];
@@ -27,6 +31,7 @@ export type Part = [number, number];
 
 export function draftFrom(clip: Clip): EditDraft {
   return {
+    title: clip.metadata.title,
     start_s: clip.edit.start_s,
     end_s: clip.edit.end_s,
     caption_style: clip.edit.caption_style,
@@ -63,6 +68,9 @@ const share = (value: number) => Math.round(value * 10000) / 10000;
 /** Problems that block saving (empty list = valid). */
 export function draftErrors(draft: EditDraft, clip: Clip): string[] {
   const errors: string[] = [];
+  if (draft.title.length > TITLE_MAX) {
+    errors.push(`The on-video title must be at most ${TITLE_MAX} characters.`);
+  }
   const { min_start_s: min, max_end_s: max } = clip.source_bounds;
   if (!Number.isFinite(draft.start_s) || !Number.isFinite(draft.end_s)) {
     errors.push("Start and end must be numbers.");
@@ -110,6 +118,7 @@ function roundBox(box: BlurBox): BlurBox {
 /** Only the changed fields. Trim without word edits lets the backend re-sync the words. */
 export function patchFrom(draft: EditDraft, clip: Clip): ClipPatch {
   const patch: ClipPatch = {};
+  if (draft.title !== clip.metadata.title) patch.title = draft.title;
   if (round(draft.start_s) !== round(clip.edit.start_s)) patch.start_s = round(draft.start_s);
   if (round(draft.end_s) !== round(clip.edit.end_s)) patch.end_s = round(draft.end_s);
   if (draft.caption_style !== clip.edit.caption_style) patch.caption_style = draft.caption_style;
@@ -176,4 +185,44 @@ export function clampBox(box: BlurBox): BlurBox {
 /** True while the box is blurred at `time_s` (clip seconds). */
 export function boxVisible(box: BlurBox, time_s: number): boolean {
   return time_s >= box.start && time_s < box.end;
+}
+
+/** A played part placed on the clip's own timeline (D-056): `start`/`end` are clip seconds,
+ * `source` is the source range it comes from. */
+export interface TimelinePart {
+  start: number;
+  end: number;
+  source: Part;
+}
+
+/** The played parts laid end to end from 0, as the timeline's Video track shows them. */
+export function timelineParts(draft: EditDraft, parts: Part[]): TimelinePart[] {
+  let at = 0;
+  return playedParts(draft, parts).map((source) => {
+    const part = { start: at, end: at + source[1] - source[0], source };
+    at = part.end;
+    return part;
+  });
+}
+
+/** A blur box moved in time by `delta` seconds, kept inside 0..length with its duration. */
+export function moveBoxTime(box: BlurBox, delta: number, length: number): BlurBox {
+  const duration = box.end - box.start;
+  const start = Math.min(Math.max(0, box.start + delta), Math.max(0, length - duration));
+  return { ...box, start: round(start), end: round(start + duration) };
+}
+
+/** A blur box with one end dragged by `delta` seconds, at least MIN_BOX_S long, inside the clip. */
+export function resizeBoxTime(
+  box: BlurBox,
+  edge: "start" | "end",
+  delta: number,
+  length: number,
+): BlurBox {
+  if (edge === "start") {
+    const start = Math.min(Math.max(0, box.start + delta), box.end - MIN_BOX_S);
+    return { ...box, start: round(start) };
+  }
+  const end = Math.max(Math.min(length, box.end + delta), box.start + MIN_BOX_S);
+  return { ...box, end: round(end) };
 }

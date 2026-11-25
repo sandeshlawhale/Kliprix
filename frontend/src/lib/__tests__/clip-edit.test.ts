@@ -13,6 +13,9 @@ import {
   playedLength,
   playedParts,
   keptWords,
+  moveBoxTime,
+  resizeBoxTime,
+  timelineParts,
   wordAt,
 } from "@/lib/clip-edit";
 
@@ -231,5 +234,49 @@ describe("montage clips (D-051)", () => {
     // Plays 3 + 10 + 2 = 15 s although the range is 35 s.
     expect(playedLength(draft, c.edit.parts)).toBe(15);
     expect(draftErrors(draft, c)).toEqual([]);
+  });
+});
+
+describe("timeline editor (D-056)", () => {
+  const box = { start: 2, end: 5, x: 0.1, y: 0.1, w: 0.5, h: 0.5 };
+
+  it("saves the on-video title with the edits and checks its length", () => {
+    const c = clip();
+    const draft = { ...draftFrom(c), title: "New title" };
+    expect(patchFrom(draft, c)).toEqual({ title: "New title" });
+    expect(draftErrors({ ...draft, title: "x".repeat(41) }, c)).toContain(
+      "The on-video title must be at most 40 characters.",
+    );
+  });
+
+  it("lays the whole range from 0 when there is no montage", () => {
+    const c = clip();
+    expect(timelineParts(draftFrom(c), [])).toEqual([{ start: 0, end: 50, source: [100, 150] }]);
+  });
+
+  it("lays montage parts end to end in clip time", () => {
+    const c = clip();
+    const draft = { ...draftFrom(c), montage: true };
+    const parts = timelineParts(draft, [
+      [100, 110],
+      [120, 150],
+    ]);
+    expect(parts).toEqual([
+      { start: 0, end: 10, source: [100, 110] },
+      { start: 10, end: 40, source: [120, 150] },
+    ]);
+  });
+
+  it("moves a blur box in time, keeping its length inside the clip", () => {
+    expect(moveBoxTime(box, 1.5, 20)).toMatchObject({ start: 3.5, end: 6.5 });
+    expect(moveBoxTime(box, -10, 20)).toMatchObject({ start: 0, end: 3 });
+    expect(moveBoxTime(box, 30, 20)).toMatchObject({ start: 17, end: 20 });
+  });
+
+  it("drags one end of a blur box, never past the other or the clip", () => {
+    expect(resizeBoxTime(box, "start", -1, 20)).toMatchObject({ start: 1, end: 5 });
+    expect(resizeBoxTime(box, "start", 10, 20)).toMatchObject({ start: 4.8, end: 5 });
+    expect(resizeBoxTime(box, "end", 30, 20)).toMatchObject({ start: 2, end: 20 });
+    expect(resizeBoxTime(box, "end", -10, 20)).toMatchObject({ start: 2, end: 2.2 });
   });
 });

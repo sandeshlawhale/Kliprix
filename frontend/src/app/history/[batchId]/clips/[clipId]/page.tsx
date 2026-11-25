@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { clipStatusText } from "@/components/batch/clip-card";
 import { BlurBoxOverlay } from "@/components/clip/blur-box-overlay";
 import { EditPanel } from "@/components/clip/edit-panel";
+import type { Selection } from "@/components/clip/edit-timeline";
 import { MetadataPanel } from "@/components/clip/metadata-panel";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -61,13 +62,20 @@ export default function ClipPage({ params }: PageProps<"/history/[batchId]/clips
   );
 }
 
-/** Player and side panel share the edit draft, so blur boxes can be drawn on the video. */
+/** Player and side panel share the edit draft, so blur boxes can be drawn on the video.
+ * Edit view (D-056): the player alone on the left; the right column is the inspector, the
+ * timeline and Apply. Both select the same item (a blur box on the video is a bar below). */
 function Workspace({ clip, view }: { clip: Clip; view: View }) {
   const [draft, setDraft] = useState<EditDraft>(() => draftFrom(clip));
-  const [selectedBox, setSelectedBox] = useState<number | null>(null);
+  const [selection, setSelection] = useState<Selection>({ kind: "video" });
   const [time, setTime] = useState(0);
   const video = useRef<HTMLVideoElement>(null);
   const editing = view === "edit";
+  const selectedBox = selection.kind === "blur" && selection.index >= 0 ? selection.index : null;
+  const seek = (to: number) => {
+    if (video.current) video.current.currentTime = to;
+    setTime(to);
+  };
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-8">
@@ -82,7 +90,7 @@ function Workspace({ clip, view }: { clip: Clip; view: View }) {
               boxes={draft.blur_boxes}
               time={time}
               selected={selectedBox}
-              onSelect={setSelectedBox}
+              onSelect={(index) => setSelection({ kind: "blur", index })}
               onChange={(index, box) =>
                 setDraft((current) => ({
                   ...current,
@@ -93,29 +101,24 @@ function Workspace({ clip, view }: { clip: Clip; view: View }) {
           ) : null
         }
       />
-      <section aria-label={editing ? "Edit" : "Metadata"} className="min-h-0 overflow-y-auto pr-2">
-        {editing ? (
+      {editing ? (
+        <section aria-label="Edit" className="min-h-0">
           <EditPanel
             clip={clip}
             draft={draft}
             setDraft={setDraft}
             videoTime={() => video.current?.currentTime ?? time}
             time={time}
-            onSeek={(to) => {
-              if (video.current) video.current.currentTime = to;
-              setTime(to);
-            }}
-            selectedBox={selectedBox}
-            onSelectBox={(index) => {
-              setSelectedBox(index);
-              const box = index === null ? undefined : draft.blur_boxes[index];
-              if (box && video.current) video.current.currentTime = box.start;
-            }}
+            onSeek={seek}
+            selection={selection}
+            onSelect={setSelection}
           />
-        ) : (
+        </section>
+      ) : (
+        <section aria-label="Metadata" className="min-h-0 overflow-y-auto pr-2">
           <MetadataPanel clip={clip} />
-        )}
-      </section>
+        </section>
+      )}
     </div>
   );
 }
