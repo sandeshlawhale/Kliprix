@@ -124,7 +124,7 @@ function Editor({
         view={view}
         onToggleView={() => setView(view === "edit" ? "metadata" : "edit")}
       />
-      <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-8">
+      <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-5">
         <Player
           clip={clip}
           video={video}
@@ -203,14 +203,14 @@ function LiveSwitch({
 }) {
   if (!clip.live) {
     return (
-      <p className="text-muted-foreground max-w-80 text-xs">
+      <p className="text-muted-foreground text-xs">
         Click Preview once to edit live: the title, captions and blur boxes then change on the video
         as you edit.
       </p>
     );
   }
   return (
-    <div className="flex max-w-80 flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5">
       <div className="flex gap-1" role="group" aria-label="Player shows">
         <Button
           size="sm"
@@ -361,6 +361,15 @@ function Player({
   return (
     <div className="flex min-h-0 flex-col gap-2">
       <div className="relative min-h-0 flex-1">
+        {/* The column's width comes from this empty 9:16 SVG at the full height, so the player
+            column is exactly as wide as the video and the side panel gets the rest. */}
+        <svg
+          viewBox="0 0 9 16"
+          width={1080}
+          height={1920}
+          className="block h-full w-auto max-w-[min(420px,40vw)]"
+          aria-hidden
+        />
         {kind ? (
           <video
             ref={video}
@@ -370,46 +379,37 @@ function Player({
             src={clipMediaUrl(clip.id, kind, version)}
             controls
             playsInline
-            className="bg-muted aspect-[9/16] h-full max-w-[min(420px,40vw)] rounded-xl object-contain"
+            className="bg-muted absolute inset-0 h-full w-full rounded-xl object-contain"
           />
         ) : (
-          // A plain box gets its width from its height only after the grid sized the column,
-          // so it spilled over the side panel. An empty SVG with the video's own 1080x1920 size
-          // sizes the column exactly like the <video>.
-          <div className="relative h-full">
-            <svg
-              viewBox="0 0 9 16"
-              width={1080}
-              height={1920}
-              className="block h-full w-auto max-w-[min(420px,40vw)]"
-              aria-hidden
-            />
-            <div className="bg-muted text-muted-foreground absolute inset-0 flex items-center justify-center rounded-xl p-6 text-center text-sm">
-              {busy ? "Rendering…" : "No rendered video yet. Make a preview to see your changes."}
-            </div>
+          <div className="bg-muted text-muted-foreground absolute inset-0 flex items-center justify-center rounded-xl p-6 text-center text-sm">
+            {busy ? "Rendering…" : "No rendered video yet. Make a preview to see your changes."}
           </div>
         )}
         {/* Overlays measure the <video>, so they remount with it when the source changes. */}
         {kind && <Fragment key={`overlay-${kind}-${version}`}>{overlay}</Fragment>}
       </div>
-      {clip.status === "running" && (
-        <Progress value={clip.progress * 100} aria-label="Render progress" />
-      )}
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant={clip.status === "failed" ? "destructive" : "outline"}>
-          {needsPreview ? "Edited — preview needed" : clipStatusText(clip)}
-        </Badge>
-        {kind && (
-          <span className="text-muted-foreground text-xs">
-            {kind === "base" ? "Live view" : `Showing the ${kind}`}
-          </span>
+      {/* w-0 + min-w-full: the text below wraps to the video's width instead of widening it. */}
+      <div className="flex w-0 min-w-full flex-col gap-2">
+        {clip.status === "running" && (
+          <Progress value={clip.progress * 100} aria-label="Render progress" />
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant={clip.status === "failed" ? "destructive" : "outline"}>
+            {needsPreview ? "Edited — preview needed" : clipStatusText(clip)}
+          </Badge>
+          {kind && (
+            <span className="text-muted-foreground text-xs">
+              {kind === "base" ? "Live view" : `Showing the ${kind}`}
+            </span>
+          )}
+        </div>
+        {footer}
+        {clip.warning && <p className="text-muted-foreground text-xs">{clip.warning}</p>}
+        {clip.error && clip.status === "failed" && (
+          <p className="text-destructive text-sm">{clip.error.message}</p>
         )}
       </div>
-      {footer}
-      {clip.warning && <p className="text-muted-foreground max-w-80 text-xs">{clip.warning}</p>}
-      {clip.error && clip.status === "failed" && (
-        <p className="text-destructive max-w-80 text-sm">{clip.error.message}</p>
-      )}
     </div>
   );
 }
