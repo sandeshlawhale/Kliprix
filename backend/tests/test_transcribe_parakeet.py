@@ -314,7 +314,7 @@ def test_pipeline_uses_parakeet_by_default(
     monkeypatch.setattr(ctx, "memory", lambda: BIG)
     video, transcript = _run_one(app, config)
     assert video["status"] == "done"
-    # The engine shows on the Transcribe step only, not in the note (D-064).
+    # The engine shows on the Transcribe step only, not in the note (D-066).
     assert "Speech-to-text" not in (video["note"] or "")
     assert _transcribe_step(video)["engine"] == "Parakeet"
     assert transcript.engine == "parakeet"
@@ -365,7 +365,7 @@ def test_pipeline_uses_whisper_for_hinglish_and_shows_its_device(
         batch = wait_for(client, created.json()["id"], finished)
     video = batch["videos"][0]
     assert video["status"] == "done"
-    assert "Hinglish uses Whisper" not in (video["note"] or "")  # log only (D-064)
+    assert "Hinglish uses Whisper" not in (video["note"] or "")  # log only (D-066)
     transcript = load_cached(config.data_dir / "downloads" / video["id"])
     assert transcript is not None
     assert transcript.engine == "whisper"
@@ -390,7 +390,7 @@ def test_pipeline_falls_back_to_whisper_when_parakeet_fails(
     video, transcript = _run_one(app, config)
     assert video["status"] == "done"
     assert video["error"] is None
-    # The fallback goes to the log; the note has no engine line (D-064).
+    # The fallback goes to the log; the note has no engine line (D-066).
     assert "Speech-to-text" not in (video["note"] or "")
     assert _transcribe_step(video)["engine"] == "Whisper medium"
     assert transcript.engine == "whisper"

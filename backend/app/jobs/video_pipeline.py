@@ -647,7 +647,7 @@ class VideoPipeline:
             else:
                 factory = self.ctx.parakeet_factory(self.cancel, self._model_download)
                 # The engine shows on the Transcribe step; the note is cleared (a first-use
-                # download writes its progress there). D-064: no engine line in the note.
+                # download writes its progress there). D-066: no engine line in the note.
                 self._update(note=None, transcribe_engine=PARAKEET_LABEL)
                 try:
                     with stage_timer("transcribe", video=self.video_id, engine="parakeet"):
@@ -695,7 +695,7 @@ class VideoPipeline:
             self._fraction("transcribe", fraction)
 
         # The engine shows on the Transcribe step; why it was picked goes to the log only
-        # (D-064: the note no longer carries the engine line).
+        # (D-066: the note no longer carries the engine line).
         logger.info("whisper video=%s model=%s reason=%s", self.video_id, model, reason)
         self._update(note=None, transcribe_engine=f"Whisper {model}")
         with stage_timer("transcribe", video=self.video_id, engine="whisper", model=model):

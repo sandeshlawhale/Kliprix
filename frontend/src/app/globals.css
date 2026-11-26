@@ -187,7 +187,7 @@
   }
 }
 
-/* Step hints on the batch page take turns (D-064): the old one leaves upwards, the new one
+/* Step hints on the batch page take turns (D-066): the old one leaves upwards, the new one
    comes in from below. */
 @keyframes kliprix-hint-in {
   from {

@@ -12,7 +12,7 @@ const SLOW_STEP_NOTE = "slowest step, please wait patiently";
 
 /** The 7 steps under each video (docs/03, D-024). Only the step being worked on shows, with
  * its percentage and hints (D-055); hovering it shows an arrow that opens all 7 below it, so
- * the current step stays where it is (D-064). States come from the backend; nothing ticks on
+ * the current step stays where it is (D-066). States come from the backend; nothing ticks on
  * a timer. */
 export function CheckpointList({ checkpoints }: { checkpoints: Checkpoint[] }) {
   const [open, setOpen] = useState(false);
@@ -95,11 +95,11 @@ function StepLine({ step }: { step: Checkpoint }) {
   );
 }
 
-/** How long each hint stays before the next one rolls in (D-064). */
+/** How long each hint stays before the next one rolls in (D-066). */
 const HINT_MS = 2000;
 
 /** The current step's hints (engine in use, "slowest step"), one at a time: every 2 s the
- * shown one moves up and out while the next comes in from below (D-064). */
+ * shown one moves up and out while the next comes in from below (D-066). */
 function StepHints({ step }: { step: Checkpoint }) {
   const hints: string[] = [];
   if (step.engine) hints.push(step.engine);

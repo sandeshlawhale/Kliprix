@@ -28,7 +28,7 @@ CheckpointKey = Literal["download", "chat", "signals", "candidates", "transcribe
 CheckpointStateName = Literal["pending", "running", "paused", "done", "skipped", "failed"]
 
 
-# Engine sentences older runs wrote into the note (D-028); hidden since D-064.
+# Engine sentences older runs wrote into the note (D-028); hidden since D-066.
 _ENGINE_NOTE = re.compile(
     r"Speech-to-text: [^.]*\.(?:\s|$)"
     r"|Hinglish uses Whisper \(Parakeet only understands English\)\.(?:\s|$)"
@@ -39,7 +39,7 @@ _ENGINE_NOTE = re.compile(
 
 
 def visible_note(note: str | None) -> str | None:
-    """The video's note without the speech-to-text engine sentences (D-064)."""
+    """The video's note without the speech-to-text engine sentences (D-066)."""
     if not note:
         return None
     return _ENGINE_NOTE.sub("", note).strip() or None
@@ -88,7 +88,7 @@ class Video(BaseModel):
     progress: float
     error: ErrorBody | None = None
     # Notes about the run (skipped checks, More clips results). The engine line of D-028 is
-    # no longer shown (D-064); it is on the Transcribe step.
+    # no longer shown (D-066); it is on the Transcribe step.
     note: str | None = None
     # More clips from the saved download (D-034): possible now, or why not.
     can_add_clips: bool = False

@@ -448,7 +448,7 @@ function Player({
 
   return (
     <div className="flex min-h-0 flex-col gap-2">
-      {/* The box is exactly 9:16 like the clip (D-064): as tall as a min(300px, 26vw) wide
+      {/* The box is exactly 9:16 like the clip (D-066): as tall as a min(300px, 26vw) wide
           video, shrinking when the window is shorter; the empty 9:16 SVG gives the width, so
           the column is as wide as the video, no gray bands show and the text below follows
           right under it. */}
