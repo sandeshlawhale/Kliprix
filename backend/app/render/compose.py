@@ -168,20 +168,20 @@ def box_blur_chain(boxes: Sequence[BlurBox], first: str, last: str) -> list[str]
 def bleep_graph(spans: list[tuple[float, float]], duration_s: float) -> str:
     """Audio filters that mute input 0's audio during `spans` and lay a beep over them,
     output label [a]. Times are seconds from the clip start (input 0 is seeked, so t
-    starts at 0). `asetpts` puts the audio's first sample at 0 like the beep's: FFmpeg 6.1
-    (Ubuntu 24.04) kept the seeked audio's start time, so the clip's audio started 0.14 s
-    late and ended 0.11 s before its video. The muted track is then padded with silence to
-    `duration_s`, since amix ends with its first input."""
+    starts at 0). Both mix inputs last exactly `duration_s` (the muted track is padded with
+    silence, the beep has that duration), and amix uses `duration=longest`: with
+    `duration=first`, FFmpeg 6.1 (Ubuntu 24.04) ended the mix 0.14 s early, so the clip's
+    audio stopped before its video (measured on CI: 5.858 s instead of 6.000 s)."""
     on = "+".join(f"between(t,{start:.3f},{end:.3f})" for start, end in spans)
     muted = (
-        f"[0:a:0]asetpts=PTS-STARTPTS,aresample={AUDIO_RATE},apad=whole_dur={duration_s:.3f},"
+        f"[0:a:0]aresample={AUDIO_RATE},apad=whole_dur={duration_s:.3f},"
         f"volume=0:enable='{on}'[mute]"
     )
     beep = (
         f"sine=frequency={BEEP_HZ}:sample_rate={AUDIO_RATE}:duration={duration_s:.3f},"
         f"volume={BEEP_VOLUME},volume=0:enable='not({on})'[beep]"
     )
-    mix = "[mute][beep]amix=inputs=2:duration=first:normalize=0[a]"
+    mix = "[mute][beep]amix=inputs=2:duration=longest:normalize=0[a]"
     return ";".join([muted, beep, mix])
 
 
