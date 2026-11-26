@@ -31,7 +31,7 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy
-      - run: python -m pytest
+      - run: python -m pytest -rfE --durations=15
 
   frontend:
     runs-on: ubuntu-24.04
