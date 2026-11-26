@@ -448,34 +448,37 @@ function Player({
 
   return (
     <div className="flex min-h-0 flex-col gap-2">
-      <div className="relative min-h-0 flex-1">
-        {/* The column's width comes from this empty 9:16 SVG at the full height, so the player
-            column is exactly as wide as the video and the side panel gets the rest. */}
-        <svg
-          viewBox="0 0 9 16"
-          width={1080}
-          height={1920}
-          className="block h-full w-auto max-w-[min(300px,26vw)]"
-          aria-hidden
-        />
-        {kind ? (
-          <video
-            ref={video}
-            key={`${kind}-${version}`}
-            onTimeUpdate={(event) => onTime(event.currentTarget.currentTime)}
-            onSeeked={(event) => onTime(event.currentTarget.currentTime)}
-            src={clipMediaUrl(clip.id, kind, version)}
-            controls
-            playsInline
-            className="bg-muted absolute inset-0 h-full w-full rounded-xl object-contain"
+      <div className="min-h-0 flex-1">
+        {/* The box is exactly 9:16 like the clip (D-064): its height is the free height, capped
+            so the width stays at most min(300px, 26vw); the empty 9:16 SVG gives the width, so
+            the player column is as wide as the video and no gray bands show around it. */}
+        <div className="relative h-full max-h-[calc(min(300px,26vw)*16/9)] w-fit max-w-[min(300px,26vw)]">
+          <svg
+            viewBox="0 0 9 16"
+            width={1080}
+            height={1920}
+            className="block h-full w-auto"
+            aria-hidden
           />
-        ) : (
-          <div className="bg-muted text-muted-foreground absolute inset-0 flex items-center justify-center rounded-xl p-6 text-center text-sm">
-            {busy ? "Rendering…" : "No rendered video yet. Make a preview to see your changes."}
-          </div>
-        )}
-        {/* Overlays measure the <video>, so they remount with it when the source changes. */}
-        {kind && <Fragment key={`overlay-${kind}-${version}`}>{overlay}</Fragment>}
+          {kind ? (
+            <video
+              ref={video}
+              key={`${kind}-${version}`}
+              onTimeUpdate={(event) => onTime(event.currentTarget.currentTime)}
+              onSeeked={(event) => onTime(event.currentTarget.currentTime)}
+              src={clipMediaUrl(clip.id, kind, version)}
+              controls
+              playsInline
+              className="bg-muted absolute inset-0 h-full w-full rounded-xl object-contain"
+            />
+          ) : (
+            <div className="bg-muted text-muted-foreground absolute inset-0 flex items-center justify-center rounded-xl p-6 text-center text-sm">
+              {busy ? "Rendering…" : "No rendered video yet. Make a preview to see your changes."}
+            </div>
+          )}
+          {/* Overlays measure the <video>, so they remount with it when the source changes. */}
+          {kind && <Fragment key={`overlay-${kind}-${version}`}>{overlay}</Fragment>}
+        </div>
       </div>
       {/* w-0 + min-w-full: the text below wraps to the video's width instead of widening it. */}
       <div className="flex w-0 min-w-full flex-col gap-2">

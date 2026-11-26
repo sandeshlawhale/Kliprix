@@ -4,6 +4,7 @@ rows. Shared by the batches and clips routers."""
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from typing import Any, Literal
 
@@ -25,6 +26,23 @@ from app.sources.base import SOURCE_FILE_NAME
 
 CheckpointKey = Literal["download", "chat", "signals", "candidates", "transcribe", "select", "edit"]
 CheckpointStateName = Literal["pending", "running", "paused", "done", "skipped", "failed"]
+
+
+# Engine sentences older runs wrote into the note (D-028); hidden since D-064.
+_ENGINE_NOTE = re.compile(
+    r"Speech-to-text: [^.]*\.(?:\s|$)"
+    r"|Hinglish uses Whisper \(Parakeet only understands English\)\.(?:\s|$)"
+    r"|Parakeet is not available in this app, so Whisper was used\.(?:\s|$)"
+    r"|Parakeet failed \(.*?\), so Whisper was used\.(?:\s|$)"
+    r"|Parakeet needs 8 GB of RAM, so Whisper was used on this PC\.(?:\s|$)"
+)
+
+
+def visible_note(note: str | None) -> str | None:
+    """The video's note without the speech-to-text engine sentences (D-064)."""
+    if not note:
+        return None
+    return _ENGINE_NOTE.sub("", note).strip() or None
 
 
 class Checkpoint(BaseModel):
@@ -69,7 +87,8 @@ class Video(BaseModel):
     stage: str | None
     progress: float
     error: ErrorBody | None = None
-    # Which speech-to-text engine ran and why (D-028), e.g. "Speech-to-text: Parakeet".
+    # Notes about the run (skipped checks, More clips results). The engine line of D-028 is
+    # no longer shown (D-064); it is on the Transcribe step.
     note: str | None = None
     # More clips from the saved download (D-034): possible now, or why not.
     can_add_clips: bool = False
@@ -220,7 +239,7 @@ def video_view(
         stage=video.stage,
         progress=video.progress,
         error=error_of(video.error_code, video.error_message),
-        note=video.note,
+        note=visible_note(video.note),
         can_add_clips=blocked is None,
         add_clips_blocked=blocked,
         active_since=active_since,

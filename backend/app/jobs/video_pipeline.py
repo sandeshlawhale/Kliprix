@@ -94,8 +94,6 @@ _STAGES = list(PROGRESS_AT)
 # Smallest change of the video's progress (0-1) worth saving and sending to the UI.
 PROGRESS_STEP = 0.005
 
-# The video's note says which speech-to-text engine ran and why (D-028).
-PARAKEET_NOTE = "Speech-to-text: Parakeet."
 # Shown on the Transcribe step (D-030, temporary debug display).
 PARAKEET_LABEL = "Parakeet"
 PARAKEET_MISSING_NOTE = "Parakeet is not available in this app, so Whisper was used."
@@ -146,11 +144,6 @@ def chat_lag(
     measured = estimate_lag(reaction_counts(messages, length), np.asarray(sound.values))
     logger.info("chat lag measured=%s duration=%.0f", measured, duration)
     return measured if measured is not None else CHAT_LAG_S
-
-
-def _whisper_note(model: str, reason: str | None) -> str:
-    used = f"Speech-to-text: Whisper {model}."
-    return f"{reason} {used}" if reason else used
 
 
 class VideoPipeline:
@@ -653,9 +646,9 @@ class VideoPipeline:
                 reason = PARAKEET_MISSING_NOTE
             else:
                 factory = self.ctx.parakeet_factory(self.cancel, self._model_download)
-                # Shown while Parakeet runs (a first-use download replaces the note with its
-                # progress), so the engine is visible before the step ends.
-                self._update(note=PARAKEET_NOTE, transcribe_engine=PARAKEET_LABEL)
+                # The engine shows on the Transcribe step; the note is cleared (a first-use
+                # download writes its progress there). D-064: no engine line in the note.
+                self._update(note=None, transcribe_engine=PARAKEET_LABEL)
                 try:
                     with stage_timer("transcribe", video=self.video_id, engine="parakeet"):
                         transcript = run_transcribe(
@@ -664,7 +657,7 @@ class VideoPipeline:
                             on_progress=lambda f: self._fraction("transcribe", f),
                             engine="parakeet", extend=extend,
                         )  # fmt: skip
-                    self._update(note=PARAKEET_NOTE)
+                    self._update(note=None)
                     return transcript
                 except AppError as exc:
                     if exc.code not in PARAKEET_FALLBACK_CODES:
@@ -701,8 +694,10 @@ class VideoPipeline:
                 self._show_whisper(model, runners[0])
             self._fraction("transcribe", fraction)
 
-        # Shown while Whisper runs, so a fallback is visible right away, not only at the end.
-        self._update(note=_whisper_note(model, reason), transcribe_engine=f"Whisper {model}")
+        # The engine shows on the Transcribe step; why it was picked goes to the log only
+        # (D-064: the note no longer carries the engine line).
+        logger.info("whisper video=%s model=%s reason=%s", self.video_id, model, reason)
+        self._update(note=None, transcribe_engine=f"Whisper {model}")
         with stage_timer("transcribe", video=self.video_id, engine="whisper", model=model):
             transcript = run_transcribe(
                 video_dir, video_dir / AUDIO_FILE_NAME, spans, caption_language=caption,

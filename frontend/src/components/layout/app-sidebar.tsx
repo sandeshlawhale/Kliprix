@@ -49,14 +49,18 @@ export function AppSidebar() {
       <SidebarHeader className="gap-3 p-4">
         <Link
           href="/"
-          className="self-center text-lg font-semibold tracking-tight"
+          className="self-start px-1 text-lg font-semibold tracking-tight"
           aria-label="Kliprix home"
         >
           <span className="text-brand">K</span>liprix
         </Link>
-        <Button asChild className="w-full justify-start" variant="outline">
+        <Button
+          asChild
+          variant="outline"
+          className="border-border bg-background/40 hover:bg-accent h-10 w-full justify-start gap-2 rounded-xl px-3.5 font-medium shadow-none"
+        >
           <Link href="/">
-            <Plus aria-hidden /> New clips
+            <Plus aria-hidden className="size-4" /> New clips
           </Link>
         </Button>
       </SidebarHeader>
