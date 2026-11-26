@@ -3,7 +3,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
 
 permissions:
@@ -25,8 +25,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Install ffmpeg (with libass) and OpenCV system libraries
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg libgl1 libglib2.0-0
+      - name: Install ffmpeg (with libass), OpenCV and MediaPipe (EGL/GLES) system libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg libgl1 libglib2.0-0 libegl1 libgles2
       - run: python -m pip install -r requirements-dev.txt
       - run: ruff check .
       - run: ruff format --check .

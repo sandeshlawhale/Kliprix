@@ -168,9 +168,14 @@ def box_blur_chain(boxes: Sequence[BlurBox], first: str, last: str) -> list[str]
 def bleep_graph(spans: list[tuple[float, float]], duration_s: float) -> str:
     """Audio filters that mute input 0's audio during `spans` and lay a beep over them,
     output label [a]. Times are seconds from the clip start (input 0 is seeked, so t
-    starts at 0)."""
+    starts at 0). The muted track is padded with silence to `duration_s`: amix ends with
+    its first input, so a cut whose audio stops a little early would otherwise end the
+    clip's audio before its video (seen with FFmpeg 6.1 on Linux)."""
     on = "+".join(f"between(t,{start:.3f},{end:.3f})" for start, end in spans)
-    muted = f"[0:a:0]aresample={AUDIO_RATE},volume=0:enable='{on}'[mute]"
+    muted = (
+        f"[0:a:0]aresample={AUDIO_RATE},apad=whole_dur={duration_s:.3f},"
+        f"volume=0:enable='{on}'[mute]"
+    )
     beep = (
         f"sine=frequency={BEEP_HZ}:sample_rate={AUDIO_RATE}:duration={duration_s:.3f},"
         f"volume={BEEP_VOLUME},volume=0:enable='not({on})'[beep]"
