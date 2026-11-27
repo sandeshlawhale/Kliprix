@@ -10,7 +10,6 @@ import {
   Settings as SettingsIcon,
   Sun,
 } from "lucide-react";
-import Link from "next/link";
 import { useTheme } from "next-themes";
 
 import { useOpenSettings } from "@/components/settings/settings-dialog";
@@ -77,10 +76,8 @@ export function AccountMenu() {
           <DropdownMenuItem onSelect={() => openSettings("about")}>
             <Info aria-hidden /> About
           </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link href="/how-to-use">
-              <CircleHelp aria-hidden /> How to use
-            </Link>
+          <DropdownMenuItem onSelect={() => openSettings("help")}>
+            <CircleHelp aria-hidden /> How to use
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <a href={DOCS_URL} target="_blank" rel="noreferrer">

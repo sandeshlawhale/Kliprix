@@ -1,12 +1,13 @@
 "use client";
 
-import { Info, KeyRound, Palette, Settings as SettingsIcon, XIcon } from "lucide-react";
+import { CircleHelp, Info, KeyRound, Palette, Settings as SettingsIcon, XIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { AboutPane } from "@/components/settings/about-pane";
 import { ApiPane } from "@/components/settings/api-pane";
 import { GeneralPane } from "@/components/settings/general-pane";
+import { HelpPane } from "@/components/settings/help-pane";
 import { StylePane } from "@/components/settings/style-pane";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,12 +19,13 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-export type SettingsTab = "style" | "api" | "settings" | "about";
+export type SettingsTab = "style" | "api" | "settings" | "help" | "about";
 
 const TABS: { id: SettingsTab; label: string; icon: typeof Palette }[] = [
   { id: "style", label: "Edit video style", icon: Palette },
   { id: "api", label: "Configure API", icon: KeyRound },
   { id: "settings", label: "Settings", icon: SettingsIcon },
+  { id: "help", label: "How to use", icon: CircleHelp },
   { id: "about", label: "About", icon: Info },
 ];
 
@@ -103,7 +105,7 @@ function SettingsDialog({
         >
           <DialogTitle className="px-2 pt-1 pb-3 text-lg font-semibold">Settings</DialogTitle>
           <DialogDescription className="sr-only">
-            Video style, AI provider, app settings and information about Kliprix.
+            Video style, AI provider, app settings, how to use and information about Kliprix.
           </DialogDescription>
           {TABS.map((item) => {
             const active = item.id === current.id;
@@ -141,6 +143,7 @@ function SettingsDialog({
             {current.id === "style" && <StylePane />}
             {current.id === "api" && <ApiPane />}
             {current.id === "settings" && <GeneralPane />}
+            {current.id === "help" && <HelpPane />}
             {current.id === "about" && <AboutPane />}
           </div>
         </div>

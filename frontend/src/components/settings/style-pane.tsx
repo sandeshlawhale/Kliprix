@@ -57,7 +57,11 @@ export function StylePane() {
             aria-label="Clips per video"
           >
             {COUNTS.map((count) => (
-              <ToggleGroupItem key={count} value={count} className="w-9">
+              <ToggleGroupItem
+                key={count}
+                value={count}
+                className="data-[state=on]:border-brand data-[state=on]:text-foreground w-9 data-[state=on]:bg-transparent"
+              >
                 {count}
               </ToggleGroupItem>
             ))}

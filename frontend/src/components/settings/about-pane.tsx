@@ -2,10 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight } from "lucide-react";
-import Link from "next/link";
 
 import { SettingGroup, SettingRow } from "@/components/settings/setting-row";
-import { DialogClose } from "@/components/ui/dialog";
+import { SettingsLink } from "@/components/settings/settings-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSystem } from "@/hooks/queries";
 import { errorMessage, getHealth } from "@/lib/api";
@@ -76,11 +75,9 @@ export function AboutPane() {
 
       <SettingGroup title="Links">
         <SettingRow label="How to use" className="min-h-11 py-2">
-          <DialogClose asChild>
-            <Link href="/how-to-use" className={LINK}>
-              Open <ArrowUpRight className="size-3.5" aria-hidden />
-            </Link>
-          </DialogClose>
+          <SettingsLink tab="help" className={LINK}>
+            Open
+          </SettingsLink>
         </SettingRow>
         <SettingRow label="Source code" className="min-h-11 py-2">
           <a href={REPO_URL} target="_blank" rel="noreferrer" className={LINK}>

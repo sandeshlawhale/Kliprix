@@ -15,9 +15,8 @@ Above every page a top bar of fixed height (D-038): the storage warning pill on 
 2. **+ New clips** button → `/` (clears the Home form).
 3. **History** list (scrollable). Item = first video title (1 line, truncated) + small text "3 videos · 12 clips". Active item highlighted. Ordered by latest activity: a batch moves to the top (and into "Today") when it is created, gets More clips, or a failed video is resumed. A batch with a queued or running job (pipeline, More clips, render, preview, export) shows a small pulsing dot after its title (D-055). Right-click or "…" menu: Delete. Empty state: "No generations yet".
 4. Bottom **account area** (a button showing a small avatar circle with "L" and the text "Local workspace"). Clicking opens a menu **above** it with:
-   - Edit video style, Configure API, Settings, About → open the **settings dialog** on that tab, over the current page (D-067)
+   - Edit video style, Configure API, Settings, How to use, About → open the **settings dialog** on that tab, over the current page (D-067)
    - Theme: Light / Dark / System (inline toggle group)
-   - How to use → `/how-to-use` (D-039)
    - Documentation (opens GitHub README in new tab)
    There is no login and no profile page.
 
@@ -27,8 +26,7 @@ Above every page a top bar of fixed height (D-038): the storage warning pill on 
 | `/` | Home (new generation) |
 | `/history/[batchId]` | Batch results |
 | `/history/[batchId]/clips/[clipId]` | Clip detail + editor |
-| `/style`, `/configure-api`, `/settings`, `/about` | Old addresses: go to Home and open the settings dialog on that tab (D-067) |
-| `/how-to-use` | How to use (static, D-039) |
+| `/style`, `/configure-api`, `/settings`, `/how-to-use`, `/about` | Old addresses: go to Home and open the settings dialog on that tab (D-067) |
 
 ## Home `/`
 (D-037) Centered on the page, nothing else around it.
@@ -71,10 +69,11 @@ Two columns.
 - Unsaved/needs-preview state clearly shown. Edits never silently re-render.
 
 ## Settings dialog (D-067, replaces the four pages below where they differ)
-One dialog (about 920x640) with a left sidebar: **Edit video style**, **Configure API**, **Settings**, **About**; the right side shows the tab's title, a close button and the tab's content. Opened from the account menu, Home's **Edit style** and "Configure API →", the storage banner's "Clean up", and the Resume box. Every option is one line: name on the left, control on the right; style and settings changes save at once (no Save button).
-- **Edit video style:** caption styles as plain dark tiles showing only a caption sample ("This is how" in the style's colors) with the name under it; Clips per video as 1-5 buttons; Show the title switch.
+One dialog (about 920x640) with a left sidebar: **Edit video style**, **Configure API**, **Settings**, **How to use**, **About**; the right side shows the tab's title, a close button and the tab's content. Opened from the account menu, Home's **Edit style** and "Configure API →", the storage banner's "Clean up", and the Resume box. Every option is one line: name on the left, control on the right; style and settings changes save at once (no Save button).
+- **Edit video style:** caption styles as plain dark tiles showing only a caption sample ("This is how" in the style's colors) with the name under it; Clips per video as 1-5 buttons (the selected one has an accent border); Show the title switch.
 - **Configure API:** one line of intro; Status row (Connected / Not set up, provider · model, saved on this PC; Clear session, Delete saved key); Provider, Base URL (OpenAI-compatible), API key, Model (with a reload icon that loads models and a pin button); Test, Save for this session, Save.
 - **Settings:** Theme; Storage: total, a usage bar coloured per folder, one row per folder with its size and Delete (source videos, previews, work files), source-video policy, warning size (GB), Clear all; Downloader: yt-dlp version + Update. **No Transcription section** (engine, Whisper model and thorough mode keep their saved values and defaults).
+- **How to use:** five numbered one-line steps, short tips (More clips, Custom clip, editor keys), troubleshooting as collapsible rows; links in them switch tabs.
 - **About:** name, version, MIT license; This computer (FFmpeg, yt-dlp, Python, memory, NVIDIA GPU, free disk); links (How to use, GitHub, third-party notices); responsible-use line.
 
 ## Edit video style `/style`
