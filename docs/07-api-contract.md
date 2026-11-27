@@ -12,6 +12,7 @@ Messages are human-readable and never contain keys, tokens, or full file-system 
 ## System
 - `GET /api/health` → `{ "status": "ok", "version": "x.y.z" }`
 - `GET /api/system` → `{ ffmpeg: {found, version, libass}, python, ram_gb, gpu: bool, whisper_auto_model, supported_hosts: ["youtube.com","youtu.be"], disk_free_gb, ytdlp_version, transcribe_engines }` (`transcribe_engines`: D-030)
+- `GET /api/system/downloader-release` → `{ installed, latest, update_available }` (newest yt-dlp on PyPI, fetched at most every 6 h; `latest` null and `update_available` false when PyPI can't be reached; D-068)
 - `POST /api/system/update-downloader` → `{ before, after }` (runs the yt-dlp upgrade)
 - `POST /api/system/open-folder` body `{ "target": "exports" | "data" }` → opens the folder in the OS file manager (local use only; optional feature)
 

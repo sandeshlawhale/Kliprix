@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import AppConfig
+from app.core import downloader_release
 from app.core.hardware import MemoryInfo, pick_whisper_model
 from app.main import create_app
 
@@ -46,3 +47,52 @@ def test_system_reports_missing_ffmpeg_path(config: AppConfig, tmp_path: Path) -
     with TestClient(create_app(missing)) as client:
         body = client.get("/api/system").json()
     assert body["ffmpeg"] == {"found": False, "version": None, "libass": False}
+
+
+@pytest.mark.parametrize(
+    ("latest", "installed", "expected"),
+    [
+        ("2026.11.20", "2026.10.26", True),
+        ("2026.10.26.1", "2026.10.26", True),
+        ("2026.10.26", "2026.10.26", False),
+        ("2026.10.26", "2026.11.1", False),
+        (None, "2026.10.26", False),
+        ("2026.11.20", None, False),
+        ("not-a-version", "2026.10.26", False),
+    ],
+)
+def test_downloader_is_newer(latest: str | None, installed: str | None, expected: bool) -> None:
+    assert downloader_release.is_newer(latest, installed) is expected
+
+
+def test_downloader_release_is_cached() -> None:
+    calls: list[int] = []
+
+    def fake() -> str | None:
+        calls.append(1)
+        return "2099.1.1"
+
+    downloader_release.clear_cache()
+    try:
+        assert downloader_release.latest_version(fake) == "2099.1.1"
+        assert downloader_release.latest_version(fake) == "2099.1.1"
+        assert len(calls) == 1
+    finally:
+        downloader_release.clear_cache()
+
+
+def test_downloader_release_endpoint(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    downloader_release.clear_cache()
+    monkeypatch.setattr(downloader_release, "fetch_latest", lambda: "2099.1.1")
+    try:
+        body = client.get("/api/system/downloader-release").json()
+    finally:
+        downloader_release.clear_cache()
+    assert body["latest"] == "2099.1.1"
+    assert body["update_available"] is (body["installed"] is not None)
+
+
+def test_downloader_release_offline(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(downloader_release, "latest_version", lambda: None)
+    body = client.get("/api/system/downloader-release").json()
+    assert body == {"installed": body["installed"], "latest": None, "update_available": False}

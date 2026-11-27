@@ -15,6 +15,7 @@ import { loadLlmConfig } from "@/lib/session";
 
 export const keys = {
   system: ["system"] as const,
+  downloaderRelease: ["downloader-release"] as const,
   settings: ["settings"] as const,
   providers: ["providers"] as const,
   llmSession: ["llm-session"] as const,
@@ -25,6 +26,14 @@ export const keys = {
 };
 
 export const useSystem = () => useQuery({ queryKey: keys.system, queryFn: api.getSystem });
+/** Newest yt-dlp on PyPI vs the installed one; only used while Settings is open (D-068). */
+export const useDownloaderRelease = () =>
+  useQuery({
+    queryKey: keys.downloaderRelease,
+    queryFn: api.getDownloaderRelease,
+    staleTime: 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
 export const useSettings = () => useQuery({ queryKey: keys.settings, queryFn: api.getSettings });
 export const useProviders = () =>
   useQuery({ queryKey: keys.providers, queryFn: api.getProviders, staleTime: Infinity });

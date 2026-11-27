@@ -17,7 +17,7 @@ from app.config import (
     DOWNLOADER_UPDATE_TIMEOUT_S,
     SUPPORTED_HOSTS,
 )
-from app.core import hardware
+from app.core import downloader_release, hardware
 from app.core.errors import ERROR_RESPONSES, AppError, ErrorCode
 from app.core.proc import CommandError, run_command
 
@@ -77,6 +77,29 @@ def get_system(config: ConfigDep) -> SystemInfo:
         supported_hosts=list(SUPPORTED_HOSTS),
         disk_free_gb=round(hardware.disk_free_gb(config.data_dir), GB_DECIMALS),
         ytdlp_version=hardware.ytdlp_version(),
+    )
+
+
+class DownloaderRelease(BaseModel):
+    """Installed and newest yt-dlp versions; latest is None when PyPI could not be reached."""
+
+    installed: str | None
+    latest: str | None
+    update_available: bool
+
+
+@router.get("/system/downloader-release")
+def get_downloader_release() -> DownloaderRelease:
+    """Compare the installed yt-dlp with the newest on PyPI (checked at most every 6 h, D-068).
+
+    Never fails: without a connection `latest` is null and `update_available` false.
+    """
+    installed = hardware.ytdlp_version()
+    latest = downloader_release.latest_version()
+    return DownloaderRelease(
+        installed=installed,
+        latest=latest,
+        update_available=downloader_release.is_newer(latest, installed),
     )
 
 

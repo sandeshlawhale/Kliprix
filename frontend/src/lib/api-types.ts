@@ -44,6 +44,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system/downloader-release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Downloader Release
+         * @description Compare the installed yt-dlp with the newest on PyPI (checked at most every 6 h, D-068).
+         *
+         *     Never fails: without a connection `latest` is null and `update_available` false.
+         */
+        get: operations["get_downloader_release_api_system_downloader_release_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/system/update-downloader": {
         parameters: {
             query?: never;
@@ -907,6 +929,18 @@ export interface components {
             end_s: number;
         };
         /**
+         * DownloaderRelease
+         * @description Installed and newest yt-dlp versions; latest is None when PyPI could not be reached.
+         */
+        DownloaderRelease: {
+            /** Installed */
+            installed: string | null;
+            /** Latest */
+            latest: string | null;
+            /** Update Available */
+            update_available: boolean;
+        };
+        /**
          * DownloaderUpdate
          * @description Installed yt-dlp version before and after the upgrade.
          */
@@ -1442,6 +1476,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_downloader_release_api_system_downloader_release_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DownloaderRelease"];
                 };
             };
             /** @description Error */

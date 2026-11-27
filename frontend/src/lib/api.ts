@@ -27,6 +27,7 @@ export type ClipPatch = Schemas["ClipPatch"];
 export type Word = Schemas["WordOut"];
 export type BlurBox = Schemas["BlurBox"];
 export type DownloaderUpdate = Schemas["DownloaderUpdate"];
+export type DownloaderRelease = Schemas["DownloaderRelease"];
 
 /** Error shape for every non-2xx response (docs/07-api-contract.md). */
 export interface ApiErrorBody {
@@ -88,6 +89,7 @@ export function errorMessage(error: unknown): string {
 // ----- system and settings -----
 export const getHealth = () => request<HealthResponse>("/health");
 export const getSystem = () => request<SystemInfo>("/system");
+export const getDownloaderRelease = () => request<DownloaderRelease>("/system/downloader-release");
 export const updateDownloader = () =>
   request<DownloaderUpdate>("/system/update-downloader", { method: "POST" });
 export const getSettings = () => request<Settings>("/settings");
