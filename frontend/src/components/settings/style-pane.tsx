@@ -2,13 +2,14 @@
 
 import { toast } from "sonner";
 
-import { SettingGroup, SettingRow } from "@/components/settings/setting-row";
+import { ACCENT_TOGGLE, SettingGroup, SettingRow } from "@/components/settings/setting-row";
 import { CaptionStylePicker } from "@/components/style/caption-style-picker";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useSettings, useUpdateSettings } from "@/hooks/queries";
 import { errorMessage, type StyleOverrides } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 /** Kliprix decides crop and blur itself; these are not user choices (owner, 2026-11-21). */
 const FIXED = { blur: 30, crop_mode: "auto" } as const;
@@ -57,11 +58,7 @@ export function StylePane() {
             aria-label="Clips per video"
           >
             {COUNTS.map((count) => (
-              <ToggleGroupItem
-                key={count}
-                value={count}
-                className="data-[state=on]:border-brand data-[state=on]:text-foreground w-9 data-[state=on]:bg-transparent"
-              >
+              <ToggleGroupItem key={count} value={count} className={cn(ACCENT_TOGGLE, "w-9")}>
                 {count}
               </ToggleGroupItem>
             ))}

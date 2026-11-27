@@ -1,5 +1,9 @@
 import { cn } from "@/lib/utils";
 
+/** Selected toggle in the settings dialog: accent border on a plain background (D-067). */
+export const ACCENT_TOGGLE =
+  "data-[state=on]:border-brand data-[state=on]:bg-transparent data-[state=on]:text-foreground";
+
 /** A titled group of rows inside a settings pane. */
 export function SettingGroup({
   title,

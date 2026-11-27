@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { SettingGroup, SettingRow } from "@/components/settings/setting-row";
+import { ACCENT_TOGGLE, SettingGroup, SettingRow } from "@/components/settings/setting-row";
 import { StorageSection } from "@/components/settings/storage-section";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -41,9 +41,15 @@ export function GeneralPane() {
             onValueChange={(value) => value && setTheme(value as Settings["theme"])}
             aria-label="Theme"
           >
-            <ToggleGroupItem value="light">Light</ToggleGroupItem>
-            <ToggleGroupItem value="dark">Dark</ToggleGroupItem>
-            <ToggleGroupItem value="system">System</ToggleGroupItem>
+            <ToggleGroupItem value="light" className={ACCENT_TOGGLE}>
+              Light
+            </ToggleGroupItem>
+            <ToggleGroupItem value="dark" className={ACCENT_TOGGLE}>
+              Dark
+            </ToggleGroupItem>
+            <ToggleGroupItem value="system" className={ACCENT_TOGGLE}>
+              System
+            </ToggleGroupItem>
           </ToggleGroup>
         </SettingRow>
       </SettingGroup>

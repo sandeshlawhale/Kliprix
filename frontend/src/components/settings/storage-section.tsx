@@ -5,7 +5,7 @@ import { Info } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { SettingGroup, SettingRow } from "@/components/settings/setting-row";
+import { ACCENT_TOGGLE, SettingGroup, SettingRow } from "@/components/settings/setting-row";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -217,9 +217,15 @@ export function StorageSection() {
               }
               aria-label="Source videos after processing"
             >
-              <ToggleGroupItem value="ask">Ask</ToggleGroupItem>
-              <ToggleGroupItem value="delete">Delete</ToggleGroupItem>
-              <ToggleGroupItem value="keep">Keep</ToggleGroupItem>
+              <ToggleGroupItem value="ask" className={ACCENT_TOGGLE}>
+                Ask
+              </ToggleGroupItem>
+              <ToggleGroupItem value="delete" className={ACCENT_TOGGLE}>
+                Delete
+              </ToggleGroupItem>
+              <ToggleGroupItem value="keep" className={ACCENT_TOGGLE}>
+                Keep
+              </ToggleGroupItem>
             </ToggleGroup>
           </SettingRow>
           <SettingRow label="Warn when data is larger than" htmlFor="warn">
