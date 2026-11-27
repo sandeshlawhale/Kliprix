@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 
+import { SettingsDialogProvider } from "@/components/settings/settings-dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -32,7 +33,7 @@ export function Providers({ children }: { children: ReactNode }) {
     <QueryClientProvider client={client}>
       <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
         <TooltipProvider>
-          {mounted ? children : null}
+          {mounted ? <SettingsDialogProvider>{children}</SettingsDialogProvider> : null}
           <Toaster />
         </TooltipProvider>
       </ThemeProvider>

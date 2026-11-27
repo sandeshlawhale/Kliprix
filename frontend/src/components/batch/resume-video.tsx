@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RotateCw } from "lucide-react";
-import Link from "next/link";
+import { SettingsLink } from "@/components/settings/settings-dialog";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -42,9 +42,9 @@ export function ResumeVideo({ video, batchId }: { video: Video; batchId: string 
       </Button>
       {noModel ? (
         <span className="text-muted-foreground text-xs">
-          <Link href="/configure-api" className="underline underline-offset-2">
+          <SettingsLink tab="api" className="underline underline-offset-2">
             Configure the AI model
-          </Link>{" "}
+          </SettingsLink>{" "}
           first.
         </span>
       ) : (

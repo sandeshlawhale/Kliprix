@@ -12,9 +12,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
-import { useEffect } from "react";
-import { toast } from "sonner";
 
+import { useOpenSettings } from "@/components/settings/settings-dialog";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -24,28 +23,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SidebarMenuButton } from "@/components/ui/sidebar";
-import { useSettings, useUpdateSettings } from "@/hooks/queries";
-import { errorMessage, type Settings } from "@/lib/api";
+import { useSyncedTheme } from "@/hooks/use-synced-theme";
 import { REPO_URL } from "@/lib/links";
 
 const DOCS_URL = `${REPO_URL}#readme`;
-type Theme = Settings["theme"];
-
-/** Keeps next-themes in step with the theme saved in backend settings. */
-export function useSyncedTheme(): [Theme | undefined, (theme: Theme) => void] {
-  const { setTheme } = useTheme();
-  const settings = useSettings();
-  const update = useUpdateSettings();
-  const saved = settings.data?.theme;
-  useEffect(() => {
-    if (saved) setTheme(saved);
-  }, [saved, setTheme]);
-  const change = (theme: Theme) => {
-    setTheme(theme);
-    update.mutate({ theme }, { onError: (error) => toast.error(errorMessage(error)) });
-  };
-  return [saved, change];
-}
 
 /** One click flips to the opposite of what is shown now (System by default). */
 function ThemeToggle() {
@@ -67,6 +48,7 @@ function ThemeToggle() {
 }
 
 export function AccountMenu() {
+  const openSettings = useOpenSettings();
   return (
     <div className="flex items-center gap-1">
       <DropdownMenu>
@@ -82,26 +64,18 @@ export function AccountMenu() {
           </SidebarMenuButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent side="top" align="start" className="w-60">
-          <DropdownMenuItem asChild>
-            <Link href="/style">
-              <Palette aria-hidden /> Edit video style
-            </Link>
+          <DropdownMenuItem onSelect={() => openSettings("style")}>
+            <Palette aria-hidden /> Edit video style
           </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link href="/configure-api">
-              <KeyRound aria-hidden /> Configure API
-            </Link>
+          <DropdownMenuItem onSelect={() => openSettings("api")}>
+            <KeyRound aria-hidden /> Configure API
           </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link href="/settings">
-              <SettingsIcon aria-hidden /> Settings
-            </Link>
+          <DropdownMenuItem onSelect={() => openSettings("settings")}>
+            <SettingsIcon aria-hidden /> Settings
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <Link href="/about">
-              <Info aria-hidden /> About
-            </Link>
+          <DropdownMenuItem onSelect={() => openSettings("about")}>
+            <Info aria-hidden /> About
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link href="/how-to-use">

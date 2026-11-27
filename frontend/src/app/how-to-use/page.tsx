@@ -1,7 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
 
+import { SettingsLink } from "@/components/settings/settings-dialog";
 import { InfoHeader, InfoList, InfoSection } from "@/components/info/info-section";
 import { STYLE_LABELS } from "@/lib/format";
 
@@ -13,9 +13,9 @@ const STEPS: { title: string; text: React.ReactNode }[] = [
     text: (
       <>
         Open the menu at the bottom of the sidebar →{" "}
-        <Link href="/configure-api" className={LINK}>
+        <SettingsLink tab="api" className={LINK}>
           Configure API
-        </Link>
+        </SettingsLink>
         . Pick a provider, paste your key, Load models, pick a model, Test connection, then Save for
         this session.
       </>
@@ -29,9 +29,9 @@ const STEPS: { title: string; text: React.ReactNode }[] = [
     title: "Edit style (optional)",
     text: (
       <>
-        <Link href="/style" className={LINK}>
+        <SettingsLink tab="style" className={LINK}>
           Edit style
-        </Link>{" "}
+        </SettingsLink>{" "}
         sets the caption style, clips per video (1–5) and whether the title shows on the video.
       </>
     ),

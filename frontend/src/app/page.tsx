@@ -2,10 +2,10 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, ArrowRight, Link2, Loader2 } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore, type ClipboardEvent, type FormEvent } from "react";
 
+import { SettingsLink } from "@/components/settings/settings-dialog";
 import { VideoCard, VideoCardSkeleton } from "@/components/home/video-card";
 import { Button } from "@/components/ui/button";
 import { keys, useLlmSession, useSettings, useSystem } from "@/hooks/queries";
@@ -166,7 +166,7 @@ export default function HomePage() {
                   asChild
                   title={settings.data ? styleSummary(settings.data.style_defaults) : undefined}
                 >
-                  <Link href="/style">Edit style</Link>
+                  <SettingsLink tab="style">Edit style</SettingsLink>
                 </Button>
                 <Button
                   type="button"
@@ -188,13 +188,13 @@ export default function HomePage() {
               <p className="text-muted-foreground flex items-center gap-1.5">
                 <AlertCircle className="size-3.5" aria-hidden />
                 API is not configured.
-                <Link
-                  href="/configure-api"
+                <SettingsLink
+                  tab="api"
                   className="text-foreground inline-flex items-center gap-0.5 font-medium underline-offset-4 hover:underline"
                 >
                   Configure API
                   <ArrowRight className="size-3.5" aria-hidden />
-                </Link>
+                </SettingsLink>
               </p>
             )}
             {llm.isError && (

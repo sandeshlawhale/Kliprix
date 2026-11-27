@@ -15,11 +15,8 @@ Above every page a top bar of fixed height (D-038): the storage warning pill on 
 2. **+ New clips** button → `/` (clears the Home form).
 3. **History** list (scrollable). Item = first video title (1 line, truncated) + small text "3 videos · 12 clips". Active item highlighted. Ordered by latest activity: a batch moves to the top (and into "Today") when it is created, gets More clips, or a failed video is resumed. A batch with a queued or running job (pipeline, More clips, render, preview, export) shows a small pulsing dot after its title (D-055). Right-click or "…" menu: Delete. Empty state: "No generations yet".
 4. Bottom **account area** (a button showing a small avatar circle with "L" and the text "Local workspace"). Clicking opens a menu **above** it with:
-   - Edit video style → `/style`
-   - Configure API → `/configure-api`
-   - Settings → `/settings`
+   - Edit video style, Configure API, Settings, About → open the **settings dialog** on that tab, over the current page (D-067)
    - Theme: Light / Dark / System (inline toggle group)
-   - About → `/about` (D-039)
    - How to use → `/how-to-use` (D-039)
    - Documentation (opens GitHub README in new tab)
    There is no login and no profile page.
@@ -30,10 +27,7 @@ Above every page a top bar of fixed height (D-038): the storage warning pill on 
 | `/` | Home (new generation) |
 | `/history/[batchId]` | Batch results |
 | `/history/[batchId]/clips/[clipId]` | Clip detail + editor |
-| `/style` | Edit video style (defaults) |
-| `/configure-api` | LLM provider setup |
-| `/settings` | Settings |
-| `/about` | About Kliprix (static, D-039) |
+| `/style`, `/configure-api`, `/settings`, `/about` | Old addresses: go to Home and open the settings dialog on that tab (D-067) |
 | `/how-to-use` | How to use (static, D-039) |
 
 ## Home `/`
@@ -75,6 +69,13 @@ Two columns.
   - **Edit:** trim start/end (two hh:mm:ss inputs, positions in the source video, + slider, shows resulting length, warns outside 25–90 s; for a montage clip (D-051) a "Skip the quiet gaps (montage)" switch lists the parts that play and the seconds skipped, and the length is the played length), caption style (3 options with small visual examples), caption text timeline (D-055: words on a time track in two rows with a ruler, zoom, and a playhead that follows the video; clicking a word jumps the video there and opens it for retyping; **Remove word**, the Delete key, or clearing its text removes it from the captions), background blur (slider), crop mode (Auto / Face / Full frame).
   - **Edit layout (D-056, replaces the stacked Edit sections above where they differ):** in Edit the player stays alone on the left; the right column shows an inspector for the selected item on top, the timeline (Video, Title, Captions, Blur tracks on one ruler, zoom and playhead, in clip time) below it, then Apply/Discard. Video → trim and montage; Title → on-video title (saved with Apply); Captions → caption style; a word → its text, times, previous/next, Remove; a blur bar → From/To, = now, delete (bars drag in time, their ends change From/To; + adds a box at the playhead). **Live view (D-057):** after one preview, the player in Edit plays the base video and draws the draft's title, captions and blur boxes on it as you edit; a Live / Rendered switch under the player; trim/montage changes and censoring show only in the rendered preview (a note says so). Preview and Export save unsaved edits first.
 - Unsaved/needs-preview state clearly shown. Edits never silently re-render.
+
+## Settings dialog (D-067, replaces the four pages below where they differ)
+One dialog (about 920x640) with a left sidebar: **Edit video style**, **Configure API**, **Settings**, **About**; the right side shows the tab's title, a close button and the tab's content. Opened from the account menu, Home's **Edit style** and "Configure API →", the storage banner's "Clean up", and the Resume box. Every option is one line: name on the left, control on the right; style and settings changes save at once (no Save button).
+- **Edit video style:** caption styles as plain dark tiles showing only a caption sample ("This is how" in the style's colors) with the name under it; Clips per video as 1-5 buttons; Show the title switch.
+- **Configure API:** one line of intro; Status row (Connected / Not set up, provider · model, saved on this PC; Clear session, Delete saved key); Provider, Base URL (OpenAI-compatible), API key, Model (with a reload icon that loads models and a pin button); Test, Save for this session, Save.
+- **Settings:** Theme; Storage: total, a usage bar coloured per folder, one row per folder with its size and Delete (source videos, previews, work files), source-video policy, warning size (GB), Clear all; Downloader: yt-dlp version + Update. **No Transcription section** (engine, Whisper model and thorough mode keep their saved values and defaults).
+- **About:** name, version, MIT license; This computer (FFmpeg, yt-dlp, Python, memory, NVIDIA GPU, free disk); links (How to use, GitHub, third-party notices); responsible-use line.
 
 ## Edit video style `/style`
 Defaults used for new batches (saved to settings): caption style (3), caption language (English / Hinglish), clip length mode (Standard 30–60 s / Allow up to 90 s), clips per video (1–5), background blur strength, crop mode default, title on/off. Each caption style shown with an example image/animation made from the real renderer (generated sample), not a mock screenshot.

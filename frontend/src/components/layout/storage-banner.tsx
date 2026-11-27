@@ -1,8 +1,8 @@
 "use client";
 
 import { HardDrive } from "lucide-react";
-import Link from "next/link";
 
+import { SettingsLink } from "@/components/settings/settings-dialog";
 import { useStorage } from "@/hooks/queries";
 import { bytes } from "@/lib/format";
 
@@ -21,12 +21,12 @@ export function StorageBanner() {
         <span className="text-foreground font-medium">{bytes(storage.data.total_bytes)}</span>,
         above your warning size.
       </span>
-      <Link
-        href="/settings#storage"
+      <SettingsLink
+        tab="settings"
         className="text-foreground font-medium underline-offset-4 hover:underline"
       >
         Clean up
-      </Link>
+      </SettingsLink>
     </div>
   );
 }
