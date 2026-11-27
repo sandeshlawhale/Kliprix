@@ -271,6 +271,7 @@ Second speech-to-text engine; Whisper code kept. **Default = Parakeet** on the o
 ## Session log (newest first)
 | Date | Tool / model | What was done | Result |
 |---|---|---|---|
+| 2026-11-27 | Claude Code / Claude Opus 5.5 | D-070 landing site split into its own repo `kliprix-site` (subtree split, history kept); D-064/D-065 carried over from `landing-site`; `landing-site` branch deleted | new repo `npm ci` + `next build` clean; owner confirmed Vercel deploys from the new repo |
 | 2026-11-26 | Claude Code / Claude Opus 5.5 | Project report artifact; CI fix on `dev` (lockfile for npm 10, libegl1/libgles2, beep audio padded to the clip length, CI on `dev` pushes) | beep test passes locally; ruff/format/mypy clean; frontend lint, typecheck, Vitest 41; GitHub CI result: see "CI fix" |
 | 2026-11-25 | Claude Code / Claude Opus 5.5 | D-058 top bar/Download, D-059 cut/delete/extend, D-060 asked clip count, D-061 custom clip; test race fixed (edit tests wait for renders) | backend ruff/format/mypy clean; frontend typecheck, lint, Vitest 38; sandbox browser checks of every step |
 | 2026-11-25 | Claude Code / Claude Opus 5.5 | D-057 live preview (base video from preview renders, title/captions/blur drawn in the browser) and Preview/Export save unsaved edits | backend ruff/format/mypy clean, full pytest 439 passed; frontend typecheck, lint, Vitest 34; checked in a sandbox browser (:8001/:3002) |
