@@ -371,7 +371,9 @@ def main() -> None:
     say("starting the backend on http://127.0.0.1:8000")
     backend = start(
         [str(python), "-m", "uvicorn", "app.main:create_app", "--factory",
-         "--host", "127.0.0.1", "--port", str(BACKEND_PORT)],
+         "--host", "127.0.0.1", "--port", str(BACKEND_PORT),
+         # No line per request and no startup chatter; problems still show (D-069).
+         "--log-level", "warning"],
         BACKEND,
     )  # fmt: skip
     frontend: subprocess.Popen[bytes] | None = None

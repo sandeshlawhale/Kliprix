@@ -117,7 +117,7 @@ Everything lives in `data/` (or the folder in the `DATA_DIR` environment variabl
 | `data/work/<clip>/` | Cut and crop files (with 5 s editing handles) |
 | `data/models/` | Speech and face models |
 | `data/db/app.sqlite` | History and settings |
-| `data/logs/app.log` | Log file (never contains API keys) |
+| `data/logs/app.log` | Log file with the full detail (never contains API keys); the terminal only shows warnings and errors. Set `LOG_LEVEL=DEBUG` to see everything in the terminal too |
 
 **Settings → Storage** shows the size of each folder and can delete source videos,
 previews or work files. "Source videos after processing" can be **Ask** (default), **Delete**

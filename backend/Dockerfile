@@ -17,4 +17,4 @@ ENV DATA_DIR=/app/data \
     PYTHONUNBUFFERED=1
 EXPOSE 8000
 # 0.0.0.0 inside the container only; docker-compose publishes the port on 127.0.0.1.
-CMD ["python", "-m", "uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--log-level", "warning"]

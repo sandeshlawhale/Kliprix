@@ -25,6 +25,11 @@ Any AI or IDE must read this file right after `00-README-FOR-AI.md`, and must up
 ## In progress (exact next step)
 Nothing in progress. **Next step: the owner runs the checks below.** Start the app with `scripts\start.bat` (Windows) or `./scripts/start.sh`, configure a real key in Configure API, and paste 3 links. Fix anything found, then tag `m3`…`m10` once each milestone's check passes (the agent did not tag them because the owner checks are open). Then consider proposal P-001 (video retry endpoint) in `14-decisions-log.md`.
 
+## Quiet terminal (D-069, 2026-11-27), on `claude/settings-dialog`
+- Terminal: warnings and errors only; app.log unchanged except library chatter (LiteLLM, faster_whisper, httpx, huggingface_hub INFO) is gone. Uvicorn `--log-level warning` in `scripts/run.py` and the backend Dockerfile.
+- Checks: backend ruff, format, mypy clean; `test_core.py` + `test_system.py` passed (2 new logging tests). Real run on a scratch DATA_DIR with the start.bat command line: 6 requests, terminal empty, app.log 11 lines. Full pytest not run.
+- **Owner check:** restart with `scripts\start.bat` and run a batch: the terminal shows only the launcher lines and real problems; details are in `data/logs/app.log`.
+
 ## yt-dlp update notice (D-068, 2026-11-27), on `claude/settings-dialog`
 - `backend/app/core/downloader_release.py` + `GET /api/system/downloader-release`; frontend `useDownloaderRelease` (only mounted in Settings), dot + hint + info tooltip on Update. API types regenerated from a schema dumped with `DATA_DIR` in the scratchpad.
 - Checks: backend ruff, format, mypy clean, `tests/test_system.py` 19 passed (version compare, 6 h cache, endpoint, offline); a real PyPI call returned 2026.11.23. Frontend typecheck and lint clean. Browser (sandbox): with the real answer (installed 2026.11.23 = latest) no dot shows; with a faked older install the dot, "2026.11.23 available" and the tooltip show. Full pytest not run.

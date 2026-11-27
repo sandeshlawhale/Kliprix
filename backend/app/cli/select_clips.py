@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     api_key = getpass.getpass("API key (hidden): ").strip()
     provider: ProviderId = args.provider
     session = LlmSession(provider, args.model, api_key, args.base_url)
-    setup_logging(config, lambda: (api_key,))
+    setup_logging(config, lambda: (api_key,), console_level=None)
     facts = VideoFacts(info.video.title, info.video.channel, info.probed_duration_s)
     try:
         selection = run_select(

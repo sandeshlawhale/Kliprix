@@ -42,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
 
     config = load_config()
     ensure_data_dirs(config)
-    setup_logging(config, _no_secrets)
+    setup_logging(config, _no_secrets, console_level=None)
     try:
         adapter, url = resolve(args.url, build_adapters(config))
         print(f"url: {url}")

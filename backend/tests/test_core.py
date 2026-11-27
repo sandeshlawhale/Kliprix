@@ -1,4 +1,5 @@
 import logging
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -7,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.config import DATA_SUBDIRS, REPO_ROOT, AppConfig, load_config, resolve_data_dir
 from app.core.errors import AppError, ErrorCode, install_error_handlers
-from app.core.logging import RedactingFormatter, redact
+from app.core.logging import QUIET_LIBRARIES, RedactingFormatter, redact, setup_logging
 
 
 def test_relative_data_dir_is_relative_to_repo_root() -> None:
@@ -92,3 +93,29 @@ def test_log_file_lands_in_data_dir(client: TestClient, config: AppConfig) -> No
     for handler in logging.getLogger().handlers:
         handler.flush()
     assert "hello from test" in Path(config.logs_dir / "app.log").read_text(encoding="utf-8")
+
+
+def _owned_handlers() -> tuple[logging.Handler, logging.Handler]:
+    handlers = [h for h in logging.getLogger().handlers if type(h).__name__.startswith("_Owned")]
+    file_handler = next(h for h in handlers if type(h).__name__ == "_OwnedFileHandler")
+    console = next(h for h in handlers if type(h).__name__ == "_OwnedConsoleHandler")
+    return file_handler, console
+
+
+def test_console_shows_only_problems_file_keeps_info(config: AppConfig) -> None:
+    config.logs_dir.mkdir(parents=True, exist_ok=True)
+    setup_logging(config, lambda: ())
+    file_handler, console = _owned_handlers()
+    assert console.level == logging.WARNING
+    assert file_handler.level == logging.NOTSET  # everything the root lets through
+    assert logging.getLogger().level == logging.INFO
+    for name in QUIET_LIBRARIES:
+        assert logging.getLogger(name).level == logging.WARNING
+
+
+def test_cli_and_debug_keep_the_console_detailed(config: AppConfig) -> None:
+    config.logs_dir.mkdir(parents=True, exist_ok=True)
+    setup_logging(config, lambda: (), console_level=None)
+    assert _owned_handlers()[1].level == logging.NOTSET
+    setup_logging(replace(config, log_level="DEBUG"), lambda: ())
+    assert _owned_handlers()[1].level == logging.NOTSET

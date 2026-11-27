@@ -17,6 +17,12 @@ LOG_FORMAT = "%(asctime)s level=%(levelname)s logger=%(name)s %(message)s"
 
 SecretSource = Callable[[], Iterable[str]]
 
+# The app's terminal shows only problems; app.log keeps the INFO detail (D-069).
+CONSOLE_LEVEL = "WARNING"
+# Libraries whose INFO lines say nothing useful ("Wrapper: Completed Call", one line per
+# HTTP request or audio chunk); their warnings and errors still come through.
+QUIET_LIBRARIES = ("LiteLLM", "faster_whisper", "httpx", "httpx2", "huggingface_hub")
+
 
 def redact(text: str, secrets: Iterable[str]) -> str:
     """Replace every non-empty secret in `text` with `***`."""
@@ -45,9 +51,13 @@ class _OwnedConsoleHandler(logging.StreamHandler):  # type: ignore[type-arg]
     """Marks the handler installed here, so a second setup replaces it."""
 
 
-def setup_logging(config: AppConfig, secrets: SecretSource) -> None:
-    """Send logs to `DATA_DIR/logs/app.log` (rotating) and to the console.
+def setup_logging(
+    config: AppConfig, secrets: SecretSource, console_level: str | None = CONSOLE_LEVEL
+) -> None:
+    """Send logs to `DATA_DIR/logs/app.log` (rotating, at LOG_LEVEL) and to the console.
 
+    The console shows `console_level` and above (WARNING for the app; None = LOG_LEVEL,
+    for the command-line tools); with LOG_LEVEL=DEBUG it shows everything.
     Expects `config.logs_dir` to exist. Calling it again replaces the handlers it added.
     """
     root = logging.getLogger()
@@ -66,4 +76,9 @@ def setup_logging(config: AppConfig, secrets: SecretSource) -> None:
     for handler in (file_handler, console_handler):
         handler.setFormatter(formatter)
         root.addHandler(handler)
+    if console_level is not None and config.log_level != "DEBUG":
+        console_handler.setLevel(console_level)
     root.setLevel(config.log_level)
+    if config.log_level != "DEBUG":
+        for name in QUIET_LIBRARIES:
+            logging.getLogger(name).setLevel(logging.WARNING)
